@@ -26,8 +26,8 @@ internal sealed class MainForm : Form
     readonly CheckBox f5 = new() { Text = "F5 Infinite Stamina (selected only)", AutoSize = true };
     readonly CheckBox f6 = new() { Text = "F6 HP Lock (selected only)", AutoSize = true };
     readonly Label status = new() { AutoSize = false, Height = 48, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };
-    readonly Timer timer = new() { Interval = 16 };
-    bool[] held = new bool[10];
+    readonly System.Windows.Forms.Timer timer = new() { Interval = 16 };
+    readonly bool[] held = new bool[10];
 
     public MainForm()
     {
@@ -67,8 +67,7 @@ internal sealed class MainForm : Form
         Toggle(0x75, 6, () => f6.Checked = !f6.Checked);
         Toggle(0x78, 9, () => { f1.Checked=f2.Checked=f3.Checked=f4.Checked=f5.Checked=f6.Checked=false; });
 
-        var r = Native.Apply(f1.Checked, f2.Checked, f3.Checked, f4.Checked, f5.Checked, f6.Checked);
-        status.Text = r;
+        status.Text = Native.Apply(f1.Checked, f2.Checked, f3.Checked, f4.Checked, f5.Checked, f6.Checked);
     }
 }
 
