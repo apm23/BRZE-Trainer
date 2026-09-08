@@ -74,5 +74,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: BRZE-Trainer-F7-EventHook-win-x86
-          path: publish/BRZETrainer.exe
+          path: publish/BRZE-Trainer.exe
           if-no-files-found: error
