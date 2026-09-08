@@ -15,7 +15,7 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Patch F7 from pool polling to event hook
+      - name: Patch F7 to legacy-style progress-read hook
         shell: pwsh
         run: |
           @'
@@ -30,16 +30,16 @@ jobs:
               s=s.replace(old,new,1)
 
           rep('readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training (TEST 2)", AutoSize = true };',
-              'readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training - EVENT HOOK TEST", AutoSize = true };')
-          rep('Text = "BRZE Trainer 1.60 — Hook Test";', 'Text = "BRZE Trainer 1.60 - F7 Event Hook Test";')
+              'readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training - OLD TRAINER PATTERN TEST", AutoSize = true };')
+          rep('Text = "BRZE Trainer 1.60 — Hook Test";', 'Text = "BRZE Trainer 1.60 - Legacy F4 Pattern Test";')
           rep('Native.SetHooks(f5.Checked, f6.Checked);', 'Native.SetHooks(f5.Checked, f6.Checked, f7.Checked);')
 
           rep('const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB;',
-              'const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB,RVA_TRAIN_PROGRESS_WRITE=0x0D65E2;')
+              'const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB,RVA_TRAIN_PROGRESS_WRITE=0x0D65DC;')
           rep('static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag; static bool hooksInstalled;',
               'static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag,trainFlag; static bool hooksInstalled; static int remoteTrainState=-1; static string hookError="";')
           rep('static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56};',
-              'static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56}; static readonly byte[] TrainOriginal={0x89,0x86,0x90,0x04,0x00,0x00};')
+              'static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56}; static readonly byte[] TrainOriginal={0x03,0x86,0x90,0x04,0x00,0x00};')
 
           rep('if(hooksInstalled){WriteCode(moduleBase+RVA_ADD_HEALTH,HpOriginal);WriteCode(moduleBase+RVA_ADD_STAMINA,StOriginal);}',
               'if(hooksInstalled){WriteCode(moduleBase+RVA_ADD_HEALTH,HpOriginal);WriteCode(moduleBase+RVA_ADD_STAMINA,StOriginal);WriteCode(moduleBase+RVA_TRAIN_PROGRESS_WRITE,TrainOriginal);}')
@@ -47,7 +47,7 @@ jobs:
               'h=IntPtr.Zero;p=null;cave=IntPtr.Zero;hooksInstalled=false;localUnits=Array.Empty<UnitInfo>();remoteTrainState=-1;hookError="";')
 
           anchor='''    static byte[] JmpPatch(long target,long stub,int len){var b=new byte[len];b[0]=0xE9;Array.Copy(BitConverter.GetBytes(unchecked((int)(stub-(target+5)))),0,b,1,4);for(int i=5;i<len;i++)b[i]=0x90;return b;}'''
-          training='''    static byte[] BuildTrainingHook(long stub,long flag,long target)\n    {\n        var b=new List<byte>();\n        b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)flag);b.Add(0);\n        b.AddRange(new byte[]{0x0F,0x84});int jDisabled=b.Count;I32(b,0);\n        b.Add(0x52);\n        b.AddRange(new byte[]{0x8B,0x15});U32(b,(uint)(moduleBase+RVA_LOCAL_ID));\n        b.AddRange(new byte[]{0x39,0x96,0x84,0x00,0x00,0x00});\n        b.Add(0x5A);\n        b.AddRange(new byte[]{0x0F,0x85});int jNotOwner=b.Count;I32(b,0);\n        b.AddRange(new byte[]{0x8B,0xC7});\n        int originalLabel=b.Count;b.AddRange(TrainOriginal);\n        b.Add(0xE9);int jBack=b.Count;I32(b,0);\n        PatchRel(b,jDisabled,stub+jDisabled+4,stub+originalLabel);\n        PatchRel(b,jNotOwner,stub+jNotOwner+4,stub+originalLabel);\n        PatchRel(b,jBack,stub+jBack+4,target+TrainOriginal.Length);\n        return b.ToArray();\n    }\n\n'''+anchor
+          training='''    static byte[] BuildTrainingHook(long stub,long flag,long target)\n    {\n        var b=new List<byte>();\n        b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)flag);b.Add(0);\n        b.AddRange(new byte[]{0x0F,0x84});int jDisabled=b.Count;I32(b,0);\n        b.Add(0x52);\n        b.AddRange(new byte[]{0x8B,0x15});U32(b,(uint)(moduleBase+RVA_LOCAL_ID));\n        b.AddRange(new byte[]{0x39,0x96,0x84,0x00,0x00,0x00});\n        b.Add(0x5A);\n        b.AddRange(new byte[]{0x0F,0x85});int jNotOwner=b.Count;I32(b,0);\n        b.AddRange(new byte[]{0xC7,0x86,0x90,0x04,0x00,0x00,0x40,0xB5,0x64,0x00});\n        int originalLabel=b.Count;b.AddRange(TrainOriginal);\n        b.Add(0xE9);int jBack=b.Count;I32(b,0);\n        PatchRel(b,jDisabled,stub+jDisabled+4,stub+originalLabel);\n        PatchRel(b,jNotOwner,stub+jNotOwner+4,stub+originalLabel);\n        PatchRel(b,jBack,stub+jBack+4,target+TrainOriginal.Length);\n        return b.ToArray();\n    }\n\n'''+anchor
           rep(anchor,training)
 
           old='''        long c=cave.ToInt64();hpFlag=c;stFlag=c+4;long hpStub=c+32,stStub=c+160;\n        W32(hpFlag,0);W32(stFlag,0);\n        byte[] hs=BuildHook(hpStub,hpFlag,moduleBase+RVA_ADD_HEALTH,HpOriginal,HpOriginal.Length);byte[] ss=BuildHook(stStub,stFlag,moduleBase+RVA_ADD_STAMINA,StOriginal,StOriginal.Length);\n        if(!WriteBytes(hpStub,hs)||!WriteBytes(stStub,ss))return false;\n        if(!WriteCode(moduleBase+RVA_ADD_HEALTH,JmpPatch(moduleBase+RVA_ADD_HEALTH,hpStub,HpOriginal.Length)))return false;\n        if(!WriteCode(moduleBase+RVA_ADD_STAMINA,JmpPatch(moduleBase+RVA_ADD_STAMINA,stStub,StOriginal.Length)))return false;\n        hooksInstalled=true;return true;'''
@@ -60,7 +60,7 @@ jobs:
           rep('if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);if(instantTrain)ApplyInstantUnitTraining(lid);else trainingBuildings=0;',
               'if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);trainingBuildings=0;')
           rep('return $"Attached | hook:{hooksInstalled} selected:{selectedLocked} training:{trainingBuildings} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}";',
-              'return $"Attached | hook:{hooksInstalled} selected:{selectedLocked} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);')
+              'return $"Attached | legacyF4:{hooksInstalled} selected:{selectedLocked} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);')
 
           p.write_text(s,encoding='utf-8')
           print('patched Program.cs',len(s))
@@ -73,6 +73,6 @@ jobs:
       - name: Upload F7 hook trainer
         uses: actions/upload-artifact@v4
         with:
-          name: BRZE-Trainer-F7-EventHook-win-x86
+          name: BRZE-Trainer-F7-LegacyPattern-win-x86
           path: publish/BRZE-Trainer.exe
           if-no-files-found: error
