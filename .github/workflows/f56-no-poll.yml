@@ -1,0 +1,27 @@
+name: F5 F6 legacy-guided no-poll fix
+on:
+  push:
+    paths:
+      - '.github/workflows/f56-no-poll.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply no-poll F5 F6 fix
+        run: python tools/patch_f56_no_poll.py
+      - name: Compile smoke
+        run: dotnet build -c Release -p:PlatformTarget=x86
+      - name: Commit patch
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Program.cs
+          git commit -m 'Fix large-selection freeze with event-only F5 F6 hooks'
+          git push
