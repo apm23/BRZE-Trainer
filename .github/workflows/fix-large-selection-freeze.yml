@@ -1,10 +1,12 @@
 name: Fix large-selection F5 F6 freeze
 on:
-  workflow_dispatch:
+  push:
+    branches: [ main ]
 permissions:
   contents: write
 jobs:
   patch:
+    if: github.actor != 'github-actions[bot]'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +35,6 @@ jobs:
     // central health/stamina delta hooks (negative deltas blocked for selected local units).
 
 '''+s[b:]
-          s=s.replace('static int selectedLocked,trainingBuildings;', 'static int selectedLocked,trainingBuildings;')
           s=s.replace('readonly CheckBox f5 = new() { Text = "F5 No Stamina Consumption (selected only) — HOOK TEST", AutoSize = true };','readonly CheckBox f5 = new() { Text = "F5 No Stamina Consumption (selected only) — EVENT HOOK", AutoSize = true };')
           s=s.replace('readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — HOOK TEST", AutoSize = true };','readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — EVENT HOOK", AutoSize = true };')
           p.write_text(s,encoding='utf-8')
