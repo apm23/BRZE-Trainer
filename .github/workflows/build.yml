@@ -1,0 +1,22 @@
+name: Build BRZE Trainer
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish x86 single-file EXE
+        run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o publish
+      - name: Upload trainer EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-win-x86
+          path: publish/BRZE-Trainer.exe
