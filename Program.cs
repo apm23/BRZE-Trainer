@@ -26,7 +26,7 @@ internal sealed class MainForm : Form
     readonly CheckBox f4 = new() { Text = "F4 Unlimited Population (9,999,999)", AutoSize = true };
     readonly CheckBox f5 = new() { Text = "F5 Infinite Stamina (selected only)", AutoSize = true };
     readonly CheckBox f6 = new() { Text = "F6 HP Lock (selected only)", AutoSize = true };
-    readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training (TEST)", AutoSize = true };
+    readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training (TEST 2)", AutoSize = true };
     readonly Label status = new() { AutoSize = false, Height = 54, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 16 };
     readonly bool[] held = new bool[12];
@@ -99,8 +99,6 @@ internal static class Native
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool WriteProcessMemory(IntPtr h, IntPtr addr, byte[] buf, int size, out IntPtr written);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
     [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
-    [DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint period);
-    [DllImport("winmm.dll")] static extern uint timeEndPeriod(uint period);
 
     const uint Access = 0x10 | 0x20 | 0x8 | 0x400;
     const int RVA_PLAYER_PTR = 0x4416A0, RVA_LOCAL_ID = 0x4416D0, PLAYER_STRIDE = 0x5E8;
@@ -110,17 +108,17 @@ internal static class Native
     const int RVA_UNIT_POOL = 0x4796A0, UNIT_STRIDE = 0x818, UNIT_COUNT = 2000;
     const int OFF_DEF = 0x74, OFF_OWNER = 0x240, OFF_SEL_A = 0x3A8, OFF_SEL_B = 0x3AC, OFF_HP = 0x404, OFF_ST = 0x408;
 
-    // Exact BRZE 1.60 building resolver uses 500 slots x 0x6A4 from *(base+0x4814E0).
+    // Exact BRZE 1.60 building pool: 500 objects x 0x6A4 from *(base+0x4814E0).
     const int RVA_BUILDING_POOL = 0x4814E0, BUILDING_STRIDE = 0x6A4, BUILDING_COUNT = 500;
-    const int OFF_BUILD_OWNER = 0x84, OFF_TRAIN_UNIT = 0x484, OFF_TRAIN_TYPE = 0x488, OFF_TRAIN_PROGRESS = 0x490;
-    const uint TRAIN_COMPLETE_FIXED = 0x00640000; // 100.0 in 16.16; game completion path compares progress against this.
+    const int OFF_BUILD_OWNER = 0x84, OFF_TRAIN_TYPE = 0x488, OFF_TRAIN_PROGRESS = 0x490, OFF_TRAIN_GATE = 0x4B8, OFF_BUILD_SPECIAL = 0x68C;
+    const int RVA_TRAIN_SPECIAL_GLOBAL = 0x46779C; // absolute 0x86779C in the 0x400000 image.
+    const uint TRAIN_COMPLETE_FIXED = 0x00640000;
 
     static readonly object attachLock = new();
     static IntPtr h = IntPtr.Zero;
     static Process? p;
     static long moduleBase;
     static volatile uint localId;
-    static volatile uint unitPool;
     static volatile bool wantStamina;
     static volatile bool wantHp;
     static volatile bool running;
@@ -136,17 +134,15 @@ internal static class Native
     readonly struct UnitInfo
     {
         public readonly long Addr;
-        public readonly uint Def;
         public readonly uint MaxHpFixed;
         public readonly uint MaxStFixed;
-        public UnitInfo(long addr, uint def, uint hp, uint st) { Addr = addr; Def = def; MaxHpFixed = hp; MaxStFixed = st; }
+        public UnitInfo(long addr, uint hp, uint st) { Addr = addr; MaxHpFixed = hp; MaxStFixed = st; }
     }
 
     public static void Start()
     {
         if (running) return;
         running = true;
-        timeBeginPeriod(1);
         lockThread = new Thread(FastLockLoop) { IsBackground = true, Name = "BRZE-HP-ST-Lock" };
         lockThread.Start();
     }
@@ -155,7 +151,6 @@ internal static class Native
     {
         running = false;
         try { lockThread?.Join(250); } catch { }
-        timeEndPeriod(1);
         Detach();
     }
 
@@ -193,7 +188,6 @@ internal static class Native
         if (h != IntPtr.Zero) { CloseHandle(h); h = IntPtr.Zero; }
         p = null;
         localUnits = Array.Empty<UnitInfo>();
-        unitPool = 0;
     }
 
     static bool ReadExact(long addr, byte[] b)
@@ -225,7 +219,7 @@ internal static class Native
     static bool RefreshUnits(bool force = false)
     {
         if (!Attach()) return false;
-        if (!force && (DateTime.UtcNow - lastUnitCache).TotalMilliseconds < 250) return true;
+        if (!force && (DateTime.UtcNow - lastUnitCache).TotalMilliseconds < 500) return true;
 
         uint lid = R32(moduleBase + RVA_LOCAL_ID);
         uint pool = R32(moduleBase + RVA_UNIT_POOL);
@@ -242,11 +236,10 @@ internal static class Native
             uint mh = R32((long)def + 0x6C);
             uint ms = R32((long)def + 0x80);
             if (mh == 0 && ms == 0) continue;
-            found.Add(new UnitInfo((long)pool + o, def, Fixed16(mh), Fixed16(ms)));
+            found.Add(new UnitInfo((long)pool + o, Fixed16(mh), Fixed16(ms)));
         }
 
         localId = lid;
-        unitPool = pool;
         localUnits = found.ToArray();
         lastUnitCache = DateTime.UtcNow;
         return true;
@@ -255,6 +248,7 @@ internal static class Native
     static void FastLockLoop()
     {
         var sel = new byte[8];
+        var cur = new byte[8];
         while (running)
         {
             if (!wantHp && !wantStamina) { selectedLocked = 0; Thread.Sleep(25); continue; }
@@ -265,42 +259,61 @@ internal static class Native
             var units = localUnits;
             foreach (var u in units)
             {
-                // Owner is revalidated so a reused slot can never affect an enemy/new owner.
-                if (R32(u.Addr + OFF_OWNER) != lid) continue;
+                // First do the cheap selection check. Unselected units cause no writes at all.
                 if (!ReadExact(u.Addr + OFF_SEL_A, sel)) continue;
                 if (BitConverter.ToUInt32(sel, 0) != 1 || BitConverter.ToUInt32(sel, 4) != 1) continue;
 
+                // Revalidate owner only for selected units, protecting against a slot reused by another player.
+                if (R32(u.Addr + OFF_OWNER) != lid) continue;
+                if (!ReadExact(u.Addr + OFF_HP, cur)) continue; // HP and stamina are adjacent.
+
                 count++;
-                // Only CURRENT HP/stamina are touched. Max-health fields and +0x6A4 invincibility are never written.
-                if (wantHp && u.MaxHpFixed != 0) W32(u.Addr + OFF_HP, u.MaxHpFixed);
-                if (wantStamina && u.MaxStFixed != 0) W32(u.Addr + OFF_ST, u.MaxStFixed);
+                uint hpNow = BitConverter.ToUInt32(cur, 0);
+                uint stNow = BitConverter.ToUInt32(cur, 4);
+
+                // Critical performance fix: do NOT spam WriteProcessMemory every 5 ms for every selected unit.
+                // Write only when the value actually dropped. This avoids simulation stalls with very large selections.
+                // Also never lower a value that is already above the base max (buffs/modifiers remain untouched).
+                if (wantHp && u.MaxHpFixed != 0 && hpNow < u.MaxHpFixed) W32(u.Addr + OFF_HP, u.MaxHpFixed);
+                if (wantStamina && u.MaxStFixed != 0 && stNow < u.MaxStFixed) W32(u.Addr + OFF_ST, u.MaxStFixed);
             }
+
             selectedLocked = count;
-            Thread.Sleep(5);
+            // Large groups need less aggressive polling so the game's simulation thread is not starved by RPM/WPM calls.
+            Thread.Sleep(count >= 32 ? 16 : 8);
         }
     }
 
     static void ApplyInstantUnitTraining(uint lid)
     {
-        // One scan every 50 ms is enough: the game's training tick sees progress=100% and completes normally.
-        if ((DateTime.UtcNow - lastBuildingScan).TotalMilliseconds < 50) return;
+        if ((DateTime.UtcNow - lastBuildingScan).TotalMilliseconds < 25) return;
         lastBuildingScan = DateTime.UtcNow;
 
         uint pool = R32(moduleBase + RVA_BUILDING_POOL);
         if (pool == 0 || !ReadExact(pool, buildingRaw)) { trainingBuildings = 0; return; }
 
+        uint specialGlobal = R32(moduleBase + RVA_TRAIN_SPECIAL_GLOBAL);
         int active = 0;
         for (int i = 0; i < BUILDING_COUNT; i++)
         {
             int o = i * BUILDING_STRIDE;
             uint owner = BitConverter.ToUInt32(buildingRaw, o + OFF_BUILD_OWNER);
-            uint trainee = BitConverter.ToUInt32(buildingRaw, o + OFF_TRAIN_UNIT);
+            if (owner != lid) continue;
+
             uint trainType = BitConverter.ToUInt32(buildingRaw, o + OFF_TRAIN_TYPE);
-            if (owner != lid || trainee == 0 || trainType == 0xFFFFFFFF) continue;
+            if (trainType == 0xFFFFFFFF) continue;
+
+            // Mirror the game's own active-training predicate at 0x4D675F/0x4D673D:
+            // type must be valid, and normally +0x4B8 must be valid. A special global/+0x68C state suppresses it.
+            uint gate = BitConverter.ToUInt32(buildingRaw, o + OFF_TRAIN_GATE);
+            uint special = BitConverter.ToUInt32(buildingRaw, o + OFF_BUILD_SPECIAL);
+            bool gameSaysTrainingActive = !(specialGlobal != 0 && special != 0) && gate != 0xFFFFFFFF;
+            if (!gameSaysTrainingActive) continue;
 
             active++;
             long addr = (long)pool + o;
-            W32(addr + OFF_TRAIN_PROGRESS, TRAIN_COMPLETE_FIXED);
+            uint progress = BitConverter.ToUInt32(buildingRaw, o + OFF_TRAIN_PROGRESS);
+            if (progress < TRAIN_COMPLETE_FIXED) W32(addr + OFF_TRAIN_PROGRESS, TRAIN_COMPLETE_FIXED);
         }
         trainingBuildings = active;
     }
@@ -320,6 +333,6 @@ internal static class Native
         if (pop) W32(moduleBase + RVA_MAX_UNITS + lid * 4, 9_999_999);
         if (instantTrain) ApplyInstantUnitTraining(lid); else trainingBuildings = 0;
 
-        return $"Attached | selected lock: {selectedLocked} | unit training: {trainingBuildings} | F1:{rice} F2:{water} F3:{yinYang} F4:{pop} F5:{wantStamina} F6:{wantHp} F7:{instantTrain}";
+        return $"Attached | selected lock: {selectedLocked} | active training: {trainingBuildings} | F1:{rice} F2:{water} F3:{yinYang} F4:{pop} F5:{wantStamina} F6:{wantHp} F7:{instantTrain}";
     }
 }
