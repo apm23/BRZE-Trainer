@@ -1,4 +1,4 @@
-name: F7 exact legacy remap
+name: F5 F6 no-poll freeze fix
 on:
   push:
     paths:
@@ -13,8 +13,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Apply exact legacy F4 remap
-        run: python tools/patch_f7_legacy_exact.py
+      - name: Apply legacy-guided no-poll fix
+        run: python tools/patch_f56_no_poll.py
       - name: Compile smoke
         run: dotnet build -c Release -p:PlatformTarget=x86
       - name: Commit patch
@@ -23,5 +23,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Program.cs
-          git commit -m 'Remap F7 to exact old-trainer dedicated training hook'
+          git commit -m 'Fix large-selection freeze with event-only F5 F6 hooks'
           git push
