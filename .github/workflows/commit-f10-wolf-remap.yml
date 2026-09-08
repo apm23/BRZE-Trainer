@@ -1,0 +1,60 @@
+name: Commit F10 wolf remap
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/commit-f10-wolf-remap.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Patch F10 maximum wolves from legacy trainer
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          p=Path('Program.cs')
+          s=p.read_text(encoding='utf-8')
+          def rep(old,new):
+              global s
+              if old not in s:
+                  raise SystemExit('missing anchor: '+old[:120])
+              s=s.replace(old,new,1)
+
+          rep('panel.Controls.Add(new Label { Text = "F10 Unlimited Horses + Wolves — pending", AutoSize = true, ForeColor = Color.DimGray });',
+              'panel.Controls.Add(new Label { Text = "F10 Maximum Wolves — PUSH TEST (old trainer remap; horses pending)", AutoSize = true });')
+
+          rep('Toggle(0x78,9,()=>{ bool all=f1.Checked&&f2.Checked&&f3.Checked&&f4.Checked&&f5.Checked&&f6.Checked&&f7.Checked; SetAllImplemented(!all); });',
+              'Toggle(0x78,9,()=>{ bool all=f1.Checked&&f2.Checked&&f3.Checked&&f4.Checked&&f5.Checked&&f6.Checked&&f7.Checked; SetAllImplemented(!all); }); Toggle(0x79,10,()=>Native.MaxWolves());')
+
+          rep('static bool W32(long a,uint v)=>WriteBytes(a,BitConverter.GetBytes(v));',
+              'static bool W32(long a,uint v)=>WriteBytes(a,BitConverter.GetBytes(v));\n    static bool W8(long a,byte v)=>WriteBytes(a,new byte[]{v});')
+
+          anchor='''    public static void InstantSelectedBuilding()\n    {\n        if(!Attach())return; uint lid=R32(moduleBase+RVA_LOCAL_ID);\n        uint a=R32(moduleBase+RVA_SELECTED_BUILDING_A),b=R32(moduleBase+RVA_SELECTED_BUILDING_B);\n        Boost(a,lid); if(b!=a)Boost(b,lid);\n    }'''
+          insert=anchor+'''\n\n    public static void MaxWolves()\n    {\n        if(!Attach())return;\n        uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);\n        if(playerPtr==0||lid>=10)return;\n        long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;\n        // Legacy v1.50q F10 wrote one byte 250 at player+0x250.\n        // BRZE 1.60 resource/Yin-Yang layout is consistently shifted +4 through this region,\n        // so the structurally equivalent field is player+0x254. Keep the old one-byte technique.\n        W8(player+0x254,250);\n    }'''
+          rep(anchor,insert)
+          p.write_text(s,encoding='utf-8')
+          print('patched',len(s))
+          '@ | python
+      - name: Compile smoke
+        shell: pwsh
+        run: dotnet build BRZETrainer.csproj -c Release -r win-x86
+      - name: Commit patch
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Program.cs
+          git commit -m "Remap legacy F10 maximum wolves to BRZE 1.60" || exit 0
+          git push
