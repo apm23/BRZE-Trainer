@@ -32,18 +32,17 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         Text = "BRZE Trainer 1.60";
-        ClientSize = new Size(450, 370);
+        ClientSize = new Size(500, 370);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
 
         var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(18), WrapContents = false };
         panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6 });
-        panel.Controls.Add(new Label { Text = "F7 Instant Training — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
+        panel.Controls.Add(new Label { Text = "F7 Instant Training + Building Upgrades — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
         panel.Controls.Add(new Label { Text = "F8 Instant Building — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
         panel.Controls.Add(new Label { Text = "F9 Enable / Disable ALL implemented cheats", AutoSize = true });
-        panel.Controls.Add(new Label { Text = "F10 Unlimited Horses — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
-        panel.Controls.Add(new Label { Text = "F11 Unlimited Wolves — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
+        panel.Controls.Add(new Label { Text = "F10 Unlimited Horses + Wolves — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
         Controls.Add(panel);
         Controls.Add(status);
 
