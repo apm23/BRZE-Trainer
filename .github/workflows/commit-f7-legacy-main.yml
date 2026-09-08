@@ -1,0 +1,80 @@
+name: Commit F7 legacy progress hook
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/commit-f7-legacy-main.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Patch F7 into main source
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          p=Path('Program.cs')
+          s=p.read_text(encoding='utf-8')
+          def rep(old,new):
+              global s
+              if old not in s:
+                  raise SystemExit('missing anchor: '+old[:140])
+              s=s.replace(old,new,1)
+
+          rep('readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training (TEST 2)", AutoSize = true };',
+              'readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — LEGACY PROGRESS HOOK", AutoSize = true };')
+          rep('Native.SetHooks(f5.Checked, f6.Checked);', 'Native.SetHooks(f5.Checked, f6.Checked, f7.Checked);')
+          rep('const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB;',
+              'const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB,RVA_TRAIN_PROGRESS_READ=0x0D65DC;')
+          rep('static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag; static bool hooksInstalled;',
+              'static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag,trainFlag; static bool hooksInstalled; static int remoteTrainState=-1; static string hookError="";')
+          rep('static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56};',
+              'static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56}; static readonly byte[] TrainOriginal={0x03,0x86,0x90,0x04,0x00,0x00};')
+
+          rep('if(h!=IntPtr.Zero){ if(hooksInstalled){WriteCode(moduleBase+RVA_ADD_HEALTH,HpOriginal);WriteCode(moduleBase+RVA_ADD_STAMINA,StOriginal);} if(cave!=IntPtr.Zero)VirtualFreeEx(h,cave,UIntPtr.Zero,MEM_RELEASE); CloseHandle(h);}',
+              'if(h!=IntPtr.Zero){ if(hooksInstalled){WriteCode(moduleBase+RVA_ADD_HEALTH,HpOriginal);WriteCode(moduleBase+RVA_ADD_STAMINA,StOriginal);WriteCode(moduleBase+RVA_TRAIN_PROGRESS_READ,TrainOriginal);} if(cave!=IntPtr.Zero)VirtualFreeEx(h,cave,UIntPtr.Zero,MEM_RELEASE); CloseHandle(h);}')
+          rep('h=IntPtr.Zero;p=null;cave=IntPtr.Zero;hooksInstalled=false;localUnits=Array.Empty<UnitInfo>();',
+              'h=IntPtr.Zero;p=null;cave=IntPtr.Zero;hooksInstalled=false;localUnits=Array.Empty<UnitInfo>();remoteTrainState=-1;hookError="";')
+
+          anchor='''    static byte[] JmpPatch(long target,long stub,int len){var b=new byte[len];b[0]=0xE9;Array.Copy(BitConverter.GetBytes(unchecked((int)(stub-(target+5)))),0,b,1,4);for(int i=5;i<len;i++)b[i]=0x90;return b;}'''
+          block='''    static byte[] BuildTrainingHook(long stub,long flag,long target)\n    {\n        var b=new List<byte>();\n        // if train flag == 0 -> displaced original\n        b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)flag);b.Add(0);\n        b.AddRange(new byte[]{0x0F,0x84});int jDisabled=b.Count;I32(b,0);\n        // ESI is current building in this exact BRZE update path. Preserve EDX.\n        b.Add(0x52);\n        b.AddRange(new byte[]{0x8B,0x15});U32(b,(uint)(moduleBase+RVA_LOCAL_ID));\n        b.AddRange(new byte[]{0x39,0x96,0x84,0x00,0x00,0x00});\n        b.Add(0x5A);\n        b.AddRange(new byte[]{0x0F,0x85});int jNotOwner=b.Count;I32(b,0);\n        // old trainer F4 exact technique: force progress slightly over completion just before read\n        b.AddRange(new byte[]{0xC7,0x86,0x90,0x04,0x00,0x00,0x40,0xB5,0x64,0x00});\n        int originalLabel=b.Count;b.AddRange(TrainOriginal);\n        b.Add(0xE9);int jBack=b.Count;I32(b,0);\n        PatchRel(b,jDisabled,stub+jDisabled+4,stub+originalLabel);\n        PatchRel(b,jNotOwner,stub+jNotOwner+4,stub+originalLabel);\n        PatchRel(b,jBack,stub+jBack+4,target+TrainOriginal.Length);\n        return b.ToArray();\n    }\n\n'''+anchor
+          rep(anchor,block)
+
+          old='''        long c=cave.ToInt64();hpFlag=c;stFlag=c+4;long hpStub=c+32,stStub=c+160;\n        W32(hpFlag,0);W32(stFlag,0);\n        byte[] hs=BuildHook(hpStub,hpFlag,moduleBase+RVA_ADD_HEALTH,HpOriginal,HpOriginal.Length);byte[] ss=BuildHook(stStub,stFlag,moduleBase+RVA_ADD_STAMINA,StOriginal,StOriginal.Length);\n        if(!WriteBytes(hpStub,hs)||!WriteBytes(stStub,ss))return false;\n        if(!WriteCode(moduleBase+RVA_ADD_HEALTH,JmpPatch(moduleBase+RVA_ADD_HEALTH,hpStub,HpOriginal.Length)))return false;\n        if(!WriteCode(moduleBase+RVA_ADD_STAMINA,JmpPatch(moduleBase+RVA_ADD_STAMINA,stStub,StOriginal.Length)))return false;\n        hooksInstalled=true;return true;'''
+          new='''        long c=cave.ToInt64();hpFlag=c;stFlag=c+4;trainFlag=c+8;long hpStub=c+32,stStub=c+160,trainStub=c+320;\n        long hpTarget=moduleBase+RVA_ADD_HEALTH,stTarget=moduleBase+RVA_ADD_STAMINA,trainTarget=moduleBase+RVA_TRAIN_PROGRESS_READ;\n        var trainNow=new byte[TrainOriginal.Length];\n        if(!ReadExact(trainTarget,trainNow)||!System.Linq.Enumerable.SequenceEqual(trainNow,TrainOriginal)){hookError="F7 byte mismatch";return false;}\n        W32(hpFlag,0);W32(stFlag,0);W32(trainFlag,0);\n        byte[] hs=BuildHook(hpStub,hpFlag,hpTarget,HpOriginal,HpOriginal.Length);\n        byte[] ss=BuildHook(stStub,stFlag,stTarget,StOriginal,StOriginal.Length);\n        byte[] ts=BuildTrainingHook(trainStub,trainFlag,trainTarget);\n        if(!WriteBytes(hpStub,hs)||!WriteBytes(stStub,ss)||!WriteBytes(trainStub,ts)){hookError="cave write failed";return false;}\n        if(!WriteCode(hpTarget,JmpPatch(hpTarget,hpStub,HpOriginal.Length)))return false;\n        if(!WriteCode(stTarget,JmpPatch(stTarget,stStub,StOriginal.Length))){WriteCode(hpTarget,HpOriginal);return false;}\n        if(!WriteCode(trainTarget,JmpPatch(trainTarget,trainStub,TrainOriginal.Length))){WriteCode(hpTarget,HpOriginal);WriteCode(stTarget,StOriginal);return false;}\n        hooksInstalled=true;remoteTrainState=0;hookError="";return true;'''
+          rep(old,new)
+
+          oldset='''    public static void SetHooks(bool stamina,bool hp){wantStamina=stamina;wantHp=hp;if(!Attach())return;if((stamina||hp)&&EnsureHooks()){W32(hpFlag,hp?1u:0u);W32(stFlag,stamina?1u:0u);}else if(hooksInstalled){W32(hpFlag,0);W32(stFlag,0);}}'''
+          newset='''    public static void SetHooks(bool stamina,bool hp,bool training){wantStamina=stamina;wantHp=hp;if(!Attach())return;if((stamina||hp||training)&&EnsureHooks()){W32(hpFlag,hp?1u:0u);W32(stFlag,stamina?1u:0u);int t=training?1:0;if(remoteTrainState!=t&&W32(trainFlag,(uint)t))remoteTrainState=t;}else if(hooksInstalled){W32(hpFlag,0);W32(stFlag,0);if(remoteTrainState!=0&&W32(trainFlag,0))remoteTrainState=0;}}'''
+          rep(oldset,newset)
+
+          rep('if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);if(instantTrain)ApplyInstantUnitTraining(lid);else trainingBuildings=0;',
+              'if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);trainingBuildings=0;')
+          rep('return $"Attached | hook:{hooksInstalled} selected:{selectedLocked} training:{trainingBuildings} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}";',
+              'return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);')
+
+          p.write_text(s,encoding='utf-8')
+          print('patched',len(s))
+          '@ | python
+      - name: Compile smoke
+        shell: pwsh
+        run: dotnet build BRZETrainer.csproj -c Release -r win-x86
+      - name: Commit F7 hook
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Program.cs
+          git commit -m "Use legacy progress-read hook for F7 instant training" || exit 0
+          git push
