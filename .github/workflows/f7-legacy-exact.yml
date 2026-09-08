@@ -1,0 +1,27 @@
+name: F7 exact legacy remap
+on:
+  push:
+    paths:
+      - '.github/workflows/f7-legacy-exact.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply exact legacy F4 remap
+        run: python tools/patch_f7_legacy_exact.py
+      - name: Compile smoke
+        run: dotnet build -c Release -p:PlatformTarget=x86
+      - name: Commit patch
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Program.cs
+          git commit -m 'Remap F7 to exact old-trainer dedicated training hook'
+          git push
