@@ -1,0 +1,67 @@
+name: Legacy Trainer Autopsy
+
+on:
+  push:
+    paths:
+      - 'reference/old-trainer/**'
+      - '.github/workflows/legacy-trainer-autopsy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  autopsy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install analysis tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y binutils file p7zip-full curl xz-utils
+          curl -L --fail -o /tmp/upx.tar.xz https://github.com/upx/upx/releases/download/v5.2.0/upx-5.2.0-amd64_linux.tar.xz
+          echo '3db5d3294707439db97866feab8d75d800f028f48481a40547411824da4288a1  /tmp/upx.tar.xz' | sha256sum -c -
+          mkdir -p reference/old-trainer/tools
+          tar -xf /tmp/upx.tar.xz -C /tmp
+          cp /tmp/upx-5.2.0-amd64_linux/upx reference/old-trainer/tools/upx
+          chmod +x reference/old-trainer/tools/upx
+
+      - name: Reconstruct supplied sample when present
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ -f reference/old-trainer/sample.b64 ]; then
+            base64 -d reference/old-trainer/sample.b64 > reference/old-trainer/BattleRealmsTrainer.exe
+          fi
+
+      - name: Analyze packed and unpacked trainer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sample=reference/old-trainer/BattleRealmsTrainer.exe
+          out=reference/old-trainer/out
+          mkdir -p "$out"
+          if [ ! -f "$sample" ]; then
+            echo 'Sample not committed yet; lab infrastructure is ready.' | tee "$out/README.txt"
+            exit 0
+          fi
+          sha256sum "$sample" | tee "$out/00-sha256.txt"
+          file "$sample" | tee "$out/01-file.txt"
+          reference/old-trainer/tools/upx -t "$sample" |& tee "$out/02-upx-test.txt"
+          cp "$sample" "$out/BattleRealmsTrainer.unpacked.exe"
+          reference/old-trainer/tools/upx -d -f "$out/BattleRealmsTrainer.unpacked.exe" |& tee "$out/03-upx-unpack.txt"
+          file "$out/BattleRealmsTrainer.unpacked.exe" | tee "$out/04-unpacked-file.txt"
+          objdump -x "$out/BattleRealmsTrainer.unpacked.exe" > "$out/10-pe-headers-imports.txt"
+          objdump -d -Mintel "$out/BattleRealmsTrainer.unpacked.exe" > "$out/20-disassembly.txt"
+          strings -a -n 4 "$out/BattleRealmsTrainer.unpacked.exe" > "$out/11-strings-ascii.txt"
+          strings -a -el -n 4 "$out/BattleRealmsTrainer.unpacked.exe" > "$out/12-strings-utf16.txt"
+          grep -Eina 'OpenProcess|ReadProcessMemory|WriteProcessMemory|VirtualAllocEx|VirtualProtectEx|CreateRemoteThread|FindWindow|GetAsyncKeyState|RegisterHotKey|SetTimer|Battle|Realm|Rice|Water|Yin|Yang|Health|Stamina|Invinc|Train|Build|Horse|Wolf|Population|Unit|Player' "$out"/*.txt > "$out/30-interesting-hits.txt" || true
+
+      - name: Upload autopsy output
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-trainer-autopsy
+          path: reference/old-trainer/out/
