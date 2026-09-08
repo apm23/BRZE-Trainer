@@ -84,9 +84,9 @@ internal static class Native
     public static void Start(){ if(running)return; running=true; topupThread=new Thread(TopupLoop){IsBackground=true,Name="BRZE-Selected-Topup"}; topupThread.Start(); }
     public static void Stop(){ running=false; try{topupThread?.Join(300);}catch{} Detach(); }
 
-    static bool ReadExact(long a,byte[] b){IntPtr hh=h;return hh!=IntPtr.Zero&&ReadProcessMemory(hh,new IntPtr(a),b,b.Length,out var n)&&n.ToInt64()==b.Length;}
+    static bool ReadExact(long a,byte[] b){IntPtr hh=h;return hh!=IntPtr.Zero&&ReadProcessMemory(hh,new IntPtr(unchecked((int)(uint)a)),b,b.Length,out var n)&&n.ToInt64()==b.Length;}
     static uint R32(long a){var b=new byte[4];return ReadExact(a,b)?BitConverter.ToUInt32(b,0):0;}
-    static bool WriteBytes(long a,byte[] b){IntPtr hh=h;return hh!=IntPtr.Zero&&WriteProcessMemory(hh,new IntPtr(a),b,b.Length,out var n)&&n.ToInt64()==b.Length;}
+    static bool WriteBytes(long a,byte[] b){IntPtr hh=h;return hh!=IntPtr.Zero&&WriteProcessMemory(hh,new IntPtr(unchecked((int)(uint)a)),b,b.Length,out var n)&&n.ToInt64()==b.Length;}
     static bool W32(long a,uint v)=>WriteBytes(a,BitConverter.GetBytes(v));
     static bool W8(long a,byte v)=>WriteBytes(a,new byte[]{v});
     static uint Fixed16(uint v){ulong x=((ulong)v)<<16;return x>uint.MaxValue?uint.MaxValue:(uint)x;}
@@ -225,15 +225,15 @@ internal static class Native
 
     static void ApplyInstantUnitTraining(uint lid)
     {
-        if((DateTime.UtcNow-lastBuildingScan).TotalMilliseconds<50)return;
+        if((DateTime.UtcNow-lastBuildingScan).TotalMilliseconds<500)return;
         lastBuildingScan=DateTime.UtcNow; trainingBuildings=0;
         uint mgr=R32(moduleBase+RVA_BUILDING_POOL); if(mgr==0)return;
         var seen=new HashSet<uint>();
-        ScanBuildingPointerTable(mgr,lid,seen,512);
-        for(int off=0;off<=0x80;off+=4)
+        ScanBuildingPointerTable(mgr,lid,seen,128);
+        for(int off=0;off<=0x40;off+=4)
         {
             uint table=R32((long)mgr+off);
-            if(table>=0x10000)ScanBuildingPointerTable(table,lid,seen,512);
+            if(table>=0x10000 && table<=0xFFF00000)ScanBuildingPointerTable(table,lid,seen,128);
         }
     }
     static void ScanBuildingPointerTable(uint table,uint lid,HashSet<uint> seen,int max)
@@ -241,7 +241,7 @@ internal static class Native
         for(int i=0;i<max;i++)
         {
             uint obj=R32((long)table+i*4);
-            if(obj<0x10000||!seen.Add(obj))continue;
+            if(obj<0x10000||obj>0xFFF00000||!seen.Add(obj))continue;
             if(R32((long)obj+OFF_BUILD_OWNER)!=lid)continue;
             uint type=R32((long)obj+OFF_TRAIN_TYPE);
             if(type==0xFFFFFFFF)continue;
