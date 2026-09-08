@@ -1,0 +1,49 @@
+name: Fix large-selection F5 F6 freeze
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Remove external selected-unit polling
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('Program.cs')
+          s=p.read_text(encoding='utf-8')
+          old='''    public static void Start(){ if(running)return; running=true; topupThread=new Thread(TopupLoop){IsBackground=true,Name="BRZE-Selected-Topup"}; topupThread.Start(); }
+    public static void Stop(){ running=false; try{topupThread?.Join(300);}catch{} Detach(); }'''
+          new='''    // Legacy trainer PageUp kept HP/stamina work inside game-side code; it did not
+    // hammer ReadProcessMemory across every selected unit on a 100 ms worker.
+    // F5/F6 are already event-driven hooks, so the external top-up worker is unnecessary
+    // and was the source of large-selection stalls (50+ units).
+    public static void Start(){ running=true; }
+    public static void Stop(){ running=false; Detach(); }'''
+          if old not in s: raise SystemExit('Start/Stop pattern not found')
+          s=s.replace(old,new)
+          a=s.index('    static void TopupLoop()')
+          b=s.index('    public static void InstantSelectedBuilding()',a)
+          s=s[:a]+'''    // No external HP/stamina selection walker. F5/F6 are handled only by the
+    // central health/stamina delta hooks (negative deltas blocked for selected local units).
+
+'''+s[b:]
+          s=s.replace('static int selectedLocked,trainingBuildings;', 'static int selectedLocked,trainingBuildings;')
+          s=s.replace('readonly CheckBox f5 = new() { Text = "F5 No Stamina Consumption (selected only) — HOOK TEST", AutoSize = true };','readonly CheckBox f5 = new() { Text = "F5 No Stamina Consumption (selected only) — EVENT HOOK", AutoSize = true };')
+          s=s.replace('readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — HOOK TEST", AutoSize = true };','readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — EVENT HOOK", AutoSize = true };')
+          p.write_text(s,encoding='utf-8')
+      - name: Compile smoke
+        run: dotnet build -c Release
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Program.cs
+          git commit -m "Fix 50+ unit freeze by removing HP stamina polling"
+          git push
