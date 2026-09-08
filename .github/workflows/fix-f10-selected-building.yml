@@ -1,0 +1,46 @@
+name: Fix F10 selected-building wolf stock
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/fix-f10-selected-building.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Correct F10 target from player struct to selected building
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          p=Path('Program.cs')
+          s=p.read_text(encoding='utf-8')
+          old='''    public static void MaxWolves()\n    {\n        if(!Attach())return;\n        uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);\n        if(playerPtr==0||lid>=10)return;\n        long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;\n        // Legacy v1.50q F10 wrote one byte 250 at player+0x250.\n        // BRZE 1.60 resource/Yin-Yang layout is consistently shifted +4 through this region,\n        // so the structurally equivalent field is player+0x254. Keep the old one-byte technique.\n        W8(player+0x254,250);\n    }'''
+          new='''    public static void MaxWolves()\n    {\n        if(!Attach())return;\n        uint lid=R32(moduleBase+RVA_LOCAL_ID);\n        uint obj=R32(moduleBase+RVA_SELECTED_BUILDING_A);\n        if(obj==0||R32((long)obj+OFF_BUILD_OWNER)!=lid)return;\n        // Exact old-trainer F10: read the same primary selected-building pointer used by Delete,\n        // then write ONE BYTE 0xFA at object+0x250. BRZE keeps building +0x250 unchanged.\n        W8((long)obj+0x250,250);\n    }'''
+          if old not in s: raise SystemExit('old MaxWolves body not found')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          print('corrected F10 target')
+          '@ | python
+      - name: Compile smoke
+        shell: pwsh
+        run: dotnet build BRZETrainer.csproj -c Release -r win-x86
+      - name: Commit correction
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Program.cs
+          git commit -m "Correct F10 to selected-building wolf stock field" || exit 0
+          git push
