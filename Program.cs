@@ -225,14 +225,36 @@ internal static class Native
 
     static void ApplyInstantUnitTraining(uint lid)
     {
-        if((DateTime.UtcNow-lastBuildingScan).TotalMilliseconds<25)return;lastBuildingScan=DateTime.UtcNow;uint pool=R32(moduleBase+RVA_BUILDING_POOL);if(pool==0||!ReadExact(pool,buildingRaw)){trainingBuildings=0;return;}
-        uint specialGlobal=R32(moduleBase+RVA_TRAIN_SPECIAL_GLOBAL);int active=0;for(int i=0;i<BUILDING_COUNT;i++){int o=i*BUILDING_STRIDE;if(BitConverter.ToUInt32(buildingRaw,o+OFF_BUILD_OWNER)!=lid)continue;uint type=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_TYPE);if(type==0xFFFFFFFF)continue;
-            uint gate=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_GATE),special=BitConverter.ToUInt32(buildingRaw,o+OFF_BUILD_SPECIAL);if((specialGlobal!=0&&special!=0)||gate==0xFFFFFFFF)continue;active++;uint prog=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_PROGRESS);if(prog<TRAIN_COMPLETE_FIXED){long obj=(long)pool+o;W32(obj+0x8E,5000);W32(obj+0x492,100);W32(obj+0x4BE,100);}}trainingBuildings=active;
+        if((DateTime.UtcNow-lastBuildingScan).TotalMilliseconds<50)return;
+        lastBuildingScan=DateTime.UtcNow; trainingBuildings=0;
+        uint mgr=R32(moduleBase+RVA_BUILDING_POOL); if(mgr==0)return;
+        var seen=new HashSet<uint>();
+        ScanBuildingPointerTable(mgr,lid,seen,512);
+        for(int off=0;off<=0x80;off+=4)
+        {
+            uint table=R32((long)mgr+off);
+            if(table>=0x10000)ScanBuildingPointerTable(table,lid,seen,512);
+        }
+    }
+    static void ScanBuildingPointerTable(uint table,uint lid,HashSet<uint> seen,int max)
+    {
+        for(int i=0;i<max;i++)
+        {
+            uint obj=R32((long)table+i*4);
+            if(obj<0x10000||!seen.Add(obj))continue;
+            if(R32((long)obj+OFF_BUILD_OWNER)!=lid)continue;
+            uint type=R32((long)obj+OFF_TRAIN_TYPE);
+            if(type==0xFFFFFFFF)continue;
+            uint prog=R32((long)obj+OFF_TRAIN_PROGRESS);
+            if(prog>TRAIN_COMPLETE_FIXED)continue;
+            trainingBuildings++;
+            Boost(obj,lid);
+        }
     }
     public static string Apply(bool rice,bool water,bool yinYang,bool pop,bool instantTrain)
     {
         if(!Attach())return "Waiting for Battle_Realms_F.exe...";uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);if(playerPtr==0)return "Attached, waiting for match/player data...";localId=lid;long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;if(instantTrain)ApplyInstantUnitTraining(lid);
-        if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);trainingBuildings=0;
-        return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);
+        if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);
+        return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} trainFound:{trainingBuildings} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);
     }
 }
