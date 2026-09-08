@@ -21,7 +21,7 @@ internal sealed class MainForm : Form
     readonly CheckBox f4 = new() { Text = "F4 Unlimited Population (9,999,999)", AutoSize = true };
     readonly CheckBox f5 = new() { Text = "F5 No Stamina Consumption (selected only) — HOOK TEST", AutoSize = true };
     readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — HOOK TEST", AutoSize = true };
-    readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — LEGACY PROGRESS HOOK", AutoSize = true };
+    readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — AUTO F8 COMPLETION", AutoSize = true };
     readonly Label status = new() { AutoSize = false, Height = 54, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 16 };
     readonly bool[] held = new bool[12];
@@ -48,7 +48,7 @@ internal sealed class MainForm : Form
         Toggle(0x73,4,()=>f4.Checked=!f4.Checked); Toggle(0x74,5,()=>f5.Checked=!f5.Checked); Toggle(0x75,6,()=>f6.Checked=!f6.Checked);
         Toggle(0x76,7,()=>f7.Checked=!f7.Checked); Toggle(0x77,8,()=>Native.InstantSelectedBuilding());
         Toggle(0x78,9,()=>{ bool all=f1.Checked&&f2.Checked&&f3.Checked&&f4.Checked&&f5.Checked&&f6.Checked&&f7.Checked; SetAllImplemented(!all); }); Toggle(0x79,10,()=>Native.MaxWolves());
-        Native.SetHooks(f5.Checked, f6.Checked, f7.Checked);
+        Native.SetHooks(f5.Checked, f6.Checked, false);
         status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked);
     }
 }
@@ -227,11 +227,11 @@ internal static class Native
     {
         if((DateTime.UtcNow-lastBuildingScan).TotalMilliseconds<25)return;lastBuildingScan=DateTime.UtcNow;uint pool=R32(moduleBase+RVA_BUILDING_POOL);if(pool==0||!ReadExact(pool,buildingRaw)){trainingBuildings=0;return;}
         uint specialGlobal=R32(moduleBase+RVA_TRAIN_SPECIAL_GLOBAL);int active=0;for(int i=0;i<BUILDING_COUNT;i++){int o=i*BUILDING_STRIDE;if(BitConverter.ToUInt32(buildingRaw,o+OFF_BUILD_OWNER)!=lid)continue;uint type=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_TYPE);if(type==0xFFFFFFFF)continue;
-            uint gate=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_GATE),special=BitConverter.ToUInt32(buildingRaw,o+OFF_BUILD_SPECIAL);if((specialGlobal!=0&&special!=0)||gate==0xFFFFFFFF)continue;active++;uint prog=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_PROGRESS);if(prog<TRAIN_COMPLETE_FIXED)W32((long)pool+o+OFF_TRAIN_PROGRESS,TRAIN_COMPLETE_FIXED);}trainingBuildings=active;
+            uint gate=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_GATE),special=BitConverter.ToUInt32(buildingRaw,o+OFF_BUILD_SPECIAL);if((specialGlobal!=0&&special!=0)||gate==0xFFFFFFFF)continue;active++;uint prog=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_PROGRESS);if(prog<TRAIN_COMPLETE_FIXED){long obj=(long)pool+o;W32(obj+0x8E,5000);W32(obj+0x492,100);W32(obj+0x4BE,100);}}trainingBuildings=active;
     }
     public static string Apply(bool rice,bool water,bool yinYang,bool pop,bool instantTrain)
     {
-        if(!Attach())return "Waiting for Battle_Realms_F.exe...";uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);if(playerPtr==0)return "Attached, waiting for match/player data...";localId=lid;long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;
+        if(!Attach())return "Waiting for Battle_Realms_F.exe...";uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);if(playerPtr==0)return "Attached, waiting for match/player data...";localId=lid;long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;if(instantTrain)ApplyInstantUnitTraining(lid);
         if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);trainingBuildings=0;
         return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);
     }
