@@ -182,13 +182,12 @@ internal static class Native
     public static void MaxWolves()
     {
         if(!Attach())return;
-        uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);
-        if(playerPtr==0||lid>=10)return;
-        long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;
-        // Legacy v1.50q F10 wrote one byte 250 at player+0x250.
-        // BRZE 1.60 resource/Yin-Yang layout is consistently shifted +4 through this region,
-        // so the structurally equivalent field is player+0x254. Keep the old one-byte technique.
-        W8(player+0x254,250);
+        uint lid=R32(moduleBase+RVA_LOCAL_ID);
+        uint obj=R32(moduleBase+RVA_SELECTED_BUILDING_A);
+        if(obj==0||R32((long)obj+OFF_BUILD_OWNER)!=lid)return;
+        // Exact old-trainer F10: read the same primary selected-building pointer used by Delete,
+        // then write ONE BYTE 0xFA at object+0x250. BRZE keeps building +0x250 unchanged.
+        W8((long)obj+0x250,250);
     }
     static void Boost(uint obj,uint lid)
     {
