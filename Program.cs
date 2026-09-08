@@ -21,7 +21,7 @@ internal sealed class MainForm : Form
     readonly CheckBox f4 = new() { Text = "F4 Unlimited Population (9,999,999)", AutoSize = true };
     readonly CheckBox f5 = new() { Text = "F5 No Stamina Consumption (selected only) — HOOK TEST", AutoSize = true };
     readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — HOOK TEST", AutoSize = true };
-    readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — AUTO F8 COMPLETION", AutoSize = true };
+    readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — LEGACY F4 EXACT REMAP", AutoSize = true };
     readonly Label status = new() { AutoSize = false, Height = 54, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 16 };
     readonly bool[] held = new bool[12];
@@ -48,7 +48,7 @@ internal sealed class MainForm : Form
         Toggle(0x73,4,()=>f4.Checked=!f4.Checked); Toggle(0x74,5,()=>f5.Checked=!f5.Checked); Toggle(0x75,6,()=>f6.Checked=!f6.Checked);
         Toggle(0x76,7,()=>f7.Checked=!f7.Checked); Toggle(0x77,8,()=>Native.InstantSelectedBuilding());
         Toggle(0x78,9,()=>{ bool all=f1.Checked&&f2.Checked&&f3.Checked&&f4.Checked&&f5.Checked&&f6.Checked&&f7.Checked; SetAllImplemented(!all); }); Toggle(0x79,10,()=>Native.MaxWolves());
-        Native.SetHooks(f5.Checked, f6.Checked, false);
+        Native.SetHooks(f5.Checked, f6.Checked, f7.Checked);
         status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked);
     }
 }
@@ -68,7 +68,7 @@ internal static class Native
     const uint Access=0x10|0x20|0x8|0x400; const uint MEM_COMMIT=0x1000,MEM_RESERVE=0x2000,MEM_RELEASE=0x8000,PAGE_EXECUTE_READWRITE=0x40;
     const int RVA_PLAYER_PTR=0x4416A0,RVA_LOCAL_ID=0x4416D0,PLAYER_STRIDE=0x5E8,OFF_RICE=0xD8,OFF_WATER=0xDC,OFF_YIN=0x2E8,OFF_YANG=0x2EC,RVA_MAX_UNITS=0x467B90;
     const int RVA_UNIT_POOL=0x4796A0,UNIT_STRIDE=0x818,UNIT_COUNT=2000,OFF_DEF=0x74,OFF_OWNER=0x240,OFF_SEL_A=0x3A8,OFF_SEL_B=0x3AC,OFF_HP=0x404,OFF_ST=0x408,RVA_SELECTION_LIST=0x441708,RVA_SELECTED_BUILDING_A=0x4417D4,RVA_SELECTED_BUILDING_B=0x4417D8;
-    const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB,RVA_TRAIN_PROGRESS_READ=0x0D65DC;
+    const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB,RVA_TRAIN_PROGRESS_READ=0x0D5DDB;
     const int RVA_BUILDING_POOL=0x4814E0,BUILDING_STRIDE=0x6A4,BUILDING_COUNT=500,OFF_BUILD_OWNER=0x84,OFF_TRAIN_TYPE=0x488,OFF_TRAIN_PROGRESS=0x490,OFF_TRAIN_GATE=0x4B8,OFF_BUILD_SPECIAL=0x68C,RVA_TRAIN_SPECIAL_GLOBAL=0x46779C;
     const uint TRAIN_COMPLETE_FIXED=0x00640000;
 
@@ -78,7 +78,7 @@ internal static class Native
     static readonly byte[] unitRaw=new byte[UNIT_COUNT*UNIT_STRIDE],buildingRaw=new byte[BUILDING_COUNT*BUILDING_STRIDE];
     static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag,trainFlag; static bool hooksInstalled; static int remoteTrainState=-1; static string hookError="";
     static readonly byte[] HpOriginal={0x55,0x8B,0xEC,0x83,0xE4,0xF8,0x56,0x8B,0xF1,0x57};
-    static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56}; static readonly byte[] TrainOriginal={0x03,0x86,0x90,0x04,0x00,0x00};
+    static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56}; static readonly byte[] TrainOriginal={0x8B,0x83,0x90,0x04,0x00,0x00};
 
     readonly struct UnitInfo { public readonly long Addr; public readonly uint MaxHp,MaxSt; public UnitInfo(long a,uint hp,uint st){Addr=a;MaxHp=hp;MaxSt=st;} }
     public static void Start(){ if(running)return; running=true; topupThread=new Thread(TopupLoop){IsBackground=true,Name="BRZE-Selected-Topup"}; topupThread.Start(); }
@@ -126,17 +126,17 @@ internal static class Native
     static byte[] BuildTrainingHook(long stub,long flag,long target)
     {
         var b=new List<byte>();
-        // if train flag == 0 -> displaced original
+        // Old trainer F4 used a dedicated training progress hook. BRZE 1.60 equivalent at 0x4D5DDB:
+        //   mov eax,[ebx+0x490] ; add eax,esi ; mov [ebx+0x490],eax ; cmp eax,0x640000
+        // If enabled for our building, force +0x490 to 0x64B540 immediately before that read.
         b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)flag);b.Add(0);
         b.AddRange(new byte[]{0x0F,0x84});int jDisabled=b.Count;I32(b,0);
-        // ESI is current building in this exact BRZE update path. Preserve EDX.
-        b.Add(0x52);
-        b.AddRange(new byte[]{0x8B,0x15});U32(b,(uint)(moduleBase+RVA_LOCAL_ID));
-        b.AddRange(new byte[]{0x39,0x96,0x84,0x00,0x00,0x00});
-        b.Add(0x5A);
+        b.Add(0x52); // push edx
+        b.AddRange(new byte[]{0x8B,0x15});U32(b,(uint)(moduleBase+RVA_LOCAL_ID)); // mov edx,[localId]
+        b.AddRange(new byte[]{0x39,0x93,0x84,0x00,0x00,0x00}); // cmp [ebx+84],edx
+        b.Add(0x5A); // pop edx
         b.AddRange(new byte[]{0x0F,0x85});int jNotOwner=b.Count;I32(b,0);
-        // old trainer F4 exact technique: force progress slightly over completion just before read
-        b.AddRange(new byte[]{0xC7,0x86,0x90,0x04,0x00,0x00,0x40,0xB5,0x64,0x00});
+        b.AddRange(new byte[]{0xC7,0x83,0x90,0x04,0x00,0x00,0x40,0xB5,0x64,0x00}); // [ebx+490]=0x64B540
         int originalLabel=b.Count;b.AddRange(TrainOriginal);
         b.Add(0xE9);int jBack=b.Count;I32(b,0);
         PatchRel(b,jDisabled,stub+jDisabled+4,stub+originalLabel);
@@ -223,38 +223,10 @@ internal static class Native
         W32((long)obj+0x8E,5000); W32((long)obj+0x492,100); W32((long)obj+0x4BE,100);
     }
 
-    static void ApplyInstantUnitTraining(uint lid)
-    {
-        if((DateTime.UtcNow-lastBuildingScan).TotalMilliseconds<500)return;
-        lastBuildingScan=DateTime.UtcNow; trainingBuildings=0;
-        uint mgr=R32(moduleBase+RVA_BUILDING_POOL); if(mgr==0)return;
-        var seen=new HashSet<uint>();
-        ScanBuildingPointerTable(mgr,lid,seen,128);
-        for(int off=0;off<=0x40;off+=4)
-        {
-            uint table=R32((long)mgr+off);
-            if(table>=0x10000 && table<=0xFFF00000)ScanBuildingPointerTable(table,lid,seen,128);
-        }
-    }
-    static void ScanBuildingPointerTable(uint table,uint lid,HashSet<uint> seen,int max)
-    {
-        for(int i=0;i<max;i++)
-        {
-            uint obj=R32((long)table+i*4);
-            if(obj<0x10000||obj>0xFFF00000||!seen.Add(obj))continue;
-            if(R32((long)obj+OFF_BUILD_OWNER)!=lid)continue;
-            uint type=R32((long)obj+OFF_TRAIN_TYPE);
-            if(type==0xFFFFFFFF)continue;
-            uint prog=R32((long)obj+OFF_TRAIN_PROGRESS);
-            if(prog>TRAIN_COMPLETE_FIXED)continue;
-            trainingBuildings++;
-            Boost(obj,lid);
-        }
-    }
     public static string Apply(bool rice,bool water,bool yinYang,bool pop,bool instantTrain)
     {
-        if(!Attach())return "Waiting for Battle_Realms_F.exe...";uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);if(playerPtr==0)return "Attached, waiting for match/player data...";localId=lid;long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;if(instantTrain)ApplyInstantUnitTraining(lid);
+        if(!Attach())return "Waiting for Battle_Realms_F.exe...";uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);if(playerPtr==0)return "Attached, waiting for match/player data...";localId=lid;long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;
         if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);
-        return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} trainFound:{trainingBuildings} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);
+        return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} F7LegacyHook:{instantTrain} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);
     }
 }
