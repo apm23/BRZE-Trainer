@@ -33,23 +33,41 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          b64=reference/old-trainer/sample.b64
-          sample=reference/old-trainer/BattleRealmsTrainer.exe
+          root=reference/old-trainer
+          sample="$root/BattleRealmsTrainer.exe"
+          joined="$root/sample.joined.b64"
           expected_sha='41571fc8cd83e296a60a04d934440b5a01d22ce45d111acdc31b13f16e8aa24d'
           expected_size='17920'
 
-          test -f "$b64" || { echo 'FATAL: sample.b64 missing; refusing to autopsy an unknown specimen.' >&2; exit 40; }
-          base64 -d "$b64" > "$sample"
+          parts=(
+            "$root/sample.fix01a.b64"
+            "$root/sample.fix01b.b64"
+            "$root/sample.part02.b64"
+            "$root/sample.fix03a.b64"
+            "$root/sample.fix03b.b64"
+            "$root/sample.part04.b64"
+            "$root/sample.part05.b64"
+            "$root/sample.part06.b64"
+          )
+
+          for p in "${parts[@]}"; do
+            test -f "$p" || { echo "FATAL: specimen chunk missing: $p" >&2; exit 40; }
+          done
+
+          cat "${parts[@]}" | tr -d '\r\n\t ' > "$joined"
+          test "$(wc -c < "$joined")" = '23896' || { echo "FATAL: joined base64 length mismatch: $(wc -c < "$joined")" >&2; exit 41; }
+          base64 -d "$joined" > "$sample"
 
           actual_sha="$(sha256sum "$sample" | awk '{print $1}')"
           actual_size="$(stat -c '%s' "$sample")"
-          test "$actual_sha" = "$expected_sha" || { echo "FATAL: specimen SHA-256 mismatch: $actual_sha" >&2; exit 41; }
-          test "$actual_size" = "$expected_size" || { echo "FATAL: specimen size mismatch: $actual_size" >&2; exit 42; }
+          test "$actual_sha" = "$expected_sha" || { echo "FATAL: specimen SHA-256 mismatch: $actual_sha" >&2; exit 42; }
+          test "$actual_size" = "$expected_size" || { echo "FATAL: specimen size mismatch: $actual_size" >&2; exit 43; }
 
-          magic="$(dd if="$sample" bs=1 count=2 status=none | xxd -p)"
-          test "$magic" = '4d5a' || { echo 'FATAL: specimen is not an MZ executable.' >&2; exit 43; }
-          file "$sample" | grep -Eq 'PE32 executable.*Intel 80386|PE32 executable.*Intel i386' || { echo 'FATAL: specimen is not the expected x86 PE32 executable.' >&2; file "$sample" >&2; exit 44; }
-          strings -a "$sample" | grep -q 'UPX!' || { echo 'FATAL: expected UPX marker missing.' >&2; exit 45; }
+          magic="$(od -An -tx1 -N2 "$sample" | tr -d ' \n')"
+          test "$magic" = '4d5a' || { echo "FATAL: specimen MZ magic mismatch: $magic" >&2; exit 44; }
+          file "$sample" | tee /tmp/specimen-file.txt
+          grep -Eq 'PE32 executable.*Intel 80386|PE32 executable.*Intel i386' /tmp/specimen-file.txt || { echo 'FATAL: specimen is not the expected x86 PE32 executable.' >&2; exit 45; }
+          strings -a "$sample" | grep -q 'UPX!' || { echo 'FATAL: expected UPX marker missing.' >&2; exit 46; }
 
           echo "Authenticated exact trainer specimen: sha256=$actual_sha size=$actual_size"
 
