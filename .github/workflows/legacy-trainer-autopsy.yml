@@ -29,13 +29,29 @@ jobs:
           cp /tmp/upx-5.2.0-amd64_linux/upx reference/old-trainer/tools/upx
           chmod +x reference/old-trainer/tools/upx
 
-      - name: Reconstruct supplied sample when present
+      - name: Reconstruct and authenticate exact supplied specimen
         shell: bash
         run: |
           set -euxo pipefail
-          if [ -f reference/old-trainer/sample.b64 ]; then
-            base64 -d reference/old-trainer/sample.b64 > reference/old-trainer/BattleRealmsTrainer.exe
-          fi
+          b64=reference/old-trainer/sample.b64
+          sample=reference/old-trainer/BattleRealmsTrainer.exe
+          expected_sha='41571fc8cd83e296a60a04d934440b5a01d22ce45d111acdc31b13f16e8aa24d'
+          expected_size='17920'
+
+          test -f "$b64" || { echo 'FATAL: sample.b64 missing; refusing to autopsy an unknown specimen.' >&2; exit 40; }
+          base64 -d "$b64" > "$sample"
+
+          actual_sha="$(sha256sum "$sample" | awk '{print $1}')"
+          actual_size="$(stat -c '%s' "$sample")"
+          test "$actual_sha" = "$expected_sha" || { echo "FATAL: specimen SHA-256 mismatch: $actual_sha" >&2; exit 41; }
+          test "$actual_size" = "$expected_size" || { echo "FATAL: specimen size mismatch: $actual_size" >&2; exit 42; }
+
+          magic="$(dd if="$sample" bs=1 count=2 status=none | xxd -p)"
+          test "$magic" = '4d5a' || { echo 'FATAL: specimen is not an MZ executable.' >&2; exit 43; }
+          file "$sample" | grep -Eq 'PE32 executable.*Intel 80386|PE32 executable.*Intel i386' || { echo 'FATAL: specimen is not the expected x86 PE32 executable.' >&2; file "$sample" >&2; exit 44; }
+          strings -a "$sample" | grep -q 'UPX!' || { echo 'FATAL: expected UPX marker missing.' >&2; exit 45; }
+
+          echo "Authenticated exact trainer specimen: sha256=$actual_sha size=$actual_size"
 
       - name: Analyze packed and unpacked trainer
         shell: bash
@@ -43,25 +59,46 @@ jobs:
           set -euxo pipefail
           sample=reference/old-trainer/BattleRealmsTrainer.exe
           out=reference/old-trainer/out
+          rm -rf "$out"
           mkdir -p "$out"
-          if [ ! -f "$sample" ]; then
-            echo 'Sample not committed yet; lab infrastructure is ready.' | tee "$out/README.txt"
-            exit 0
-          fi
+
           sha256sum "$sample" | tee "$out/00-sha256.txt"
+          stat -c 'size=%s bytes' "$sample" | tee "$out/00-size.txt"
           file "$sample" | tee "$out/01-file.txt"
           reference/old-trainer/tools/upx -t "$sample" |& tee "$out/02-upx-test.txt"
           cp "$sample" "$out/BattleRealmsTrainer.unpacked.exe"
           reference/old-trainer/tools/upx -d -f "$out/BattleRealmsTrainer.unpacked.exe" |& tee "$out/03-upx-unpack.txt"
           file "$out/BattleRealmsTrainer.unpacked.exe" | tee "$out/04-unpacked-file.txt"
+          sha256sum "$out/BattleRealmsTrainer.unpacked.exe" | tee "$out/05-unpacked-sha256.txt"
+          stat -c 'size=%s bytes' "$out/BattleRealmsTrainer.unpacked.exe" | tee "$out/06-unpacked-size.txt"
+
           objdump -x "$out/BattleRealmsTrainer.unpacked.exe" > "$out/10-pe-headers-imports.txt"
+          objdump -h "$out/BattleRealmsTrainer.unpacked.exe" > "$out/10b-sections.txt"
           objdump -d -Mintel "$out/BattleRealmsTrainer.unpacked.exe" > "$out/20-disassembly.txt"
           strings -a -n 4 "$out/BattleRealmsTrainer.unpacked.exe" > "$out/11-strings-ascii.txt"
           strings -a -el -n 4 "$out/BattleRealmsTrainer.unpacked.exe" > "$out/12-strings-utf16.txt"
-          grep -Eina 'OpenProcess|ReadProcessMemory|WriteProcessMemory|VirtualAllocEx|VirtualProtectEx|CreateRemoteThread|FindWindow|GetAsyncKeyState|RegisterHotKey|SetTimer|Battle|Realm|Rice|Water|Yin|Yang|Health|Stamina|Invinc|Train|Build|Horse|Wolf|Population|Unit|Player' "$out"/*.txt > "$out/30-interesting-hits.txt" || true
+
+          grep -Eina 'OpenProcess|ReadProcessMemory|WriteProcessMemory|VirtualAllocEx|VirtualProtectEx|CreateRemoteThread|FindWindow|GetAsyncKeyState|RegisterHotKey|SetTimer|Battle|Realm|Rice|Water|Yin|Yang|Health|HP|Stamina|Invinc|God|Train|Build|Upgrade|Horse|Wolf|Population|Unit|Player|BattleGear|Battle Gear' "$out"/*.txt > "$out/30-interesting-hits.txt" || true
+          grep -Eina 'OpenProcess|ReadProcessMemory|WriteProcessMemory|VirtualAllocEx|VirtualProtectEx|CreateRemoteThread|FindWindow|GetAsyncKeyState|RegisterHotKey|SetTimer' "$out/10-pe-headers-imports.txt" > "$out/31-memory-hotkey-imports.txt" || true
+          grep -Eina 'Rice|Water|Yin|Yang|Health|HP|Stamina|Invinc|God|Train|Build|Upgrade|Horse|Wolf|Population|BattleGear|Battle Gear' "$out/11-strings-ascii.txt" "$out/12-strings-utf16.txt" > "$out/32-feature-strings.txt" || true
+
+          {
+            echo '=== EXACT SPECIMEN VERIFIED ==='
+            cat "$out/00-sha256.txt"
+            cat "$out/00-size.txt"
+            echo
+            echo '=== PACKER TEST ==='
+            cat "$out/02-upx-test.txt"
+            echo
+            echo '=== UNPACK RESULT ==='
+            cat "$out/03-upx-unpack.txt"
+            cat "$out/04-unpacked-file.txt"
+            cat "$out/06-unpacked-size.txt"
+          } > "$out/99-summary.txt"
 
       - name: Upload autopsy output
         uses: actions/upload-artifact@v4
         with:
           name: legacy-trainer-autopsy
           path: reference/old-trainer/out/
+          if-no-files-found: error
