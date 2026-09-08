@@ -22,17 +22,17 @@ internal sealed class MainForm : Form
     readonly CheckBox f1 = new() { Text = "F1 Infinite Rice", AutoSize = true };
     readonly CheckBox f2 = new() { Text = "F2 Infinite Water", AutoSize = true };
     readonly CheckBox f3 = new() { Text = "F3 Infinite Yin + Yang", AutoSize = true };
-    readonly CheckBox f4 = new() { Text = "F4 Unlimited Population", AutoSize = true };
+    readonly CheckBox f4 = new() { Text = "F4 Unlimited Population (9,999,999)", AutoSize = true };
     readonly CheckBox f5 = new() { Text = "F5 Infinite Stamina (selected only)", AutoSize = true };
     readonly CheckBox f6 = new() { Text = "F6 HP Lock (selected only)", AutoSize = true };
     readonly Label status = new() { AutoSize = false, Height = 48, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 16 };
-    readonly bool[] held = new bool[10];
+    readonly bool[] held = new bool[12];
 
     public MainForm()
     {
         Text = "BRZE Trainer 1.60";
-        ClientSize = new Size(430, 330);
+        ClientSize = new Size(450, 370);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -41,7 +41,9 @@ internal sealed class MainForm : Form
         panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6 });
         panel.Controls.Add(new Label { Text = "F7 Instant Training — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
         panel.Controls.Add(new Label { Text = "F8 Instant Building — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
-        panel.Controls.Add(new Label { Text = "F9 Disable all", AutoSize = true });
+        panel.Controls.Add(new Label { Text = "F9 Enable / Disable ALL implemented cheats", AutoSize = true });
+        panel.Controls.Add(new Label { Text = "F10 Unlimited Horses — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
+        panel.Controls.Add(new Label { Text = "F11 Unlimited Wolves — pending runtime mapping", AutoSize = true, ForeColor = Color.DimGray });
         Controls.Add(panel);
         Controls.Add(status);
 
@@ -57,6 +59,16 @@ internal sealed class MainForm : Form
         held[idx] = now;
     }
 
+    void SetAllImplemented(bool enabled)
+    {
+        f1.Checked = enabled;
+        f2.Checked = enabled;
+        f3.Checked = enabled;
+        f4.Checked = enabled;
+        f5.Checked = enabled;
+        f6.Checked = enabled;
+    }
+
     void TickTrainer()
     {
         Toggle(0x70, 1, () => f1.Checked = !f1.Checked);
@@ -65,7 +77,11 @@ internal sealed class MainForm : Form
         Toggle(0x73, 4, () => f4.Checked = !f4.Checked);
         Toggle(0x74, 5, () => f5.Checked = !f5.Checked);
         Toggle(0x75, 6, () => f6.Checked = !f6.Checked);
-        Toggle(0x78, 9, () => { f1.Checked=f2.Checked=f3.Checked=f4.Checked=f5.Checked=f6.Checked=false; });
+        Toggle(0x78, 9, () =>
+        {
+            bool allEnabled = f1.Checked && f2.Checked && f3.Checked && f4.Checked && f5.Checked && f6.Checked;
+            SetAllImplemented(!allEnabled);
+        });
 
         status.Text = Native.Apply(f1.Checked, f2.Checked, f3.Checked, f4.Checked, f5.Checked, f6.Checked);
     }
@@ -155,7 +171,7 @@ internal static class Native
         if (rice) W32(player + OFF_RICE, 50000);
         if (water) W32(player + OFF_WATER, 50000);
         if (yinYang) { W32(player + OFF_YIN, 10); W32(player + OFF_YANG, 10); }
-        if (pop) W32(moduleBase + RVA_MAX_UNITS + localId * 4, 255);
+        if (pop) W32(moduleBase + RVA_MAX_UNITS + localId * 4, 9_999_999);
 
         int sel = 0;
         if ((stamina || hp) && RefreshUnits())
