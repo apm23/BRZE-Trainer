@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Apply patch
+      - name: Apply guarded pointer patch
         run: python tools/patch_f7_pointer.py
       - name: Compile smoke
         run: dotnet build -c Release -p:PlatformTarget=x86
@@ -23,5 +23,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add Program.cs
-          git commit -m 'Fix F7 building discovery using runtime pointer tables'
+          git commit -m 'Guard F7 pointer scan overflow and reduce polling load'
           git push
