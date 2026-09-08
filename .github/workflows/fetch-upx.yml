@@ -1,0 +1,32 @@
+name: Fetch UPX Tool
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fetch-upx.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download verified UPX
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L --fail -o /tmp/upx.tar.xz https://github.com/upx/upx/releases/download/v5.2.0/upx-5.2.0-amd64_linux.tar.xz
+          echo '3db5d3294707439db97866feab8d75d800f028f48481a40547411824da4288a1  /tmp/upx.tar.xz' | sha256sum -c -
+          tar -xf /tmp/upx.tar.xz -C /tmp
+          mkdir -p /tmp/out
+          cp /tmp/upx-5.2.0-amd64_linux/upx /tmp/out/upx
+          chmod +x /tmp/out/upx
+          /tmp/out/upx --version | head -n 1
+      - name: Upload UPX
+        uses: actions/upload-artifact@v4
+        with:
+          name: upx-linux-amd64-5.2.0
+          path: /tmp/out/upx
+          if-no-files-found: error
