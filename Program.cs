@@ -35,7 +35,7 @@ internal sealed class MainForm : Form
         panel.Controls.Add(new Label { Text = "F7 building skills/upgrades — not enabled yet", AutoSize = true, ForeColor = Color.DimGray });
         panel.Controls.Add(new Label { Text = "F8 Instant Build/Repair/Research — PUSH TEST (selected building)", AutoSize = true });
         panel.Controls.Add(new Label { Text = "F9 Enable / Disable ALL implemented cheats", AutoSize = true });
-        panel.Controls.Add(new Label { Text = "F10 Unlimited Horses + Wolves — pending", AutoSize = true, ForeColor = Color.DimGray });
+        panel.Controls.Add(new Label { Text = "F10 Maximum Wolves — PUSH TEST (old trainer remap; horses pending)", AutoSize = true });
         Controls.Add(panel); Controls.Add(status);
         Native.Start(); timer.Tick += (_, _) => TickTrainer(); timer.Start(); FormClosed += (_, _) => Native.Stop();
     }
@@ -47,7 +47,7 @@ internal sealed class MainForm : Form
         Toggle(0x70,1,()=>f1.Checked=!f1.Checked); Toggle(0x71,2,()=>f2.Checked=!f2.Checked); Toggle(0x72,3,()=>f3.Checked=!f3.Checked);
         Toggle(0x73,4,()=>f4.Checked=!f4.Checked); Toggle(0x74,5,()=>f5.Checked=!f5.Checked); Toggle(0x75,6,()=>f6.Checked=!f6.Checked);
         Toggle(0x76,7,()=>f7.Checked=!f7.Checked); Toggle(0x77,8,()=>Native.InstantSelectedBuilding());
-        Toggle(0x78,9,()=>{ bool all=f1.Checked&&f2.Checked&&f3.Checked&&f4.Checked&&f5.Checked&&f6.Checked&&f7.Checked; SetAllImplemented(!all); });
+        Toggle(0x78,9,()=>{ bool all=f1.Checked&&f2.Checked&&f3.Checked&&f4.Checked&&f5.Checked&&f6.Checked&&f7.Checked; SetAllImplemented(!all); }); Toggle(0x79,10,()=>Native.MaxWolves());
         Native.SetHooks(f5.Checked, f6.Checked);
         status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked);
     }
@@ -88,6 +88,7 @@ internal static class Native
     static uint R32(long a){var b=new byte[4];return ReadExact(a,b)?BitConverter.ToUInt32(b,0):0;}
     static bool WriteBytes(long a,byte[] b){IntPtr hh=h;return hh!=IntPtr.Zero&&WriteProcessMemory(hh,new IntPtr(a),b,b.Length,out var n)&&n.ToInt64()==b.Length;}
     static bool W32(long a,uint v)=>WriteBytes(a,BitConverter.GetBytes(v));
+    static bool W8(long a,byte v)=>WriteBytes(a,new byte[]{v});
     static uint Fixed16(uint v){ulong x=((ulong)v)<<16;return x>uint.MaxValue?uint.MaxValue:(uint)x;}
 
     static bool Attach()
@@ -176,6 +177,18 @@ internal static class Native
         if(!Attach())return; uint lid=R32(moduleBase+RVA_LOCAL_ID);
         uint a=R32(moduleBase+RVA_SELECTED_BUILDING_A),b=R32(moduleBase+RVA_SELECTED_BUILDING_B);
         Boost(a,lid); if(b!=a)Boost(b,lid);
+    }
+
+    public static void MaxWolves()
+    {
+        if(!Attach())return;
+        uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);
+        if(playerPtr==0||lid>=10)return;
+        long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;
+        // Legacy v1.50q F10 wrote one byte 250 at player+0x250.
+        // BRZE 1.60 resource/Yin-Yang layout is consistently shifted +4 through this region,
+        // so the structurally equivalent field is player+0x254. Keep the old one-byte technique.
+        W8(player+0x254,250);
     }
     static void Boost(uint obj,uint lid)
     {
