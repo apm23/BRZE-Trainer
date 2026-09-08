@@ -19,8 +19,8 @@ internal sealed class MainForm : Form
     readonly CheckBox f2 = new() { Text = "F2 Infinite Water", AutoSize = true };
     readonly CheckBox f3 = new() { Text = "F3 Infinite Yin + Yang", AutoSize = true };
     readonly CheckBox f4 = new() { Text = "F4 Unlimited Population (9,999,999)", AutoSize = true };
-    readonly CheckBox f5 = new() { Text = "F5 No Stamina Consumption (selected only) — HOOK TEST", AutoSize = true };
-    readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — HOOK TEST", AutoSize = true };
+    readonly CheckBox f5 = new() { Text = "F5 No Stamina Consumption (selected only) — EVENT HOOK", AutoSize = true };
+    readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — EVENT HOOK", AutoSize = true };
     readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — LEGACY F4 EXACT REMAP", AutoSize = true };
     readonly Label status = new() { AutoSize = false, Height = 54, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 16 };
@@ -81,8 +81,11 @@ internal static class Native
     static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56}; static readonly byte[] TrainOriginal={0x8B,0x83,0x90,0x04,0x00,0x00};
 
     readonly struct UnitInfo { public readonly long Addr; public readonly uint MaxHp,MaxSt; public UnitInfo(long a,uint hp,uint st){Addr=a;MaxHp=hp;MaxSt=st;} }
-    public static void Start(){ if(running)return; running=true; topupThread=new Thread(TopupLoop){IsBackground=true,Name="BRZE-Selected-Topup"}; topupThread.Start(); }
-    public static void Stop(){ running=false; try{topupThread?.Join(300);}catch{} Detach(); }
+    // Old trainer PageUp did its HP/stamina work in injected game-side code instead of
+    // repeatedly walking every selected unit through ReadProcessMemory/WriteProcessMemory.
+    // Our central delta hooks are already event-driven, so external top-up polling is removed.
+    public static void Start(){ running=true; }
+    public static void Stop(){ running=false; Detach(); }
 
     static bool ReadExact(long a,byte[] b){IntPtr hh=h;return hh!=IntPtr.Zero&&ReadProcessMemory(hh,new IntPtr(unchecked((int)(uint)a)),b,b.Length,out var n)&&n.ToInt64()==b.Length;}
     static uint R32(long a){var b=new byte[4];return ReadExact(a,b)?BitConverter.ToUInt32(b,0):0;}
@@ -173,32 +176,8 @@ internal static class Native
         var found=new List<UnitInfo>(256);for(int i=0;i<UNIT_COUNT;i++){int o=i*UNIT_STRIDE;uint def=BitConverter.ToUInt32(unitRaw,o+OFF_DEF);if(def==0||BitConverter.ToUInt32(unitRaw,o+OFF_OWNER)!=lid)continue;uint mh=R32((long)def+0x6C),ms=R32((long)def+0x80);if(mh==0&&ms==0)continue;found.Add(new UnitInfo((long)pool+o,Fixed16(mh),Fixed16(ms)));}
         localId=lid;localUnits=found.ToArray();lastUnitCache=DateTime.UtcNow;return true;
     }
-    static void TopupLoop()
-    {
-        while(running)
-        {
-            if(!wantHp&&!wantStamina){selectedLocked=0;Thread.Sleep(100);continue;}
-            if(!Attach()){selectedLocked=0;Thread.Sleep(200);continue;}
-            uint lid=R32(moduleBase+RVA_LOCAL_ID); long list=moduleBase+RVA_SELECTION_LIST;
-            uint count=R32(list+0x18),node=R32(list); int seen=0,locked=0;
-            int limit=(int)Math.Min(count,256u);
-            while(node!=0&&seen<limit)
-            {
-                uint next=R32((long)node); uint unit=R32((long)node+8); seen++;
-                if(unit!=0&&R32((long)unit+OFF_OWNER)==lid&&R32((long)unit+OFF_SEL_A)==1&&R32((long)unit+OFF_SEL_B)==1)
-                {
-                    locked++; uint def=R32((long)unit+OFF_DEF);
-                    if(def!=0)
-                    {
-                        if(wantHp){uint mh=Fixed16(R32((long)def+0x6C)),hp=R32((long)unit+OFF_HP);if(mh!=0&&hp<mh)W32((long)unit+OFF_HP,mh);}
-                        if(wantStamina){uint ms=Fixed16(R32((long)def+0x80)),st=R32((long)unit+OFF_ST);if(ms!=0&&st<ms)W32((long)unit+OFF_ST,ms);}
-                    }
-                }
-                node=next;
-            }
-            selectedLocked=locked; Thread.Sleep(100);
-        }
-    }
+    // Intentionally no external selected-unit HP/stamina walker.
+    // F5/F6 now cost work only when the game applies stamina/health deltas.
 
     public static void InstantSelectedBuilding()
     {
