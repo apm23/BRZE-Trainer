@@ -1,0 +1,62 @@
+name: F7 pointer-table probe
+on:
+  push:
+    paths: ['.github/workflows/f7-pointer-table-probe.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Patch F7 discovery to pointer-table candidates
+        shell: pwsh
+        run: |
+          $p='Program.cs'; $s=Get-Content $p -Raw
+          # Current failure proves RVA_BUILDING_POOL is not a flat 500*stride array. Keep F8 Boost writes untouched.
+          $start=$s.IndexOf('    static void ApplyInstantUnitTraining(uint lid)')
+          $end=$s.IndexOf('    public static string Apply(', $start)
+          if($start -lt 0 -or $end -lt 0){throw 'F7 method anchors missing'}
+          $new=@'
+    static void ApplyInstantUnitTraining(uint lid)
+    {
+        // F8 already proves Boost() against a real building pointer. Discover real building objects
+        // from the manager at RVA_BUILDING_POOL instead of treating it as a flat object array.
+        if((DateTime.UtcNow-lastBuildingScan).TotalMilliseconds<50)return;
+        lastBuildingScan=DateTime.UtcNow; trainingBuildings=0;
+        uint mgr=R32(moduleBase+RVA_BUILDING_POOL); if(mgr==0)return;
+        var seen=new HashSet<uint>();
+        // Probe the manager itself as a pointer table and common first-level table pointers.
+        ScanBuildingPointerTable(mgr,lid,seen,512);
+        for(int off=0;off<=0x80;off+=4){uint table=R32((long)mgr+off);if(table!=0)ScanBuildingPointerTable(table,lid,seen,512);}
+    }
+    static void ScanBuildingPointerTable(uint table,uint lid,HashSet<uint> seen,int max)
+    {
+        for(int i=0;i<max;i++)
+        {
+            uint obj=R32((long)table+i*4); if(obj<0x10000||!seen.Add(obj))continue;
+            if(R32((long)obj+OFF_BUILD_OWNER)!=lid)continue;
+            uint type=R32((long)obj+OFF_TRAIN_TYPE); if(type==0xFFFFFFFF)continue;
+            uint prog=R32((long)obj+OFF_TRAIN_PROGRESS);
+            // Conservative: only touch objects whose training progress looks like 16.16 [0,100].
+            if(prog>TRAIN_COMPLETE_FIXED)continue;
+            trainingBuildings++; Boost(obj,lid);
+        }
+    }
+'@
+          $s=$s.Substring(0,$start)+$new+$s.Substring($end)
+          $s=$s.Replace('if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);trainingBuildings=0;','if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);')
+          $s=$s.Replace('return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"','return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} trainFound:{trainingBuildings} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"')
+          Set-Content $p $s -NoNewline
+      - name: Compile smoke
+        run: dotnet build -c Release -p:PlatformTarget=x86
+      - name: Commit
+        shell: pwsh
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Program.cs
+          git commit -m 'Fix F7 building discovery using runtime pointer tables'
+          git push
