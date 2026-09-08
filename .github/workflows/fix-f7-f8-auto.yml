@@ -1,0 +1,41 @@
+name: Fix F7 using proven F8 completion
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-f7-f8-auto.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Patch F7 to auto apply proven F8 completion
+        shell: pwsh
+        run: |
+          $p='Program.cs'
+          $s=Get-Content $p -Raw
+          $s=$s.Replace('F7 Instant Unit Training — LEGACY PROGRESS HOOK','F7 Instant Unit Training — AUTO F8 COMPLETION')
+          $s=$s.Replace('Native.SetHooks(f5.Checked, f6.Checked, f7.Checked);','Native.SetHooks(f5.Checked, f6.Checked, false);')
+          $old='if(!Attach())return "Waiting for Battle_Realms_F.exe...";uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);if(playerPtr==0)return "Attached, waiting for match/player data...";localId=lid;long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;'
+          $new='if(!Attach())return "Waiting for Battle_Realms_F.exe...";uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);if(playerPtr==0)return "Attached, waiting for match/player data...";localId=lid;long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;if(instantTrain)ApplyInstantUnitTraining(lid);'
+          if(-not $s.Contains($old)){throw 'Apply anchor not found'}
+          $s=$s.Replace($old,$new)
+          $old2='uint prog=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_PROGRESS);if(prog<TRAIN_COMPLETE_FIXED)W32((long)pool+o+OFF_TRAIN_PROGRESS,TRAIN_COMPLETE_FIXED);'
+          $new2='uint prog=BitConverter.ToUInt32(buildingRaw,o+OFF_TRAIN_PROGRESS);if(prog<TRAIN_COMPLETE_FIXED){long obj=(long)pool+o;W32(obj+0x8E,5000);W32(obj+0x492,100);W32(obj+0x4BE,100);}'
+          if(-not $s.Contains($old2)){throw 'training write anchor not found'}
+          $s=$s.Replace($old2,$new2)
+          Set-Content $p $s -NoNewline
+      - name: Compile smoke
+        run: dotnet build -c Release -p:PlatformTarget=x86
+      - name: Commit patch
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Program.cs
+          git commit -m 'Replace failed F7 hook with automatic proven F8 completion'
+          git push
