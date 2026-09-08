@@ -6,7 +6,7 @@ on:
       - '.trigger-f56-v62'
 jobs:
   patch:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: write
     steps:
@@ -15,13 +15,19 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Patch source
-        run: python3 tools/patch_f56_v62_safe_delta.py
+        shell: pwsh
+        run: python tools/patch_f56_v62_safe_delta.py
       - name: Compile smoke
+        shell: pwsh
         run: dotnet build BRZETrainer.csproj -c Release -r win-x86
       - name: Commit patch
+        shell: pwsh
         run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Program.cs
-          git diff --cached --quiet || git commit -m "Replace PageUp sentinel writes with safe F5 F6 delta hooks"
-          git push
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Replace PageUp sentinel writes with safe F5 F6 delta hooks"
+            git push
+          }
