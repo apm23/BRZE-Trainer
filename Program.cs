@@ -19,8 +19,8 @@ internal sealed class MainForm : Form
     readonly CheckBox f2 = new() { Text = "F2 Infinite Water", AutoSize = true };
     readonly CheckBox f3 = new() { Text = "F3 Infinite Yin + Yang", AutoSize = true };
     readonly CheckBox f4 = new() { Text = "F4 Unlimited Population (9,999,999)", AutoSize = true };
-    readonly CheckBox f5 = new() { Text = "F5 No Stamina Consumption (selected only) — EVENT HOOK", AutoSize = true };
-    readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — EVENT HOOK", AutoSize = true };
+    readonly CheckBox f5 = new() { Text = "F5 Infinite Stamina (selected only) — LEGACY PAGEUP REMAP", AutoSize = true };
+    readonly CheckBox f6 = new() { Text = "F6 Infinite Health (selected only) — LEGACY PAGEUP REMAP", AutoSize = true };
     readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — LEGACY F4 EXACT REMAP", AutoSize = true };
     readonly Label status = new() { AutoSize = false, Height = 54, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 16 };
@@ -68,7 +68,7 @@ internal static class Native
     const uint Access=0x10|0x20|0x8|0x400; const uint MEM_COMMIT=0x1000,MEM_RESERVE=0x2000,MEM_RELEASE=0x8000,PAGE_EXECUTE_READWRITE=0x40;
     const int RVA_PLAYER_PTR=0x4416A0,RVA_LOCAL_ID=0x4416D0,PLAYER_STRIDE=0x5E8,OFF_RICE=0xD8,OFF_WATER=0xDC,OFF_YIN=0x2E8,OFF_YANG=0x2EC,RVA_MAX_UNITS=0x467B90;
     const int RVA_UNIT_POOL=0x4796A0,UNIT_STRIDE=0x818,UNIT_COUNT=2000,OFF_DEF=0x74,OFF_OWNER=0x240,OFF_SEL_A=0x3A8,OFF_SEL_B=0x3AC,OFF_HP=0x404,OFF_ST=0x408,RVA_SELECTION_LIST=0x441708,RVA_SELECTED_BUILDING_A=0x4417D4,RVA_SELECTED_BUILDING_B=0x4417D8;
-    const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB,RVA_TRAIN_PROGRESS_READ=0x0D5DDB;
+    const int RVA_ADD_HEALTH=0x1CCD78,RVA_ADD_STAMINA=0x1CCE03,RVA_TRAIN_PROGRESS_READ=0x0D5DDB;
     const int RVA_BUILDING_POOL=0x4814E0,BUILDING_STRIDE=0x6A4,BUILDING_COUNT=500,OFF_BUILD_OWNER=0x84,OFF_TRAIN_TYPE=0x488,OFF_TRAIN_PROGRESS=0x490,OFF_TRAIN_GATE=0x4B8,OFF_BUILD_SPECIAL=0x68C,RVA_TRAIN_SPECIAL_GLOBAL=0x46779C;
     const uint TRAIN_COMPLETE_FIXED=0x00640000;
 
@@ -77,8 +77,8 @@ internal static class Native
     static DateTime lastUnitCache=DateTime.MinValue,lastBuildingScan=DateTime.MinValue; static UnitInfo[] localUnits=Array.Empty<UnitInfo>();
     static readonly byte[] unitRaw=new byte[UNIT_COUNT*UNIT_STRIDE],buildingRaw=new byte[BUILDING_COUNT*BUILDING_STRIDE];
     static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag,trainFlag; static bool hooksInstalled; static int remoteTrainState=-1; static string hookError="";
-    static readonly byte[] HpOriginal={0x55,0x8B,0xEC,0x83,0xE4,0xF8,0x56,0x8B,0xF1,0x57};
-    static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56}; static readonly byte[] TrainOriginal={0x8B,0x83,0x90,0x04,0x00,0x00};
+    static readonly byte[] HpOriginal={0x8B,0x86,0x04,0x04,0x00,0x00};
+    static readonly byte[] StOriginal={0x8B,0xBE,0x08,0x04,0x00,0x00}; static readonly byte[] TrainOriginal={0x8B,0x83,0x90,0x04,0x00,0x00};
 
     readonly struct UnitInfo { public readonly long Addr; public readonly uint MaxHp,MaxSt; public UnitInfo(long a,uint hp,uint st){Addr=a;MaxHp=hp;MaxSt=st;} }
     // Old trainer PageUp did its HP/stamina work in injected game-side code instead of
@@ -113,18 +113,37 @@ internal static class Native
 
     static byte[] BuildHook(long stub,long flag,long target,byte[] original,int backOffset)
     {
+        // Legacy PageUp architecture remapped to BRZE 1.60.
+        // Hook the game's own HP/stamina read/update path where ESI is the unit.
+        // No external unit scan: on a selected local unit event, preload the field
+        // with a deliberately huge fixed-point value; the game's own update then
+        // clamps it back to the unit's real maximum. This mirrors the old trainer.
+        bool hp = original.Length==6 && original[1]==0x86;
+        uint field = hp ? 0x404u : 0x408u;
+        uint preload = hp ? 0x01FFFFFFu : 0x7D00FFFFu;
         var b=new List<byte>();
-        b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)flag);b.Add(0); b.AddRange(new byte[]{0x0F,0x84});int jFlag=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x83,0x7C,0x24,0x04,0x00,0x0F,0x8D});int jPos=b.Count;I32(b,0);
-        b.Add(0x50);b.Add(0xA1);U32(b,(uint)(moduleBase+RVA_LOCAL_ID));
-        b.AddRange(new byte[]{0x39,0x81,0x40,0x02,0x00,0x00,0x0F,0x85});int jOwner=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x83,0xB9,0xA8,0x03,0x00,0x00,0x01,0x0F,0x85});int jA=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x83,0xB9,0xAC,0x03,0x00,0x00,0x01,0x0F,0x85});int jB=b.Count;I32(b,0);
-        b.Add(0x58);b.AddRange(new byte[]{0xC2,0x04,0x00});
-        int popOriginal=b.Count;b.Add(0x58);int originalLabel=b.Count;b.AddRange(original);b.Add(0xE9);int jBack=b.Count;I32(b,0);
-        PatchRel(b,jFlag,stub+jFlag+4,stub+originalLabel);PatchRel(b,jPos,stub+jPos+4,stub+originalLabel);
-        PatchRel(b,jOwner,stub+jOwner+4,stub+popOriginal);PatchRel(b,jA,stub+jA+4,stub+popOriginal);PatchRel(b,jB,stub+jB+4,stub+popOriginal);
-        PatchRel(b,jBack,stub+jBack+4,target+backOffset);return b.ToArray();
+        b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)flag);b.Add(0);
+        b.AddRange(new byte[]{0x0F,0x84});int jDisabled=b.Count;I32(b,0);
+        b.Add(0x50); // preserve eax
+        b.Add(0xA1);U32(b,(uint)(moduleBase+RVA_LOCAL_ID));
+        b.AddRange(new byte[]{0x39,0x86,0x40,0x02,0x00,0x00}); // cmp [esi+240],eax
+        b.AddRange(new byte[]{0x0F,0x85});int jOwner=b.Count;I32(b,0);
+        b.AddRange(new byte[]{0x83,0xBE,0xA8,0x03,0x00,0x00,0x01});
+        b.AddRange(new byte[]{0x0F,0x85});int jSelA=b.Count;I32(b,0);
+        b.AddRange(new byte[]{0x83,0xBE,0xAC,0x03,0x00,0x00,0x01});
+        b.AddRange(new byte[]{0x0F,0x85});int jSelB=b.Count;I32(b,0);
+        b.Add(0x58);
+        b.AddRange(new byte[]{0xC7,0x86});U32(b,field);U32(b,preload); // mov [esi+field],preload
+        int originalLabel=b.Count;b.AddRange(original);
+        b.Add(0xE9);int jBack=b.Count;I32(b,0);
+        int popOriginal=b.Count;b.Add(0x58);b.AddRange(original);b.Add(0xE9);int jBack2=b.Count;I32(b,0);
+        PatchRel(b,jDisabled,stub+jDisabled+4,stub+originalLabel);
+        PatchRel(b,jOwner,stub+jOwner+4,stub+popOriginal);
+        PatchRel(b,jSelA,stub+jSelA+4,stub+popOriginal);
+        PatchRel(b,jSelB,stub+jSelB+4,stub+popOriginal);
+        PatchRel(b,jBack,stub+jBack+4,target+backOffset);
+        PatchRel(b,jBack2,stub+jBack2+4,target+backOffset);
+        return b.ToArray();
     }
     static byte[] BuildTrainingHook(long stub,long flag,long target)
     {
