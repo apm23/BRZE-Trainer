@@ -33,7 +33,7 @@ internal sealed class MainForm : Form
         var panel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(18), WrapContents = false };
         panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6, f7 });
         panel.Controls.Add(new Label { Text = "F7 building skills/upgrades — not enabled yet", AutoSize = true, ForeColor = Color.DimGray });
-        panel.Controls.Add(new Label { Text = "F8 Instant Building — pending", AutoSize = true, ForeColor = Color.DimGray });
+        panel.Controls.Add(new Label { Text = "F8 Instant Build/Repair/Research — PUSH TEST (selected building)", AutoSize = true });
         panel.Controls.Add(new Label { Text = "F9 Enable / Disable ALL implemented cheats", AutoSize = true });
         panel.Controls.Add(new Label { Text = "F10 Unlimited Horses + Wolves — pending", AutoSize = true, ForeColor = Color.DimGray });
         Controls.Add(panel); Controls.Add(status);
@@ -46,7 +46,7 @@ internal sealed class MainForm : Form
     {
         Toggle(0x70,1,()=>f1.Checked=!f1.Checked); Toggle(0x71,2,()=>f2.Checked=!f2.Checked); Toggle(0x72,3,()=>f3.Checked=!f3.Checked);
         Toggle(0x73,4,()=>f4.Checked=!f4.Checked); Toggle(0x74,5,()=>f5.Checked=!f5.Checked); Toggle(0x75,6,()=>f6.Checked=!f6.Checked);
-        Toggle(0x76,7,()=>f7.Checked=!f7.Checked);
+        Toggle(0x76,7,()=>f7.Checked=!f7.Checked); Toggle(0x77,8,()=>Native.InstantSelectedBuilding());
         Toggle(0x78,9,()=>{ bool all=f1.Checked&&f2.Checked&&f3.Checked&&f4.Checked&&f5.Checked&&f6.Checked&&f7.Checked; SetAllImplemented(!all); });
         Native.SetHooks(f5.Checked, f6.Checked);
         status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked);
@@ -67,7 +67,7 @@ internal static class Native
 
     const uint Access=0x10|0x20|0x8|0x400; const uint MEM_COMMIT=0x1000,MEM_RESERVE=0x2000,MEM_RELEASE=0x8000,PAGE_EXECUTE_READWRITE=0x40;
     const int RVA_PLAYER_PTR=0x4416A0,RVA_LOCAL_ID=0x4416D0,PLAYER_STRIDE=0x5E8,OFF_RICE=0xD8,OFF_WATER=0xDC,OFF_YIN=0x2E8,OFF_YANG=0x2EC,RVA_MAX_UNITS=0x467B90;
-    const int RVA_UNIT_POOL=0x4796A0,UNIT_STRIDE=0x818,UNIT_COUNT=2000,OFF_DEF=0x74,OFF_OWNER=0x240,OFF_SEL_A=0x3A8,OFF_SEL_B=0x3AC,OFF_HP=0x404,OFF_ST=0x408;
+    const int RVA_UNIT_POOL=0x4796A0,UNIT_STRIDE=0x818,UNIT_COUNT=2000,OFF_DEF=0x74,OFF_OWNER=0x240,OFF_SEL_A=0x3A8,OFF_SEL_B=0x3AC,OFF_HP=0x404,OFF_ST=0x408,RVA_SELECTION_LIST=0x441708,RVA_SELECTED_BUILDING_A=0x4417D4,RVA_SELECTED_BUILDING_B=0x4417D8;
     const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB;
     const int RVA_BUILDING_POOL=0x4814E0,BUILDING_STRIDE=0x6A4,BUILDING_COUNT=500,OFF_BUILD_OWNER=0x84,OFF_TRAIN_TYPE=0x488,OFF_TRAIN_PROGRESS=0x490,OFF_TRAIN_GATE=0x4B8,OFF_BUILD_SPECIAL=0x68C,RVA_TRAIN_SPECIAL_GLOBAL=0x46779C;
     const uint TRAIN_COMPLETE_FIXED=0x00640000;
@@ -146,10 +146,41 @@ internal static class Native
     }
     static void TopupLoop()
     {
-        var sel=new byte[8];var cur=new byte[8];while(running){if(!wantHp&&!wantStamina){selectedLocked=0;Thread.Sleep(100);continue;}if(!RefreshUnits()){Thread.Sleep(200);continue;}
-            int count=0;uint lid=localId;foreach(var u in localUnits){if(!ReadExact(u.Addr+OFF_SEL_A,sel))continue;if(BitConverter.ToUInt32(sel,0)!=1||BitConverter.ToUInt32(sel,4)!=1)continue;if(R32(u.Addr+OFF_OWNER)!=lid)continue;count++;
-                if(!ReadExact(u.Addr+OFF_HP,cur))continue;uint hp=BitConverter.ToUInt32(cur,0),st=BitConverter.ToUInt32(cur,4);if(wantHp&&u.MaxHp!=0&&hp<u.MaxHp)W32(u.Addr+OFF_HP,u.MaxHp);if(wantStamina&&u.MaxSt!=0&&st<u.MaxSt)W32(u.Addr+OFF_ST,u.MaxSt);}
-            selectedLocked=count;Thread.Sleep(100);}
+        while(running)
+        {
+            if(!wantHp&&!wantStamina){selectedLocked=0;Thread.Sleep(100);continue;}
+            if(!Attach()){selectedLocked=0;Thread.Sleep(200);continue;}
+            uint lid=R32(moduleBase+RVA_LOCAL_ID); long list=moduleBase+RVA_SELECTION_LIST;
+            uint count=R32(list+0x18),node=R32(list); int seen=0,locked=0;
+            int limit=(int)Math.Min(count,256u);
+            while(node!=0&&seen<limit)
+            {
+                uint next=R32((long)node); uint unit=R32((long)node+8); seen++;
+                if(unit!=0&&R32((long)unit+OFF_OWNER)==lid&&R32((long)unit+OFF_SEL_A)==1&&R32((long)unit+OFF_SEL_B)==1)
+                {
+                    locked++; uint def=R32((long)unit+OFF_DEF);
+                    if(def!=0)
+                    {
+                        if(wantHp){uint mh=Fixed16(R32((long)def+0x6C)),hp=R32((long)unit+OFF_HP);if(mh!=0&&hp<mh)W32((long)unit+OFF_HP,mh);}
+                        if(wantStamina){uint ms=Fixed16(R32((long)def+0x80)),st=R32((long)unit+OFF_ST);if(ms!=0&&st<ms)W32((long)unit+OFF_ST,ms);}
+                    }
+                }
+                node=next;
+            }
+            selectedLocked=locked; Thread.Sleep(100);
+        }
+    }
+
+    public static void InstantSelectedBuilding()
+    {
+        if(!Attach())return; uint lid=R32(moduleBase+RVA_LOCAL_ID);
+        uint a=R32(moduleBase+RVA_SELECTED_BUILDING_A),b=R32(moduleBase+RVA_SELECTED_BUILDING_B);
+        Boost(a,lid); if(b!=a)Boost(b,lid);
+    }
+    static void Boost(uint obj,uint lid)
+    {
+        if(obj==0||R32((long)obj+0x84)!=lid)return;
+        W32((long)obj+0x8E,5000); W32((long)obj+0x492,100); W32((long)obj+0x4BE,100);
     }
 
     static void ApplyInstantUnitTraining(uint lid)
