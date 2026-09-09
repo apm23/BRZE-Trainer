@@ -30,97 +30,67 @@ Never copy legacy addresses blindly into current BRZE.
 
 ---
 
-## Active/UI selection container — static proof
+## Selection architecture — proven map
 
-Selected-unit list: VA `0x841708`, RVA `0x441708`.
+### Local/UI list
 
-Container layout:
+- VA `0x841708`, RVA `0x441708`
+- list layout: head +0x00, tail +0x04, free +0x08, count +0x18, blocks +0x1C, first +0x20, growth +0x24
+- stock first=90, growth=0
+- manual cap immediate: VA `0x5A7006`, RVA `0x1A7006`
 
-- `+0x00` head
-- `+0x04` tail
-- `+0x08` free-node head
-- `+0x18` selected count
-- `+0x1C` allocated block count
-- `+0x20` first block size
-- `+0x24` growth block size
+### UI sort/rebuild
 
-Node layout: next `+0x00`, previous `+0x04`, unit pointer `+0x08`.
-
-Allocator:
-
-- `0x4ACB2D` consumes free node and calls `0x4AC4C1` if empty.
-- `0x4AC4C1` uses `+0x20` for first allocation, `+0x24` for later allocations.
-- stock active list = `first=90, growth=0`.
-
-Manual admission guard:
-
-- `0x5A7000: cmp dword ptr [0x841720], 0x5A`
-- immediate VA `0x5A7006`, RVA `0x1A7006`
-- stock cap 90.
-
-Manual AddUnit `0x5A6FD8`:
-
-1. append to `0x841708` around `0x5A70B6` via `0x4ACB59`
-2. set `unit+0x3A8 = 1`
-3. call selection-add event producer `0x552FFA` from VA `0x5A70D0` / RVA `0x1A70D0`.
-
----
-
-## Native UI sort/rebuild — static proof
-
-`0x5A719F` rebuilds active selection through:
-
-- temp A `0x841784`
-- temp B `0x8417AC`
-
-Hardcoded first=90 immediates:
+Function `0x5A719F`, hardcoded first=90 sites:
 
 - temp A `0x5A71B1` / RVA `0x1A71B1`
 - temp B `0x5A71B9` / RVA `0x1A71B9`
 - active rebuild `0x5A7299` / RVA `0x1A7299`
 
-Therefore a one-time active `+0x20=120` is not persistent unless these reset sites are also handled.
+### Per-player simulation selection lists
 
----
+- global pointer VA `0x841730`, RVA `0x441730`
+- 10 lists, stride `0x28`
+- same container layout
+- init first=90 immediate `0x5A6C53`, RVA `0x1A6C53`
+- reset first=90 immediate `0x5A6E37`, RVA `0x1A6E37`
 
-## Selection-add event / authoritative path — static + runtime proof
+### Local AddUnit / event producer
 
-`0x552FFA` emits a **4-byte type-0 selection-add event** containing the unit ID.
+`0x5A6FD8`:
 
-Consumer around `0x5543CA` resolves the unit and calls simulation-side selection logic around `0x5A75B2(player, unit)`.
+1. append local/UI list around `0x5A70B6`
+2. set `unit+0x3A8 = 1`
+3. call event producer `0x552FFA` at `0x5A70D0`
 
-Runtime proof from No-Add-Notify probe:
+`0x552FFA` emits event type **0**, size 4 bytes: type word + unit ID word.
 
-- suppressing this call allowed **108 UI-selected units**
-- but rectangle group selection degraded to one unit
-- right-click move/attack stopped working even for selected units
-- autonomous reactions still worked
+### Corrected event dispatch mapping — IMPORTANT
 
-Therefore the event is required for authoritative/simulation selection. Permanent NOP is invalid.
+The event consumer dispatcher uses jump table at VA `0x5609C2` for event types 0..0x33.
 
----
+Relevant proven cases:
 
-## Simulation-side per-player selection containers — critical static proof
+- **type 0 -> `0x56016B` -> resolves unit -> calls `0x5A736F(player, unit)`**
+- **type 1 -> `0x560198` -> calls `0x5A73A9(player, unit)`** (remove)
+- **type 2 -> `0x5601C5` -> calls handler `0x55437F`** (clear/reset selection)
+- **type 3 -> `0x5601E5` -> calls `0x5543CA`** (different selection-related event; previous notes incorrectly treated this as type 0)
 
-Global pointer: VA `0x841730`, RVA `0x441730`.
+Correction to earlier interpretation: `0x5543CA -> 0x5A75B2` is **not** the event-type-0 add-selected-unit handler. The real type-0 consumer is `0x56016B -> 0x5A736F`.
 
-- 10 per-player selection containers
-- stride `0x28`
-- local simulation list = `[0x841730] + localPlayerId * 0x28`
-- local player ID = VA `0x8416D0`, RVA `0x4416D0`
+### Simulation add routine `0x5A736F` — critical bulk-drag finding
 
-Same container layout as UI list.
+For each event-type-0 selected unit:
 
-Stock simulation list configuration: `first=90, growth=0`.
+1. computes per-player list = `[0x841730] + player*0x28`
+2. checks membership via `0x4AC0BA`
+3. if absent, appends via `0x4ACB59`
+4. sets `unit+0x3AC = 1`
+5. **always calls `0x5A7B97(player)` at VA `0x5A739E`**
 
-Hardcoded 90 sites:
+The call instruction at `0x5A739E` is `E8 F4 07 00 00` (call `0x5A7B97`).
 
-- init immediate VA `0x5A6C53`, RVA `0x1A6C53`
-- reset immediate VA `0x5A6E37`, RVA `0x1A6E37`
-
-This explains the old #91 sequence: UI accepts #91, event is emitted, simulation consumes it, simulation list still capped at 90, then game crashes.
-
-Reference: `reference/current-brze/no-add-notify-runtime-and-sim-selection-20260909.md`.
+`0x5A7B97` performs non-trivial downstream selection/group synchronization and itself iterates selection/group state. Repeating it once per added unit creates a strong burst-cost candidate for a one-shot rectangle selection.
 
 ---
 
@@ -128,231 +98,147 @@ Reference: `reference/current-brze/no-add-notify-runtime-and-sim-selection-20260
 
 ## 1. Surgical Growth Probe
 
-- active growth `0 -> 90`
-- manual cap remained 90
-- stable at selected=90
-- #91 rejected
-
-Conclusion: growth write itself is harmless before overflow; second allocation not tested.
+- active growth 0->90
+- manual cap stayed 90
+- stable at 90; #91 rejected
 
 ## 2. Manual 120 — FAILED
 
 - branch `selection-capacity-manual-120`
-- source `d3363c0c649920755c5f152f6a8fe2147bef8866`
 - run `34343788268`
-- EXE SHA-256 `848ecb59e588b92bd92d06940d57fc1e34a94ed71d0aa7d37f9bbf6046e6ce2d`
-- growth 0->90 + manual cap 120
-- runtime: #91 crashes.
+- EXE `848ecb59e588b92bd92d06940d57fc1e34a94ed71d0aa7d37f9bbf6046e6ce2d`
+- #91 crashes
 
-## 3. First-Block 120 / no growth — FAILED, later found incomplete
+## 3. First-Block 120 — FAILED / incomplete
 
 - branch `selection-firstblock-120-probe`
 - run `34347542420`
-- EXE SHA-256 `aa412ad2ad132d03220dc9ae9e04507a31712b09a0719eb72a4ace20fde1f441`
-- runtime: #91 crashes.
-- correction: native sort/rebuild could restore active first=90, so this was not a persistent 120 pipeline.
+- #91 crashes; later found UI sort could restore first=90
 
-## 4. Sort-Pipeline 120 — FAILED IN TWO MODES
+## 4. Sort-Pipeline 120 — FAILED in two modes
 
 - branch `selection-sort-pipeline-120-probe`
-- built head `3123b0eb32490f582ef2ddd4ef0c8676bf6840aa`
 - run `34348488434`
-- EXE SHA-256 `13f2d21bc28adeb3f9588ae0d84add9d64b2ec05c471ef965c34c975d3dfe660`
+- EXE `13f2d21bc28adeb3f9588ae0d84add9d64b2ec05c471ef965c34c975d3dfe660`
+- large drag ~80 freezes
+- slow #91 visibly selects then crashes
 
-Runtime:
-
-1. one large rectangle/shift-drag around ~80 units -> gameplay freeze below 90
-2. slow 1..90 works; #91 visibly selected ~0.3 s, then process crash
-
-Proof: local append succeeds before downstream fatal processing; rectangle path has an additional bulk-only problem.
-
-## 5. No-Add-Notify 120 — DIAGNOSTIC SUCCESS ABOVE 90, COMMANDS BROKEN
+## 5. No-Add-Notify 120 — diagnostic >90 success, semantics broken
 
 - branch `selection-no-add-notify-120-probe`
-- built head `832815431be30ef3ec6ac8a6bc4a4909e1657df9`
 - run `34349623960`
-- EXE SHA-256 `205bee07d1808f729e413a23d34e46e6c124e9906429595df7c9d6595db5ccbf`
+- EXE `205bee07d1808f729e413a23d34e46e6c124e9906429595df7c9d6595db5ccbf`
+- reached 108 UI-selected
+- group drag degraded to one unit
+- right-click move/attack broken
+- proved selection event path is authoritative and cannot simply be NOPed
+
+## 6. Simulation Pipeline 120 — ~70% SUCCESS
+
+- branch `selection-sim-pipeline-120-probe`
+- built head `eb8a610b810ba5f17d4eb1b9fe3c914889caedad`
+- run `34352052932` success
+- EXE `46a6d19bfbc8cf6e942c1872283454245d168f0aeced7a1f8e684a5147aaf7ff`
+
+Patch:
+
+- UI/sort first=120, growth=0
+- simulation init/reset/current local list first=120, growth=0
+- event type 0 remains LIVE
 
 Runtime:
 
-- 108 units successfully UI-selected
-- rectangle group selection effectively became one unit
-- right-click move/attack unavailable
+- multiple small rectangle drags can accumulate a large working selection
+- >90 selection + normal commands materially work
+- one large rectangle drag still immediately freezes
 
-Proof: event path is required for simulation/command semantics.
+Interpretation: 90-boundary problem materially solved; remaining bug is bulk/burst-specific.
 
-## 6. Simulation Pipeline 120 — ~70% RUNTIME SUCCESS
+## 7. Event Buffer 1024 + Sim120 — FAILED TO FIX BULK DRAG
 
-Build:
+- branch `selection-event-buffer-1024-probe`
+- built head `1f3dc34285ee415a3d5cb8132b2a9f19ec27e210`
+- run `34358214184` success
+- artifact `BRZE-Selection-EventBuffer-1024-Probe`
+- EXE `c797463a44a7c283747a36f0af2827c409536a83f386bd9a4b6cd9a00d45803b`
 
-- branch `selection-sim-pipeline-120-probe`
-- source logic `cb3a73eab81e289d521ea7a1b47b69dc6da1fd04`
-- built head `eb8a610b810ba5f17d4eb1b9fe3c914889caedad`
-- run `34352052932` — SUCCESS
-- artifact `BRZE-Selection-Sim-Pipeline-120-Probe`, ID `10104163056`
-- ZIP SHA-256 `0a15006d2970c30c3c662c79fc56dda2518db03ac929a581021c6935c21dd444`
-- EXE SHA-256 `46a6d19bfbc8cf6e942c1872283454245d168f0aeced7a1f8e684a5147aaf7ff`
+Differential:
 
-Patch set:
+- retained proven Sim120 pipeline
+- replaced native 256-byte event backing buffer with real 1024-byte allocation
+- widened all known 0x100 native size/reset constants consistently
 
-- UI active first 120, growth 0
-- manual cap 120
-- sort temp A/B + active rebuild first 120
-- simulation init/reset first 120
-- local instantiated simulation list first 120 while pristine
-- simulation growth 0
-- selection-add event remains LIVE
+Runtime reported by user:
 
-Latest runtime result reported by user:
+- **one large drag still immediately freezes**
 
-- building a large selection via **multiple small rectangle drags works**
-- this is approximately **70% successful** relative to desired behavior
-- one **large rectangle drag in a single batch still freezes gameplay**
+Conclusion / proof label:
 
-Interpretation:
-
-- UI/sort/simulation 90-limit problem is materially solved
-- remaining failure is isolated to bulk rectangle/batched event handling, not general >90 selection
-
-Reference: `reference/current-brze/runtime-result-sim-pipeline120-20260909.md`.
+- 256-byte event-buffer rollover is **not sufficient to explain the bulk-drag freeze**
+- do not carry EventBuffer-1024 into the next specimen unless new evidence requires it
+- return to clean Simulation-Pipeline-120 base for subsequent probes
 
 ---
 
 ## Rectangle/drag path — static proof
 
-Path around `0x5D4356`:
+Function around `0x5D4356`:
 
-- candidate global list `0x879748`
-- append candidate around `0x5D44B5`
-- iterate candidates
-- call same AddUnit `0x5A6FD8` around `0x5D455A`
-- clear candidate list around `0x5D4573`
-- then sort/rebuild.
+- candidate list `0x879748`
+- candidate append around `0x5D44B5`
+- candidate list uses default constructor first=128, growth=128
+- iterates candidate list and calls AddUnit `0x5A6FD8` around `0x5D455A`
+- clears candidate list around `0x5D4573`
+- calls UI sort/rebuild `0x5A719F` around `0x5D457D`
 
-Important correction: candidate list `0x879748` uses default constructor `0x4ABFBF`, giving:
+Because small drags can accumulate >100 and each drag still invokes the same final sort/rebuild, the sort function itself is not the leading explanation for the one-shot freeze.
 
-- first block = `0x80` = **128**
-- growth block = `0x80` = **128**
-
-Therefore a freeze around ~80 is **not explained by candidate-list capacity**, and that list should not be patched merely because drag freezes.
+Large one-shot drag differs mainly by producing many type-0 events in one simulation update. Each event invokes `0x5A736F`, and every `0x5A736F` invokes heavy refresh `0x5A7B97`.
 
 ---
 
-## Event buffer — current bulk-drag hypothesis
+# CURRENT NEXT PROBE — SUPPRESS PER-ADD `0x5A7B97` REFRESH
 
-Global event-buffer state:
+Base: clean `selection-sim-pipeline-120-probe` / built head `eb8a610b810ba5f17d4eb1b9fe3c914889caedad`.
 
-- used bytes `0x841C94`
-- remaining bytes `0x841C98`
-- buffer pointer `0x841C9C`
-- event gate `0x841194`
+Hypothesis:
 
-Native allocation is **0x100 = 256 bytes** around `0x550CCB`.
+- large drag freezes because event type 0 is processed in a burst and `0x5A7B97(player)` is redundantly executed once for every selected unit in that burst
+- small drags work because the same expensive work is distributed over multiple ticks
 
-Selection-add event size = **4 bytes** per admitted unit.
+Minimal differential to test:
 
-Therefore one batch crosses the buffer boundary after roughly **64 selection-add events**.
+- keep event type 0 LIVE
+- keep simulation list append in `0x5A736F` LIVE
+- keep selected flag update LIVE
+- NOP only the 5-byte call at VA `0x5A739E` (`E8 F4 07 00 00`) that invokes `0x5A7B97` after each add
+- do not touch remove-side refresh yet
+- do not keep EventBuffer-1024 in this probe
 
-`0x552FFA` checks remaining space and calls `0x561B2A` when fewer than 4 bytes remain. Known native 0x100 size/reset constants:
+Expected diagnostic outcomes:
 
-- constructor size byte VA `0x550CCD`, RVA `0x150CCD`
-- initialization remaining-size byte VA `0x561771`, RVA `0x161771`
-- post-flush/reset size byte VA `0x561D78`, RVA `0x161D78`
-
-Small-area drags can stay below this rollover point and let processing occur between batches; one large drag necessarily forces a flush/rollover in the middle of the rectangle AddUnit loop. This matches the current runtime split and is the present hypothesis.
-
-Reference: `reference/current-brze/event-buffer-bulk-drag-20260909.md`.
-
----
-
-# CURRENT DECISIVE EXPERIMENT — EVENT BUFFER 1024 + SIM 120
-
-Goal: preserve the now-working UI/sort/simulation 120 pipeline and **LIVE selection events**, while preventing the native 256-byte event queue from rolling over in the middle of one large rectangle drag.
-
-Branch:
-
-- `selection-event-buffer-1024-probe`
-
-Commits/build:
-
-- source logic `4c96ace28aa33d52bfe9fbd526af19d4a541f2ed`
-- workflow update `29a677eeabd2189c38830a9b1fa6d69ade8c844d`
-- built head/trigger `1f3dc34285ee415a3d5cb8132b2a9f19ec27e210`
-- Actions run `34358214184` — **SUCCESS**
-- compile smoke success
-- x86 publish success
-- artifact upload success
-
-Artifact:
-
-- `BRZE-Selection-EventBuffer-1024-Probe`
-- artifact ID `10106732130`
-- ZIP SHA-256 `e22b552c29009479483ff4bbde5c8a3ae8455a39bbec7c5cf49d4e3cdd57ec3a`
-- EXE SHA-256 `c797463a44a7c283747a36f0af2827c409536a83f386bd9a4b6cd9a00d45803b`
-
-Exact differential from Simulation-Pipeline-120:
-
-- retains UI active/sort/simulation selection 120
-- retains growth=0 for active and simulation lists
-- retains post-add event `0x552FFA` LIVE
-- does **not** patch rectangle candidate-list capacity
-- replaces the 256-byte event backing buffer with a **real 1024-byte allocation** obtained from BRZE's own allocator `0x72FC28`
-- buffer swap only occurs while event queue `used=0`
-- event emission is temporarily gated during pointer/state swap
-- then updates pointer, used=0, remaining=1024
-- patches all three known native 0x100 size/reset constants consistently from 0x100 to 0x400
-- old 256-byte block is deliberately left alone for this diagnostic; do not free it from outside BRZE while native ownership is uncertain
-
-Status should report:
-
-- `ARMED eventbuf1024+sim120`
-- cap `0x78`
-- sort `78/78/78`
-- sim-code `78/78`
-- `add-notify:LIVE`
-- EVENT target `1024`, free near `1024` while idle
-- ACTIVE first=120 grow=0
-- SIM first=120 grow=0
-- DRAG-CAND first=128 grow=128
-
-### Required runtime test
-
-Fresh BRZE process. Enable F4 before selecting anything.
-
-**Primary test:** immediately use one large rectangle/shift-drag covering roughly 80–100 units in a single operation.
-
-If stable:
-
-1. right-click move the whole group
-2. issue right-click attack
-3. verify ACTIVE and SIM counts follow
-4. continue toward ~108/120 if desired
-
-### Interpretation
-
-- **Large one-shot drag becomes stable:** strongly supports mid-loop 256-byte event-buffer rollover/flush as the remaining bulk-selection freeze cause. This becomes candidate basis for final selection fix.
-- **Large drag still freezes:** do not enlarge candidate capacity; move investigation into `0x561B2A` flush semantics or another synchronous batch-only consumer while keeping the proven UI/simulation 120 pipeline intact.
+- if large drag becomes stable and commands still work: per-add refresh storm is the bulk-freeze cause; next step is to restore refresh once per batch instead of once per unit
+- if large drag becomes stable but some selection/group UI state is stale: same cause confirmed; implement one deferred/batch-end refresh
+- if large drag still freezes: move deeper into event type-0 membership lookup/append burst or dispatcher processing, not capacity and not buffer rollover
 
 ---
 
 ## Do not reintroduce without evidence
 
-- shared/global list constructor capacity patching
-- patching every constant 90 merely because it matches
-- patching `0x879748` capacity when it is already static-proven 128/128
-- permanent suppression of `0x552FFA`
-- heavy per-frame/per-tick selected-unit scans
-- multiple unrelated subsystem changes in one diagnostic build
-- treating CI/build success as runtime proof
+- global/shared list constructor patching
+- patching every constant 90
+- candidate-list capacity patch (already 128/128)
+- permanent suppression of event type 0
+- EventBuffer-1024 as default after runtime failure
+- heavy per-frame selected-unit scans
+- multiple unrelated subsystem changes per probe
 
-Use disposable test saves and restart BRZE fully between invasive selection probes.
+Use disposable saves and restart BRZE fully between invasive probes.
 
 ## New-chat handoff
 
-Use:
-
 `CONTINUE BRZE TRAINER — MASTER_STATE AUTHORITATIVE`
 
-Then read `MASTER_STATE.md` from `apm23/BRZE-Trainer` before taking action.
+Read this file first.
 
-**Current unresolved hinge:** runtime result of `BRZE-Selection-EventBuffer-1024-Probe` on one large rectangle/shift-drag (~80–100 units) with normal right-click move/attack afterward.
+**Current unresolved hinge:** runtime result of a clean Sim120-based specimen with only the per-add `call 0x5A7B97` at `0x5A739E` suppressed.
