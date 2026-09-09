@@ -1,0 +1,25 @@
+name: Selection capacity manual 120
+on:
+  workflow_dispatch:
+  push:
+    branches: [ selection-capacity-manual-120 ]
+    paths: ['.trigger-selection-capacity-manual-120']
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: selection-capacity-manual-120
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile smoke
+        run: dotnet build BRZETrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o publish
+      - name: Upload manual 120 probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Selection-Manual-120
+          path: publish/BRZE-Trainer.exe
