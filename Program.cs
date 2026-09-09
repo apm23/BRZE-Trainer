@@ -18,10 +18,10 @@ internal sealed class MainForm : Form
     readonly CheckBox f1 = new() { Text = "F1 Infinite Rice", AutoSize = true };
     readonly CheckBox f2 = new() { Text = "F2 Infinite Water", AutoSize = true };
     readonly CheckBox f3 = new() { Text = "F3 Infinite Yin + Yang", AutoSize = true };
-    readonly CheckBox f4 = new() { Text = "F4 Max Population + Selection Capacity 120 — INTERROGATION", AutoSize = true };
-    readonly CheckBox f5 = new() { Text = "F5 No Stamina Loss (selected only) — SPECIMEN B NATIVE DELTA", AutoSize = true };
-    readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — SPECIMEN B NATIVE DELTA", AutoSize = true };
-    readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — LEGACY F4 EXACT REMAP", AutoSize = true };
+    readonly CheckBox f4 = new() { Text = "F4 Max Population + Selection Capacity 120 — CLEANROOM", AutoSize = true };
+    readonly CheckBox f5 = new() { Text = "F5 DISABLED — clean-room selection test", AutoSize = true };
+    readonly CheckBox f6 = new() { Text = "F6 DISABLED — clean-room selection test", AutoSize = true };
+    readonly CheckBox f7 = new() { Text = "F7 DISABLED — clean-room selection test", AutoSize = true };
     readonly CheckBox legacyTower = new() { Text = "Legacy Infinite Watchtowers — experimental remap slot", AutoSize = true };
     readonly CheckBox pausePeasant = new() { Text = "Legacy F9 Pause Peasant Production (F12)", AutoSize = true };
     readonly CheckBox demolish = new() { Text = "Demolition Mode (F11) — BRZE native enable flag", AutoSize = true };
@@ -42,6 +42,7 @@ internal sealed class MainForm : Form
         panel.Controls.Add(new Label { Text = "F10 Maximum Wolves — old trainer exact +0x250 remap", AutoSize = true });
         panel.Controls.Add(new Label { Text = "Delete = Instant Build/Repair/Research/BattleGear | PageDown = Instant Death", AutoSize = true });
         panel.Controls.Add(new Label { Text = "PageUp = toggle Health + Stamina together (old trainer behavior)", AutoSize = true });
+        f5.Enabled=false; f6.Enabled=false; f7.Enabled=false;
         Controls.Add(panel); Controls.Add(status);
         Native.Start(); timer.Tick += (_, _) => TickTrainer(); timer.Start(); FormClosed += (_, _) => Native.Stop();
     }
@@ -59,7 +60,7 @@ internal sealed class MainForm : Form
         Toggle(0x7A,14,()=>demolish.Checked=!demolish.Checked);
         Toggle(0x7B,15,()=>pausePeasant.Checked=!pausePeasant.Checked);
         Toggle(0x78,9,()=>{ bool all=f1.Checked&&f2.Checked&&f3.Checked&&f4.Checked&&f5.Checked&&f6.Checked&&f7.Checked; SetAllImplemented(!all); }); Toggle(0x79,10,()=>Native.MaxWolves());
-        Native.SetHooks(f5.Checked, f6.Checked, f7.Checked);
+        Native.SetHooks(false,false,false);
         Native.ApplyLegacyRuntime(pausePeasant.Checked,demolish.Checked,horses.Checked,legacyTower.Checked);
         status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked);
     }
@@ -83,6 +84,7 @@ internal static class Native
     const int RVA_ADD_HEALTH=0x1CCD78,RVA_ADD_STAMINA=0x1CCE03,RVA_TRAIN_PROGRESS_READ=0x0D5DDB;
     const int RVA_SELECT_ONE=0x1A70C6,RVA_SELECT_BOX=0x1A78CC;
     const int RVA_SELECTION_CAP_CMP_IMM=0x1A7006,RVA_SELECTION_GROWTH=0x44172C,RVA_TEMPSEL_A_GROWTH=0x4417A8,RVA_TEMPSEL_B_GROWTH=0x4417D0;
+    const int RVA_SELECTION_MATCH_INIT_IMM=0x1A6BCC,RVA_TEMPSEL_A_INIT_IMM=0x1A71B1,RVA_TEMPSEL_B_INIT_IMM=0x1A71B9,RVA_SELECTION_REBUILD_IMM=0x1A7299;
     const int RVA_PEASANT_CREATION=0x467AF4,RVA_DEMOLISH_ENABLE=0x3D7A1C;
     const int RVA_CFG_BASE_PTR=0x43FF2C,RVA_CFG_INDEX_PTR=0x440034;
     const int RVA_BUILDING_POOL=0x4814E0,BUILDING_STRIDE=0x6A4,BUILDING_COUNT=500,OFF_BUILD_OWNER=0x84,OFF_TRAIN_TYPE=0x488,OFF_TRAIN_PROGRESS=0x490,OFF_TRAIN_GATE=0x4B8,OFF_BUILD_SPECIAL=0x68C,RVA_TRAIN_SPECIAL_GLOBAL=0x46779C;
@@ -92,7 +94,7 @@ internal static class Native
     static volatile uint localId; static volatile bool wantStamina,wantHp,running; static Thread? topupThread;
     static DateTime lastUnitCache=DateTime.MinValue,lastBuildingScan=DateTime.MinValue; static UnitInfo[] localUnits=Array.Empty<UnitInfo>();
     static readonly byte[] unitRaw=new byte[UNIT_COUNT*UNIT_STRIDE],buildingRaw=new byte[BUILDING_COUNT*BUILDING_STRIDE];
-    static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag,trainFlag; static bool hooksInstalled; static uint horseOriginal; static bool horseSaved; static int remoteTrainState=-1; static string hookError="";
+    static int selectedLocked,trainingBuildings; static bool largeSelectionPatched; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag,trainFlag; static bool hooksInstalled; static uint horseOriginal; static bool horseSaved; static int remoteTrainState=-1; static string hookError="";
     static readonly byte[] HpOriginal={0x8B,0x86,0x04,0x04,0x00,0x00,0x03,0x45,0x08};
     static readonly byte[] StOriginal={0x8B,0xBE,0x08,0x04,0x00,0x00,0x8B,0x46,0x74,0x03,0x7D,0x08};
     static readonly byte[] SelectOriginal={0xC7,0x86,0xA8,0x03,0x00,0x00,0x01,0x00,0x00,0x00}; static readonly byte[] TrainOriginal={0x8B,0x83,0x90,0x04,0x00,0x00};
@@ -285,10 +287,29 @@ internal static class Native
         W32((long)obj+0x8E,5000); W32((long)obj+0x492,100); W32((long)obj+0x4BE,100);
     }
 
+    static void EnableLargeSelection120()
+    {
+        if(largeSelectionPatched||!Attach())return;
+        // CLEANROOM: no HP/stamina/selection-event hooks. Only enlarge the native selection
+        // manager with minimal one-byte immediate patches. Runtime +0x24 writes happen ONCE
+        // only to rescue already-constructed 90-node pools; the native rebuild sites are
+        // changed from initial capacity 90 to 120 so the game does not depend on timer races.
+        bool ok=true;
+        ok &= WriteCode(moduleBase+RVA_SELECTION_CAP_CMP_IMM,new byte[]{0x78});
+        ok &= WriteCode(moduleBase+RVA_SELECTION_MATCH_INIT_IMM,new byte[]{0x78});
+        ok &= WriteCode(moduleBase+RVA_TEMPSEL_A_INIT_IMM,new byte[]{0x78});
+        ok &= WriteCode(moduleBase+RVA_TEMPSEL_B_INIT_IMM,new byte[]{0x78});
+        ok &= WriteCode(moduleBase+RVA_SELECTION_REBUILD_IMM,new byte[]{0x78});
+        ok &= W32(moduleBase+RVA_SELECTION_GROWTH,120u);
+        ok &= W32(moduleBase+RVA_TEMPSEL_A_GROWTH,120u);
+        ok &= W32(moduleBase+RVA_TEMPSEL_B_GROWTH,120u);
+        if(ok)largeSelectionPatched=true; else hookError="large-selection cleanroom patch failed";
+    }
+
     public static string Apply(bool rice,bool water,bool yinYang,bool pop,bool instantTrain)
     {
         if(!Attach())return "Waiting for Battle_Realms_F.exe...";uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);if(playerPtr==0)return "Attached, waiting for match/player data...";localId=lid;long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;
-        if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop){W32(moduleBase+RVA_MAX_UNITS+lid*4,99_999_999); W8(moduleBase+RVA_SELECTION_CAP_CMP_IMM,0x78); W32(moduleBase+RVA_SELECTION_GROWTH,120); W32(moduleBase+RVA_TEMPSEL_A_GROWTH,120); W32(moduleBase+RVA_TEMPSEL_B_GROWTH,120);}
+        if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop){W32(moduleBase+RVA_MAX_UNITS+lid*4,99_999_999);EnableLargeSelection120();}
         return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} F7LegacyHook:{instantTrain} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);
     }
 }
