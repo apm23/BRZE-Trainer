@@ -1,0 +1,40 @@
+name: Specimen B native delta
+on:
+  workflow_dispatch:
+  push:
+    branches: [ specimen-b-native-delta ]
+    paths: ['.trigger-specimen-b-native-delta']
+jobs:
+  patch-build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: specimen-b-native-delta
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply specimen B patch
+        shell: pwsh
+        run: python tools/patch_specimen_b_native_delta.py
+      - name: Compile smoke
+        shell: pwsh
+        run: dotnet build BRZETrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        shell: pwsh
+        run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o publish
+      - name: Upload specimen B
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-Specimen-B-NativeDelta
+          path: publish/BRZE-Trainer.exe
+      - name: Commit patched source
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Program.cs
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) { git commit -m "Build specimen B native delta"; git push origin HEAD:specimen-b-native-delta }
