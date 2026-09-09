@@ -1,0 +1,28 @@
+name: Full legacy port v63
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.trigger-full-legacy-v63']
+jobs:
+  patch-build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Apply full legacy patch
+        shell: pwsh
+        run: python tools/patch_full_legacy_v63.py
+      - name: Compile smoke
+        shell: pwsh
+        run: dotnet build BRZETrainer.csproj -c Release -r win-x86
+      - name: Commit source
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Program.cs
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) { git commit -m "Add full legacy trainer port v63"; git push }
