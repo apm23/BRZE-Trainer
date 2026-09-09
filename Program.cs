@@ -18,21 +18,21 @@ internal static class Program
 
 internal sealed class MainForm : Form
 {
-    readonly CheckBox f4 = new() { Text = "F4 Max Population + ACTIVE growth + manual cap 120 — SURGICAL", AutoSize = true };
+    readonly CheckBox f4 = new() { Text = "F4 Max Population + FIRST BLOCK 120 + manual cap 120 — SINGLE BLOCK PROBE", AutoSize = true };
     readonly Label note = new()
     {
         AutoSize = true,
-        MaximumSize = new Size(650, 0),
-        Text = "No HP/stamina hooks, no F7, no selection-event hooks, no constructor/temp-container patch. Only two selection changes: active list growth 0→90 and the proven manual AddUnit guard 90→120."
+        MaximumSize = new Size(720, 0),
+        Text = "Diagnostic only. Growth stays 0. This probe changes the ACTIVE selection first allocation 90→120 only while the allocator is still pristine, then opens the proven manual guard 90→120. If the 90→91 boundary works here, the previous crash points at second-block growth/transition rather than count >90 itself."
     };
-    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 68, TextAlign = ContentAlignment.MiddleLeft };
+    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 86, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 50 };
     bool f4Held;
 
     public MainForm()
     {
-        Text = "BRZE 1.60 — Selection Manual 120 Probe";
-        ClientSize = new Size(710, 220);
+        Text = "BRZE 1.60 — Selection First-Block 120 Probe";
+        ClientSize = new Size(790, 245);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -85,8 +85,11 @@ internal static class Native
     const int RVA_LOCAL_ID = 0x4416D0;
     const int RVA_MAX_UNITS = 0x467B90;
     const int RVA_SELECTION_LIST = 0x441708;
-    const int RVA_MANUAL_CAP_IMM = 0x1A7006; // immediate byte in cmp [0x841720], 0x5A
+    const int RVA_MANUAL_CAP_IMM = 0x1A7006;
+
+    const int OFF_FREE_NODE = 0x08;
     const int OFF_SELECTED_COUNT = 0x18;
+    const int OFF_BLOCK_COUNT = 0x1C;
     const int OFF_FIRST_BLOCK = 0x20;
     const int OFF_GROWTH_BLOCK = 0x24;
 
@@ -95,6 +98,7 @@ internal static class Native
     static long moduleBase;
     static int pid;
     static string patchError = "";
+    static bool armed120;
 
     static bool Attach()
     {
@@ -154,7 +158,10 @@ internal static class Native
 
         long list = moduleBase + RVA_SELECTION_LIST;
         long capAddr = moduleBase + RVA_MANUAL_CAP_IMM;
+
+        uint free = R32(list + OFF_FREE_NODE);
         uint selected = R32(list + OFF_SELECTED_COUNT);
+        uint blocks = R32(list + OFF_BLOCK_COUNT);
         uint first = R32(list + OFF_FIRST_BLOCK);
         uint growth = R32(list + OFF_GROWTH_BLOCK);
         byte cap = R8(capAddr);
@@ -164,28 +171,68 @@ internal static class Native
             uint lid = R32(moduleBase + RVA_LOCAL_ID);
             W32(moduleBase + RVA_MAX_UNITS + lid * 4L, 99_999_999u);
 
-            // Keep the original 90-node first block. Only enable native growth in another 90-node block.
-            if (growth == 0)
+            // Arm only before the allocator has ever created its first node block.
+            if (!armed120)
             {
-                if (!W32(list + OFF_GROWTH_BLOCK, 90u)) patchError = "growth write failed";
-                growth = R32(list + OFF_GROWTH_BLOCK);
+                if (selected == 0 && blocks == 0 && free == 0 && first == 90 && growth == 0)
+                {
+                    if (!W32(list + OFF_FIRST_BLOCK, 120u))
+                        patchError = "first-block write failed";
+                    else
+                        armed120 = R32(list + OFF_FIRST_BLOCK) == 120u;
+                }
+                else if (first == 120 && growth == 0)
+                {
+                    armed120 = true;
+                }
+                else
+                {
+                    patchError = "allocator already used or unexpected state — restart BRZE, enable F4 before selecting anything";
+                }
             }
 
-            // Proven manual AddUnit guard: 0x5A (90) -> 0x78 (120).
-            // Do not touch any constructor or temporary-selection container.
-            if (cap == 0x5A)
+            // Never enable growth in this specimen. We want one 120-node block only.
+            growth = R32(list + OFF_GROWTH_BLOCK);
+            first = R32(list + OFF_FIRST_BLOCK);
+            if (armed120 && first == 120 && growth == 0)
             {
-                if (!WriteCodeByte(capAddr, 0x78)) patchError = "manual cap patch failed";
+                if (cap == 0x5A)
+                {
+                    if (!WriteCodeByte(capAddr, 0x78)) patchError = "manual cap patch failed";
+                    cap = R8(capAddr);
+                }
+                else if (cap != 0x78)
+                {
+                    patchError = $"unexpected cap byte 0x{cap:X2}; not patching";
+                }
+            }
+        }
+        else
+        {
+            // Close admission again when F4 is disabled. Leave an allocated 120-node block alone.
+            if (cap == 0x78)
+            {
+                WriteCodeByte(capAddr, 0x5A);
                 cap = R8(capAddr);
             }
-            else if (cap != 0x78)
+            if (blocks == 0 && selected == 0 && first == 120 && growth == 0)
             {
-                patchError = $"unexpected cap byte 0x{cap:X2}; not patching";
+                W32(list + OFF_FIRST_BLOCK, 90u);
+                armed120 = false;
+                first = R32(list + OFF_FIRST_BLOCK);
             }
         }
 
+        free = R32(list + OFF_FREE_NODE);
+        selected = R32(list + OFF_SELECTED_COUNT);
+        blocks = R32(list + OFF_BLOCK_COUNT);
+        first = R32(list + OFF_FIRST_BLOCK);
+        growth = R32(list + OFF_GROWTH_BLOCK);
+        cap = R8(capAddr);
+
+        string mode = armed120 ? "ARMED single-block-120" : "NOT ARMED";
         string err = patchError.Length == 0 ? "" : $" | ERROR:{patchError}";
-        return $"Attached pid:{pid} | F4:{enabled} | selected:{selected} | first:{first} | growth:{growth} | manual cap byte:0x{cap:X2} ({cap}){err}";
+        return $"Attached pid:{pid} | F4:{enabled} | {mode} | selected:{selected} | blocks:{blocks} | first:{first} | growth:{growth} | free:0x{free:X8} | cap:0x{cap:X2} ({cap}){err}";
     }
 
     public static void Stop() => Detach();
@@ -198,5 +245,6 @@ internal static class Native
         moduleBase = 0;
         pid = 0;
         patchError = "";
+        armed120 = false;
     }
 }
