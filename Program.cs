@@ -298,7 +298,7 @@ internal static class Native
         // Wrapper has the same stdcall shape as AddUnit: caller already did `push esi`.
         // mov eax,[esp+4]; push eax; mov eax,AddUnit; call eax;
         // push 1; mov eax,Sleep; call eax; ret 4
-        var code = new byte[23];
+        var code = new byte[24];
         int i = 0;
         code[i++] = 0x8B; code[i++] = 0x44; code[i++] = 0x24; code[i++] = 0x04;
         code[i++] = 0x50;
