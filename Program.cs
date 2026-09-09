@@ -18,21 +18,21 @@ internal static class Program
 
 internal sealed class MainForm : Form
 {
-    readonly CheckBox f4 = new() { Text = "F4 Max Population + SORT PIPELINE 120 — SURGICAL", AutoSize = true };
+    readonly CheckBox f4 = new() { Text = "F4 Max Population + UI/SORT/SIM SELECTION 120 — SURGICAL", AutoSize = true };
     readonly Label note = new()
     {
         AutoSize = true,
-        MaximumSize = new Size(790, 0),
-        Text = "Diagnostic only. Growth remains 0. Keeps active selection and the two native sort/rebuild temp lists on one 120-node first block. Does NOT patch the shared constructor or unrelated auxiliary lists. Enable F4 before selecting anything."
+        MaximumSize = new Size(900, 0),
+        Text = "Diagnostic only. Keeps the local UI selection, native sort/rebuild lists, and the local-player simulation selection container at first=120 with growth=0. The selection-add event remains LIVE so right-click move/attack commands stay authoritative. Enable F4 before selecting anything."
     };
-    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 108, TextAlign = ContentAlignment.MiddleLeft };
+    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 132, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 50 };
     bool f4Held;
 
     public MainForm()
     {
-        Text = "BRZE 1.60 — Selection Sort Pipeline 120 Probe";
-        ClientSize = new Size(850, 280);
+        Text = "BRZE 1.60 — Selection Simulation Pipeline 120 Probe";
+        ClientSize = new Size(960, 320);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -88,11 +88,19 @@ internal static class Native
     const int RVA_ACTIVE = 0x441708;
     const int RVA_SORT_A = 0x441784;
     const int RVA_SORT_B = 0x4417AC;
+    const int RVA_SIM_LISTS_PTR = 0x441730;
 
-    const int RVA_MANUAL_CAP_IMM = 0x1A7006;      // cmp selected, 90
-    const int RVA_SORT_A_FIRST_IMM = 0x1A71B1;    // push 90 for 0x841784
-    const int RVA_SORT_B_FIRST_IMM = 0x1A71B9;    // push 90 for 0x8417AC
-    const int RVA_SORT_ACTIVE_FIRST_IMM = 0x1A7299;// push 90 when rebuilding 0x841708
+    const int RVA_MANUAL_CAP_IMM = 0x1A7006;
+    const int RVA_SORT_A_FIRST_IMM = 0x1A71B1;
+    const int RVA_SORT_B_FIRST_IMM = 0x1A71B9;
+    const int RVA_SORT_ACTIVE_FIRST_IMM = 0x1A7299;
+
+    // Simulation-side per-player selection list construction/reset.
+    // 0x5A6C52 = push 0x5A during 10-list initialization, immediate at +1.
+    // 0x5A6E36 = push 0x5A during 10-list reset, immediate at +1.
+    const int RVA_SIM_INIT_FIRST_IMM = 0x1A6C53;
+    const int RVA_SIM_RESET_FIRST_IMM = 0x1A6E37;
+    const int SIM_LIST_STRIDE = 0x28;
 
     const int OFF_FREE_NODE = 0x08;
     const int OFF_COUNT = 0x18;
@@ -105,8 +113,10 @@ internal static class Native
     static long moduleBase;
     static int pid;
     static string patchError = "";
-    static bool armed;
+    static bool activeArmed;
     static bool sortPatched;
+    static bool simCodePatched;
+    static bool simArmed;
 
     static bool Attach()
     {
@@ -187,8 +197,49 @@ internal static class Native
         return true;
     }
 
+    static bool PatchSimulationCode()
+    {
+        if (!PatchExpectedByte(RVA_SIM_INIT_FIRST_IMM, 0x5A, 0x78, "sim-init")) return false;
+        if (!PatchExpectedByte(RVA_SIM_RESET_FIRST_IMM, 0x5A, 0x78, "sim-reset")) return false;
+        simCodePatched = true;
+        return true;
+    }
+
+    static bool ArmPristineList(long list, string name)
+    {
+        uint free = R32(list + OFF_FREE_NODE);
+        uint count = R32(list + OFF_COUNT);
+        uint blocks = R32(list + OFF_BLOCK_COUNT);
+        uint first = R32(list + OFF_FIRST);
+        uint growth = R32(list + OFF_GROWTH);
+
+        if (count == 0 && blocks == 0 && free == 0 && first == 90 && growth == 0)
+        {
+            if (!W32(list + OFF_FIRST, 120u))
+            {
+                patchError = $"{name}: first-block write failed";
+                return false;
+            }
+            return R32(list + OFF_FIRST) == 120u;
+        }
+
+        if (first == 120 && growth == 0)
+            return true;
+
+        patchError = $"{name}: allocator already used/unexpected (n={count}, b={blocks}, first={first}, grow={growth}) — restart BRZE and enable F4 before selecting anything";
+        return false;
+    }
+
+    static long LocalSimulationList(uint localId)
+    {
+        uint simBase = R32(moduleBase + RVA_SIM_LISTS_PTR);
+        if (simBase == 0) return 0;
+        return (long)simBase + localId * SIM_LIST_STRIDE;
+    }
+
     static string ListState(long list)
     {
+        if (list == 0) return "unavailable";
         uint count = R32(list + OFF_COUNT);
         uint blocks = R32(list + OFF_BLOCK_COUNT);
         uint first = R32(list + OFF_FIRST);
@@ -204,83 +255,81 @@ internal static class Native
         long sortA = moduleBase + RVA_SORT_A;
         long sortB = moduleBase + RVA_SORT_B;
         long capAddr = moduleBase + RVA_MANUAL_CAP_IMM;
-
-        uint free = R32(active + OFF_FREE_NODE);
-        uint selected = R32(active + OFF_COUNT);
-        uint blocks = R32(active + OFF_BLOCK_COUNT);
-        uint first = R32(active + OFF_FIRST);
-        uint growth = R32(active + OFF_GROWTH);
+        uint lid = R32(moduleBase + RVA_LOCAL_ID);
+        long simLocal = LocalSimulationList(lid);
         byte cap = R8(capAddr);
 
         if (enabled)
         {
-            uint lid = R32(moduleBase + RVA_LOCAL_ID);
             W32(moduleBase + RVA_MAX_UNITS + lid * 4L, 99_999_999u);
 
             if (!sortPatched && !PatchSortPipeline())
-                return Status(active, sortA, sortB, capAddr, "NOT ARMED");
+                return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
 
-            if (!armed)
+            if (!simCodePatched && !PatchSimulationCode())
+                return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
+
+            if (!activeArmed)
+                activeArmed = ArmPristineList(active, "active");
+
+            if (simLocal == 0)
             {
-                // The active list must still be pristine. Changing +0x20 after a 90-node block
-                // already exists would lie about the actual allocation size and is unsafe.
-                if (selected == 0 && blocks == 0 && free == 0 && first == 90 && growth == 0)
-                {
-                    if (!W32(active + OFF_FIRST, 120u))
-                        patchError = "active first-block write failed";
-                    else
-                        armed = R32(active + OFF_FIRST) == 120u;
-                }
-                else if (first == 120 && growth == 0)
-                {
-                    armed = true;
-                }
-                else
-                {
-                    patchError = "active allocator already used/unexpected — restart BRZE and enable F4 before selecting anything";
-                }
+                patchError = "simulation selection list not initialized yet";
+                return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
             }
 
-            if (armed && sortPatched && R32(active + OFF_GROWTH) == 0)
+            if (!simArmed)
+                simArmed = ArmPristineList(simLocal, "sim-local");
+
+            if (activeArmed && sortPatched && simCodePatched && simArmed &&
+                R32(active + OFF_GROWTH) == 0 && R32(simLocal + OFF_GROWTH) == 0)
             {
                 if (!PatchExpectedByte(RVA_MANUAL_CAP_IMM, 0x5A, 0x78, "manual-cap"))
-                    return Status(active, sortA, sortB, capAddr, "NOT ARMED");
+                    return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
             }
         }
         else
         {
-            // Closing admission is safe. We intentionally keep the sort-pipeline code patch
-            // while the process is alive; restoring it with >90 selected could make the next
-            // native rebuild reset back to 90 and crash. Full reset = restart BRZE.
+            // Close >90 local admission only. Keep sort + simulation reset code at 120
+            // until BRZE restart; restoring them while >90 state exists could reintroduce
+            // a 90-node reset underneath live selection state.
             if (cap == 0x78) WriteCodeByte(capAddr, 0x5A);
         }
 
-        return Status(active, sortA, sortB, capAddr, armed && sortPatched ? "ARMED sort-pipeline-120" : "NOT ARMED");
+        string mode = activeArmed && sortPatched && simCodePatched && simArmed
+            ? "ARMED sim-pipeline-120"
+            : "NOT ARMED";
+        return Status(active, sortA, sortB, simLocal, capAddr, lid, mode);
     }
 
-    static string Status(long active, long sortA, long sortB, long capAddr, string mode)
+    static string Status(long active, long sortA, long sortB, long simLocal, long capAddr, uint lid, string mode)
     {
         byte cap = R8(capAddr);
         byte a = R8(moduleBase + RVA_SORT_A_FIRST_IMM);
         byte b = R8(moduleBase + RVA_SORT_B_FIRST_IMM);
         byte r = R8(moduleBase + RVA_SORT_ACTIVE_FIRST_IMM);
+        byte si = R8(moduleBase + RVA_SIM_INIT_FIRST_IMM);
+        byte sr = R8(moduleBase + RVA_SIM_RESET_FIRST_IMM);
         string err = patchError.Length == 0 ? "" : $" | ERROR:{patchError}";
-        return $"pid:{pid} | {mode} | cap:0x{cap:X2} | sort bytes:{a:X2}/{b:X2}/{r:X2}\r\n" +
-               $"ACTIVE {ListState(active)} | SORT-A {ListState(sortA)} | SORT-B {ListState(sortB)}{err}";
+
+        return $"pid:{pid} | {mode} | player:{lid} | cap:0x{cap:X2} | sort:{a:X2}/{b:X2}/{r:X2} | sim-code:{si:X2}/{sr:X2} | add-notify:LIVE\r\n" +
+               $"ACTIVE {ListState(active)} | SIM {ListState(simLocal)}\r\n" +
+               $"SORT-A {ListState(sortA)} | SORT-B {ListState(sortB)}{err}";
     }
 
     public static void Stop()
     {
         if (h != IntPtr.Zero)
         {
-            // Close >90 admission. Keep sort pipeline at 120 until BRZE restart for safety.
             long capAddr = moduleBase + RVA_MANUAL_CAP_IMM;
             if (R8(capAddr) == 0x78) WriteCodeByte(capAddr, 0x5A);
         }
         DetachHandleOnly();
         patchError = "";
-        armed = false;
+        activeArmed = false;
         sortPatched = false;
+        simCodePatched = false;
+        simArmed = false;
     }
 
     static void DetachHandleOnly()
