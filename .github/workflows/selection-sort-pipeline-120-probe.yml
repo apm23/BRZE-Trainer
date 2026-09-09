@@ -1,16 +1,16 @@
-name: Selection simulation pipeline 120 probe
+name: Selection event buffer 1024 probe
 on:
   workflow_dispatch:
   push:
-    branches: [ selection-sim-pipeline-120-probe ]
-    paths: ['.trigger-selection-sim-pipeline-120-probe']
+    branches: [ selection-event-buffer-1024-probe ]
+    paths: ['.trigger-selection-event-buffer-1024-probe']
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: selection-sim-pipeline-120-probe
+          ref: selection-event-buffer-1024-probe
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -18,8 +18,8 @@ jobs:
         run: dotnet build BRZETrainer.csproj -c Release -r win-x86
       - name: Publish x86 single-file EXE
         run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o publish
-      - name: Upload simulation pipeline 120 probe
+      - name: Upload event-buffer 1024 probe
         uses: actions/upload-artifact@v4
         with:
-          name: BRZE-Selection-Sim-Pipeline-120-Probe
+          name: BRZE-Selection-EventBuffer-1024-Probe
           path: publish/BRZE-Trainer.exe
