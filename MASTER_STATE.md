@@ -80,13 +80,20 @@ For each type-0 event:
 4. set `unit+0x3AC=1`
 5. call `0x5A7B97(player)` at VA `0x5A739E`
 
+### Event buffer
+
+- used bytes VA `0x841C94`, RVA `0x441C94`
+- remaining bytes VA `0x841C98`, RVA `0x441C98`
+- buffer pointer VA `0x841C9C`, RVA `0x441C9C`
+- native size 256 bytes
+
 ---
 
 ## Rectangle selection path — static proof
 
 Function `0x5D4356`:
 
-- candidate list `0x879748`
+- candidate list `0x879748`, RVA `0x479748`
 - candidate append around `0x5D44B5`
 - candidate list default constructor gives first=128, growth=128
 - accepted candidates call AddUnit at `0x5D455A`
@@ -99,7 +106,7 @@ Rectangle-only accepted-unit call site:
 - original bytes `E8 79 2A FD FF` -> call `0x5A6FD8`
 - immediately preceded by `push esi` at `0x5D4559`
 
-Candidate capacity is not the ~80 freeze cause. Small drags that accumulate >100 also run the same final sort, so final UI sort itself is not the leading cause.
+Candidate capacity is not the ~80 freeze cause. Small drags that accumulate >100 also run the same final sort, so final UI sort itself is not yet the leading cause.
 
 ---
 
@@ -174,76 +181,81 @@ Proof: 256-byte event-buffer rollover is not sufficient to explain freeze.
 - artifact `BRZE-Selection-No-Per-Add-Refresh-Probe`, ID `10107440081`
 - EXE `853ec688772da02fbd244a848803588dbfed4bda114eb340247f356b0e3a2e98`
 - only per-add `call 0x5A7B97` suppressed
-- runtime: **large drag still immediately freezes**
+- runtime: large drag still immediately freezes
 
 Proof: per-add refresh storm is not sufficient to explain freeze. Do not carry this NOP forward.
 
+## Rectangle AddUnit Throttle 1 ms — FAILED TO FIX BULK DRAG
+
+- branch `selection-rectangle-throttle-1ms-probe`
+- first artifact had a trainer-side `IndexOutOfRangeException` because wrapper machine-code was 24 bytes but array was allocated as 23 bytes
+- fixed source persisted at branch commit `a1b73549ed4bb82b173f45bbe900c341835cfb61`
+- fixed build run `34363669046` SUCCESS
+- fixed EXE SHA-256 `ee5dd9a4efb6cbc894430b5e887b828cab630fa33a17996a850316332d1aedba`
+- runtime with fixed build: **one large rectangle drag still freezes**
+
+Important interpretation correction:
+
+- `Sleep(1)` executes inside the same rectangle-selection invocation/game thread
+- therefore this result only proves that adding wall-clock delay inside the same invocation does not help
+- it does **not** prove that distributing AddUnit/event processing across multiple game ticks would fail
+- reference: `reference/current-brze/rectangle-throttle1ms-runtime-failure-20260909.md`
+
 ---
 
-# CURRENT DECISIVE PROBE — RECTANGLE ADDUNIT THROTTLE 1 MS
+# CURRENT DIAGNOSTIC — READ-ONLY BULK TELEMETRY OBSERVER
 
-Branch:
+Goal: stop blind patching and capture exact state at the freeze boundary.
 
-- `selection-rectangle-throttle-1ms-probe`
+Observer branch:
 
-Base:
+- `selection-bulk-telemetry-observer`
+- source `TelemetryObserver.cs`
+- project `TelemetryObserver.csproj`
+- built head `93730bbdfa7b9fceb1c3a0e65178862dd6212784`
 
-- exact clean Sim120 built head `eb8a610b810ba5f17d4eb1b9fe3c914889caedad`
+Actions:
 
-Commits/build:
-
-- source logic `a96cc49c9d69aaef3bf98e047023d6f2e5299425`
-- workflow `a078e46135850e9aaeffe93800789d4f6d60435a`
-- built head/trigger `6de1082baec2fc68f8ba4c481e99cb2212939062`
-- Actions run `34361753497` — **SUCCESS**
+- run `34365054121` — **SUCCESS**
 - compile smoke success
 - x86 publish success
 - artifact upload success
 
 Artifact:
 
-- `BRZE-Selection-Rectangle-Throttle-1ms-Probe`
-- artifact ID `10108169188`
-- ZIP SHA-256 `f13cf148da16e1d0f51f877e51b63d4192c06b1e84cafa15285fdf74312edfed`
-- EXE SHA-256 `5290a2b36c1e35c7f88a95733d6344255e4d5435c11163c7668336c3d6753ad9`
+- `BRZE-Selection-Bulk-Telemetry-Observer`
+- artifact ID `10109550140`
+- ZIP SHA-256 `2caa34831e2af9ecddb712db9599c65c2227afdaf73111444c34afbacad0aab6`
+- EXE SHA-256 `4f73f3e23b77f954fe424c8d48dd8a2b8e4a39b85b959e849b79028303cd761c`
 
-Hypothesis:
+Observer semantics:
 
-- otherwise-valid AddUnit/type-0 operations are produced too tightly back-to-back inside one rectangle invocation
-- remaining failure is timing/scheduling/burst pressure, not persistent capacity, candidate capacity, event-buffer size, or the single per-add refresh call
+- **read-only**: opens BRZE with VM_READ + QUERY only; performs no writes and no code patches
+- samples every ~5 ms on a background thread
+- records only when state changes
+- tracks current + maxima for:
+  - rectangle candidate list `0x879748`: count/blocks/first/growth
+  - active UI list `0x841708`: count/blocks/first/growth
+  - local-player simulation list from `[0x841730] + player*0x28`
+  - event-buffer used/remaining/pointer at `0x841C94/98/9C`
+- keeps recent change history in the UI
+- also appends a log at `%TEMP%\BRZE-Selection-Telemetry.log`
 
-Exact differential from clean Sim120:
+Required runtime procedure:
 
-- original AddUnit semantics remain intact
-- event type-0 remains LIVE
-- simulation membership/append/refresh remain LIVE
-- manual/single-click AddUnit path untouched
-- only rectangle call site `0x5D455A` is redirected to a small in-process wrapper
-- wrapper calls original `0x5A6FD8`, then `Sleep(1)`, then returns with the same stdcall stack shape
-- remote Sleep address is resolved by module+offset, not assumed
-- F4 off / trainer stop restores original rectangle call bytes and frees the code cave
-- no EventBuffer-1024
-- no refresh NOP
+1. fully restart BRZE
+2. run the proven `BRZE-Selection-Sim-Pipeline-120-Probe.exe` (EXE hash `46a6...`) and enable F4 before any selection
+3. run `BRZE-Selection-Bulk-Telemetry-Observer.exe` alongside it; observer requires no F-key and writes nothing
+4. immediately reproduce the known one-shot large rectangle drag freeze
+5. after freeze, do **not** close BRZE yet
+6. capture the observer window, especially current CAND/ACTIVE/SIM/EVENT values and recent history; alternatively provide `%TEMP%\BRZE-Selection-Telemetry.log`
 
-Status target:
+Decision tree from telemetry:
 
-- `ARMED rect-throttle-1ms`
-- `rect-addunit-throttle:1ms`
-- `event0:LIVE`
-- `sim-refresh:LIVE`
-- ACTIVE/SIM first=120 grow=0
-
-Required runtime test:
-
-1. fresh BRZE, enable F4 before any selection
-2. immediately do one large rectangle drag like the known freeze case (~80-100 units)
-3. if stable, test right-click move and attack
-4. verify ACTIVE/SIM counts
-
-Interpretation:
-
-- stable -> burst timing/scheduling strongly confirmed; optimize final yield frequency rather than changing selection semantics
-- still freezes -> continue into rectangle-specific synchronous/end-of-batch behavior; capacity/buffer/per-add-refresh remain disproven
+- CAND remains non-zero at freeze -> rectangle producer/iteration itself is stuck before candidate clear
+- CAND becomes 0 while ACTIVE/SIM diverge -> problem lies in event/authoritative simulation synchronization after rectangle AddUnit production
+- CAND=0 and ACTIVE/SIM both reach the intended count -> problem is downstream/end-of-batch after authoritative selection state is already synchronized
+- EVENT used/remaining stuck at a boundary helps identify whether dispatcher/flush state is involved even though larger backing buffer did not fix the issue
 
 ---
 
@@ -255,6 +267,7 @@ Interpretation:
 - permanent event type-0 suppression
 - EventBuffer-1024 by default
 - permanent `0x5A7B97` suppression
+- in-function `Sleep(1)` as if it were a cross-tick throttle
 - heavy per-frame selected-unit scans
 - multiple unrelated changes per probe
 
@@ -264,4 +277,4 @@ Interpretation:
 
 Read this file first.
 
-**Current unresolved hinge:** runtime result of `BRZE-Selection-Rectangle-Throttle-1ms-Probe` on one large rectangle drag and subsequent move/attack.
+**Current unresolved hinge:** telemetry snapshot/log from a known large-drag freeze while using clean Sim120 + the read-only bulk telemetry observer.
