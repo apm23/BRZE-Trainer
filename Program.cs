@@ -21,7 +21,7 @@ internal sealed class MainForm : Form
     readonly CheckBox f4 = new() { Text = "F4 Max Population + ACTIVE selection growth only — SURGICAL", AutoSize = true };
     readonly Label note = new() { AutoSize = true, MaximumSize = new Size(620, 0), Text = "No HP/stamina hooks, no F7, no selection-event hooks, no manual-cap patch, no temp-container patch. Native manual cap stays 90. Team recall may exceed 90; only the active selection list growth field is rescued from 0 to 90." };
     readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 64, TextAlign = ContentAlignment.MiddleLeft };
-    readonly Timer timer = new() { Interval = 50 };
+    readonly System.Windows.Forms.Timer timer = new() { Interval = 50 };
     bool f4Held;
 
     public MainForm()
