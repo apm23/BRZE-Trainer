@@ -11,57 +11,139 @@ Last updated: 2026-09-09 (Asia/Tokyo)
 - Distinguish **observation**, **static proof**, **runtime proof**, **inference**, and **hypothesis**.
 - Do not reintroduce disproven/broad patches without new evidence.
 
-## Current base — narrow selection experiment
+## Current BRZE target binary
+
+Authoritative current target specimen supplied by user:
+
+- filename: `Battle_Realms_F(5).exe`
+- PE32 / x86
+- size: `4,521,984` bytes
+- preferred image base: `0x400000`
+- SHA-256: `d62de491b8d4d5002b6efc5b9ad492050472bc1e10ab223df1080392733ea5e5`
+- fingerprint note: `reference/current-brze/target-binary-20260909.md`
+
+All current offsets/patches must be verified against this specimen. Legacy WOTW binaries are reference-only.
+
+## Latest runtime result — Manual 120 FAILED at the 90/91 boundary
+
+### Tested build
 
 **Experiment:** BRZE Selection Manual 120
 
-**Pinned build source commit:** `d3363c0c649920755c5f152f6a8fe2147bef8866`
+- pinned source commit: `d3363c0c649920755c5f152f6a8fe2147bef8866`
+- branch: `selection-capacity-manual-120`
+- workflow: `.github/workflows/selection-capacity-manual-120.yml`
+- successful Actions run: `34343788268`
+- artifact: `BRZE-Selection-Manual-120` (artifact ID `10100855929`)
+- artifact ZIP digest: `sha256:1d0aab8c6087eeb91b266b119b7f94f1cca8f891f77e25918443ca6f803665c0`
+- built EXE SHA-256: `848ecb59e588b92bd92d06940d57fc1e34a94ed71d0aa7d37f9bbf6046e6ce2d`
 
-**Branch:** `selection-capacity-manual-120`
+Patch set:
 
-**Workflow:** `.github/workflows/selection-capacity-manual-120.yml`
+- active selection `+0x24` growth `0 -> 90`
+- manual AddUnit guard immediate at RVA `0x1A7006`: `90 -> 120`
+- no constructor/temp-container/broad capacity patch
+- no HP/stamina/F7/selection-event hook
 
-**Successful Actions run:** `34343788268`
+### Runtime observation reported 2026-09-09
 
-**Artifact:** `BRZE-Selection-Manual-120` (artifact ID `10100855929`)
+**Game crashes as selection reaches the native 90-unit boundary.**
 
-**Artifact ZIP digest reported by GitHub:** `sha256:1d0aab8c6087eeb91b266b119b7f94f1cca8f891f77e25918443ca6f803665c0`
+Because the preceding Surgical Growth Probe was stable at exactly 90 while the manual guard remained 90, the new crash is tied to opening admission beyond 90. The most likely trigger is the attempt to admit unit #91 or work immediately caused by that admission.
 
-**Built EXE SHA-256 after extracting artifact:** `848ecb59e588b92bd92d06940d57fc1e34a94ed71d0aa7d37f9bbf6046e6ce2d`
+Proof label: **runtime-proven failure of Manual 120 at the 90/91 boundary.**
 
-### Exact narrow patch set
+Do not describe growth `0 -> 90` as usable beyond 90; that has now failed runtime testing when #91 is admitted.
 
-From `Program.cs`:
+## New static proof from authoritative BRZE binary
 
-- `RVA_SELECTION_LIST = 0x441708` (absolute VA `0x841708` at preferred image base `0x400000`)
-- selected count offset: `+0x18`
-- first block offset: `+0x20`
-- growth block offset: `+0x24`
-- active selection growth: **`0 -> 90`**
-- `RVA_MANUAL_CAP_IMM = 0x1A7006` (absolute VA `0x5A7006`)
-- proven manual AddUnit cap immediate: **`0x5A (90) -> 0x78 (120)`**
-- max population path remains enabled under F4 via `RVA_MAX_UNITS = 0x467B90` for local player ID at `RVA_LOCAL_ID = 0x4416D0`
+Direct disassembly of current target `Battle_Realms_F(5).exe` confirms the native selection container allocator.
 
-### Deliberately absent from this specimen
+### Manual admission guard
 
-- no HP hook
-- no stamina hook
-- no F7
-- no selection-event hook
-- no selection polling/top-up loop
-- no constructor capacity patch
-- no temp/auxiliary selection-container patch
-- no broad shared-capacity patch
+At `0x5A7000`:
 
-The current diagnostic must remain narrow until the >90 runtime behavior is known.
+```asm
+cmp dword ptr [0x841720], 0x5A
+je  0x5A70D5
+```
 
-## Proven results before current test
+The immediate byte at `0x5A7006` is the 90-unit manual selection guard.
+
+### Active-list append
+
+At `0x5A70B6`:
+
+```asm
+push esi
+mov  ecx, 0x841708
+call 0x4ACB59
+```
+
+`0x4ACB59` appends a node and increments `[container+0x18]`.
+
+### Node allocator boundary behavior
+
+`0x4ACB2D` pops a node from `[container+0x08]`. If the free-node list is empty it calls `0x4AC4C1`.
+
+`0x4AC4C1` selects allocation size as follows:
+
+- when `[container+0x1C] == 0`, use `[container+0x20]` (first block size)
+- when `[container+0x1C] != 0`, use `[container+0x24]` (growth block size)
+
+Then it allocates `count * 12` bytes worth of 12-byte nodes and increments `[container+0x1C]`.
+
+### Active selection construction
+
+`0x5A6BC9` constructs `0x841708` via `0x4ABFE6` with:
+
+- first block size = `90`
+- growth size = `0`
+
+Therefore the stock active list is intentionally configured as one 90-node block with no second growth block.
+
+This is **static-proven** from the authoritative BRZE binary.
+
+## Current decisive experiment — FIRST BLOCK 120 / NO GROWTH
+
+Goal: distinguish **second-block transition failure** from a **downstream consumer that cannot tolerate selected count >90**.
+
+**Branch:** `selection-firstblock-120-probe`
+
+Base: clean pinned Manual-120 source commit `d3363c0c649920755c5f152f6a8fe2147bef8866`, not the later broad/full-pipeline branch tip.
+
+Source commit introducing probe logic: `89c8a2044524bd20f8fbe5cbea2eabe02af11180`
+
+### Exact probe behavior
+
+- growth stays **0**
+- only when active selection allocator is pristine (`selected=0`, block count=0, free-list=0, first=90, growth=0):
+  - active list first block `+0x20`: **90 -> 120**
+- manual guard: **90 -> 120** only after the first-block-120 state is armed
+- max population remains enabled
+- no constructor-code patch
+- no temp/auxiliary container patch
+- no HP/stamina/F7/selection hooks
+- status exposes selected count, block count, first size, growth size, free-list pointer and cap byte
+- if allocator was already used, trainer refuses to open the cap and instructs user to restart
+
+### Interpretation
+
+#### If 91 -> 100+ works with first=120, growth=0, blocks=1
+
+Strongly supports the hypothesis that the previous crash is specifically tied to the **second block allocation / growth transition**, not selected count >90 itself.
+
+#### If it still crashes at 90/91 with one preallocated 120-node first block
+
+Then the growth transition is exonerated. Move investigation downstream to code that consumes a selected count/list above 90: UI, formation, command dispatch, group/team processing, or fixed-size arrays.
+
+## Proven earlier results
 
 ### Old broad selection-capacity attempts
 
-**Runtime observation:** selecting a very large number of units could freeze gameplay/simulation/animations while audio, cursor, camera movement, and saving remained functional. Saving and reloading cleared the frozen state.
+Runtime observation: selecting a very large number of units could freeze gameplay/simulation/animations while audio, cursor, camera movement, and saving remained functional. Saving and reloading cleared the frozen state.
 
-**Inference:** this is not a full process crash; it is consistent with simulation/game-state processing entering a bad state.
+Inference: not a full process crash; consistent with simulation/game-state processing entering a bad state.
 
 ### Surgical Growth Probe
 
@@ -71,116 +153,49 @@ Patch set:
 - manual selection guard remained 90
 - no constructor/temp-container/broad patches
 
-**Runtime result:**
+Runtime result:
 
 - `selected = 90`
 - `first = 90`
 - `growth = 90`
 - no crash
 - no freeze
-- unit #91 could not be selected because the manual guard was still 90
+- unit #91 could not be selected because manual guard remained 90
 
-**Conclusion:** merely setting native active-list growth to 90 is stable through the first 90 selections. It did not yet prove second-block allocation because the manual guard prevented #91.
-
-## Current decisive runtime test — PENDING
-
-Use only the pinned **BRZE Selection Manual 120** artifact.
-
-Test sequence:
-
-1. Fully restart BRZE.
-2. Load the known old test save.
-3. Start the narrow trainer.
-4. Enable **F4 only**.
-5. Manually select across the boundary: 89 -> 90 -> 91 -> 92 -> 100+.
-6. Test Team 1 containing about 100 units.
-7. Record exact selected count and behavior at the first anomaly.
-
-Record:
-
-- maximum selected count
-- whether 91 is admitted
-- whether Team 1 ~100 selects completely
-- freeze yes/no
-- crash yes/no
-- exact count at anomaly
-- animation/simulation behavior
-- audio behavior
-- camera behavior
-- cursor behavior
-- whether deselect recovers
-- whether save/reload recovers
-- trainer status line (`selected / first / growth / manual cap byte`)
-
-## Decision tree after Manual 120 test
-
-### A — 90 -> 100+ stable
-
-Supports:
-
-- growth 90 is usable for the active-selection list
-- the manual 90 guard was a real blocker
-- older broad patches likely destabilized unrelated/shared containers
-
-Next work: increase the target in controlled increments while keeping the patch narrow and inspect any next fixed-size consumer before raising much further.
-
-### B — freeze/crash at 91 or immediately after crossing 90
-
-Primary suspects:
-
-- second allocation block path
-- pointer/block transition
-- native block-linking/index logic
-- a consumer assuming the first block is the only block
-
-Do not immediately patch constructors or all containers.
-
-### C — >90 works, then freeze near another count
-
-Move investigation toward downstream consumers:
-
-- formation processing
-- order processing
-- selected-unit iteration
-- simulation-side fixed-size arrays/buffers
-- group/team command processing
-
-### D — still hard-capped at 90
-
-There is at least one additional admission gate/clamp/compare. Find that gate before changing allocator/container construction.
+Conclusion: writing growth=90 is harmless while the stock first block has not overflowed. It did **not** prove the second allocation path.
 
 ## Known BRZE 1.60 static mappings relevant to later trainer work
 
 Reference: `reference/old-trainer/brze160-remap-20260908.md`.
 
 - selected-unit list: absolute VA `0x841708`, RVA `0x441708`
-- list layout: `+0x00` head, `+0x04` tail, `+0x18` selected count
+- list layout: `+0x00` head, `+0x04` tail, `+0x08` free-node head, `+0x18` selected count, `+0x1C` allocated block count, `+0x20` first block size, `+0x24` growth block size
 - node layout: `+0x00` next, `+0x04` previous, `+0x08` unit pointer
 - selected/focused building pointer: absolute VA `0x8417D8`, RVA `0x4417D8`
 - second building-related pointer: absolute VA `0x8417D4`, RVA `0x4417D4`
-- training progress: building `+0x490`, 16.16 fixed-point, completion threshold `0x00640000`
+- training progress: building `+0x490`, 16.16 fixed-point, threshold `0x00640000`
 - another progress channel: building `+0x4BC`, 16.16 fixed-point
 
-These mappings have mixed proof levels. Preserve the proof labels from the reference document; do not treat all of them as runtime-proven cheats.
+Preserve proof labels; not every mapping is runtime-proven cheat behavior.
 
-## Historical reference binaries supplied again by user
+## Historical reference binaries
 
-These are reference specimens only, not the current BRZE target.
+Reference-only, not current target:
 
 ### Legacy trainer
 
-- supplied filename: `BattleRealmsTrainer OLD.exe`
+- `BattleRealmsTrainer OLD.exe`
 - PE32 / x86 GUI
-- UPX-compressed (`UPX0`, `UPX1`, resource section)
+- UPX-compressed
 - SHA-256: `41571fc8cd83e296a60a04d934440b5a01d22ce45d111acdc31b13f16e8aa24d`
 
 ### Matching legacy BR WOTW executable
 
-- supplied filename: `Battle_Realms_F(4).exe`
+- `Battle_Realms_F(4).exe`
 - PE32 / x86 GUI
 - SHA-256: `6217a30325c4f84ba3c44965051979d891d468e9b2374686be6b7aab82403666`
 
-Use these only to recover legacy semantics/patterns and cross-check the existing `reference/old-trainer/` autopsy. Current BRZE addresses must come from the BRZE remap/current binary work, not copied blindly from WOTW.
+Use only for semantic/pattern recovery. Do not copy WOTW addresses blindly into current BRZE.
 
 ## Do not reintroduce without evidence
 
@@ -188,19 +203,20 @@ Use these only to recover legacy semantics/patterns and cross-check the existing
 - auxiliary/temp-container capacity patches
 - patching every site merely because it uses the same value 90
 - broad shared-capacity changes
-- per-frame/per-tick heavy scanning of selected units
-- selection-event hooks during the current capacity investigation
-- multiple subsystem changes in a single diagnostic specimen
+- per-frame/per-tick heavy scanning
+- selection-event hooks during this capacity investigation
+- multiple subsystem changes in one diagnostic specimen
+- growth `0 -> 90` + cap >90 as if it were proven safe (it is now runtime-failed at the boundary)
 
 ## Forensic discipline
 
 1. One hypothesis -> smallest possible patch -> runtime test -> record result.
-2. Preserve original bytes before any code patch.
-3. Pin every test artifact to commit, workflow run, and hash when possible.
-4. Keep failed builds/tests in history; they are evidence.
-5. Never call a behavior runtime-proven solely because it compiles or matches legacy structure.
-6. Use a disposable/test save slot for risky experiments; do not overwrite the main save.
-7. On a new ChatGPT thread, read this file before proposing or building the next specimen.
+2. Preserve original bytes before code patching.
+3. Pin every test artifact to commit, workflow run and hash when possible.
+4. Keep failed tests/builds; they are evidence.
+5. Compile success is not runtime proof.
+6. Use disposable save slots for risky tests.
+7. On a new ChatGPT thread, read this file before proposing the next specimen.
 
 ## New-chat handoff
 
@@ -210,4 +226,4 @@ Use:
 
 Then read `MASTER_STATE.md` from `apm23/BRZE-Trainer` before taking action.
 
-**Current unresolved hinge:** runtime result of pinned `BRZE-Selection-Manual-120` across selection #91 and Team 1 ~100 units.
+**Current unresolved hinge:** runtime result of the **Selection First-Block 120 Probe** across selected unit #91 with `first=120`, `growth=0` and ideally `blocks=1`.
