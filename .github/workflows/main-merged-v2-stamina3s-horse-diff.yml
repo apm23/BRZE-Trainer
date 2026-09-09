@@ -1,0 +1,78 @@
+name: Main Trainer v2 — Stamina Add+Sub + Peasant3s + Horse Diff
+
+on:
+  push:
+    branches:
+      - main-merge-v2-stamina3s-horse-diff
+    paths:
+      - 'HookCore.cs'
+      - 'SelectionCore.cs'
+      - 'HorseWeModDiffObserver.cs'
+      - 'HorseWeModDiffObserver.csproj'
+      - 'MergedTrainer.csproj'
+      - 'tools/prepare_merged_v1.py'
+      - 'tools/patch_v2_stamina3s.py'
+      - 'tools/patch_v2_merged_ui.py'
+      - '.github/workflows/main-merged-v2-stamina3s-horse-diff.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main-merge-v2-stamina3s-horse-diff
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Apply v2 source delta
+        run: python tools/patch_v2_stamina3s.py
+
+      - name: Generate merged main source
+        run: python tools/prepare_merged_v1.py
+
+      - name: Apply v2 merged UI delta
+        run: python tools/patch_v2_merged_ui.py
+
+      - name: V2 smoke assertions
+        shell: pwsh
+        run: |
+          $h = Get-Content HookCore.cs -Raw
+          if (-not $h.Contains('RVA_SUB_STAMINA = 0x1CDF46')) { throw 'SubStamina RVA missing' }
+          if (-not $h.Contains('BuildSubStaminaHook')) { throw 'SubStamina hook builder missing' }
+          if (-not $h.Contains('SubStOriginal')) { throw 'SubStamina stock bytes missing' }
+          if (-not $h.Contains('ST-hard(Add+Sub)')) { throw 'Add+Sub status missing' }
+          $c = Get-Content SelectionCore.cs -Raw
+          if (-not $c.Contains('PEASANT_FIXED_MS = 3000')) { throw 'fixed3s source missing' }
+          if (-not $c.Contains('peasant3s:')) { throw 'fixed3s status missing' }
+          $m = Get-Content MergedProgram.cs -Raw
+          if (-not $m.Contains('FIXED 3.0 seconds')) { throw '3s UI label missing' }
+          if (-not $m.Contains('Native.ApplyLegacyRuntime(pausePeasant.Checked,demolish.Checked,false,legacyTower.Checked)')) { throw 'failed horse workaround not disabled' }
+          if (-not $m.Contains('HookCore.Tick(f5.Checked, f6.Checked, f7.Checked)')) { throw 'HookCore wiring lost' }
+          if (-not $m.Contains('SelectionCore.Tick(fastPeasant.Checked)')) { throw 'SelectionCore wiring lost' }
+
+      - name: Compile merged v2 smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+
+      - name: Publish merged v2 x86 single-file
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-v2
+
+      - name: Compile horse observer smoke
+        run: dotnet build HorseWeModDiffObserver.csproj -c Release -r win-x86
+
+      - name: Publish horse observer x86 single-file
+        run: dotnet publish HorseWeModDiffObserver.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-horse-observer
+
+      - name: Upload merged v2
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-Merged-v2-StaminaAddSub-Peasant3s
+          path: publish-v2/BRZE-Trainer-Merged-v1.exe
+
+      - name: Upload Horse WeMod Diff Observer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Horse-WeMod-Diff-Observer
+          path: publish-horse-observer/BRZE-Horse-WeMod-Diff-Observer.exe
