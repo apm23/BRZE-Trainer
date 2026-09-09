@@ -6,7 +6,7 @@ Specimen B with only F1-F4 and F7 enabled still crashes when attempting the larg
 
 ## PROVEN BRZE 1.60 native selection cap
 
-Static disassembly of the supplied authoritative `Battle_Realms_F.exe` proves the normal AddUnitToSelection path at VA `0x5A6FD8` checks the authoritative selected count:
+Static disassembly of authoritative BRZE 1.60 proves normal AddUnitToSelection at VA `0x5A6FD8` checks selected count:
 
 ```asm
 5A6FF4 cmp dword ptr [esi+0x3A8],0
@@ -15,61 +15,64 @@ Static disassembly of the supplied authoritative `Battle_Realms_F.exe` proves th
 5A7007 je  0x5A70D5
 ```
 
-`0x5A = 90` decimal. Therefore the native guarded/manual selection cap in BRZE 1.60 is **90 units**, not 80. The earlier 80 figure was only an illustrative hypothesis and is superseded by this proof.
+`0x5A = 90`. Native guarded/manual selection cap is 90.
 
 ## Authoritative selected container
 
-The selected-unit container object begins at VA `0x841708`. Its count is the DWORD at object `+0x18`, therefore VA `0x841720`.
+Container object VA `0x841708`; count DWORD VA `0x841720` (`+0x18`). Add routine `0x4ACB59` stores unit pointer in a linked node and increments `+0x18`.
 
-The add call immediately before the selected flag is set is:
+Further allocator audit proves 90 is NOT a physical one-block ceiling. `0x4ABFE6` initializes the container with node-allocation block size at object `+0x20`. Selection setup at `0x5A7297` passes `0x5A` (90) as that block size. When the freelist is empty, `0x4AC4C1` allocates another block of `block_size * 12` bytes and links its nodes into the free pool. Therefore the linked container can physically grow beyond 90 nodes. This removes the fixed-90-pointer-array hypothesis.
+
+## PROVEN control-group recall bypass
+
+The control-group selection/recall routine beginning at VA `0x5A780B` first clears the active selected container and selected flags, then enumerates local-player units. For units whose group field `unit+0x36C` equals the requested group ID, it performs:
 
 ```asm
-5A70B6 push esi
-5A70B7 mov ecx,0x841708
-5A70BC call 0x4ACB59
-5A70C1 movzx eax,word ptr [esi+6]
-5A70C5 push eax
-5A70C6 mov dword ptr [esi+0x3A8],1
+5A78B0 cmp dword ptr [esi+0x3BC],0
+5A78B7 jne 0x5A78D6
+5A78B9 cmp dword ptr [esi+0x36C],edi
+5A78BF jne 0x5A78D6
+5A78C1 push esi
+5A78C2 mov  ecx,0x841708
+5A78C7 call 0x4ACB59
+5A78CC mov  dword ptr [esi+0x3A8],1
 ```
 
-`0x4ACB59` is a linked-list insertion routine. It obtains a node, stores the unit pointer at node `+0x8`, links the node at the tail, and executes `inc dword ptr [esi+0x18]`. The corresponding generic removal logic decrements object `+0x18`.
+This path calls the generic linked-list insertion routine `0x4ACB59` DIRECTLY. It does NOT call guarded AddUnitToSelection `0x5A6FD8` and contains no `count == 90` guard before insertion. Therefore a control group containing 100 units can create an authoritative selected count of 100, while manual/Shift selection is stopped at 90.
 
-This is important: the active selection is **not a simple fixed 90-pointer array**. It is a node-based linked container with an explicit count. The value 90 is an engine policy guard in the normal add path. This materially lowers the probability that merely raising the normal guard would immediately overrun a 90-entry backing pointer array, but it does NOT yet prove all consumers are safe above 90.
+This exactly explains the observed behavioral split at the selection layer:
+- manual/Shift: guarded at 90, extra units refused safely;
+- control-group recall: bypasses guard and can populate >90.
 
-## Why the user's control-group crash is now highly significant
+The crash itself is not yet assigned to a specific downstream consumer. Because the linked container can allocate additional node blocks, the crash is now more likely to be a downstream subsystem that was designed/tested with `selected_count <= 90`, rather than immediate overflow of the central linked list.
 
-The original/manual controls support Ctrl+1..9 assignment and 1..9 recall. Public documentation confirms these are native group operations. Runtime evidence says manual/Shift selection stops safely, while recalling a group containing ~100 units crashes.
+## Related native group operations
 
-Combined with the proven 90-unit guard, the leading hypothesis is now:
+VA `0x5A7694` operates on unit `+0x36C` group IDs across the active selection/player-unit enumeration. The group subsystem supports ten slots (0-9). This is separate from the active selection count.
 
-1. normal manual AddUnitToSelection checks `[0x841720] == 90` and refuses the next unit safely;
-2. a hotkey/control-group recall path may bulk-restore or otherwise populate selection without converging through this exact guard;
-3. one or more downstream consumers may assume selected count <= 90, causing failure when the group recall produces >90 selected units.
+## Existing trainer hooks
 
-This is a hypothesis, not yet a conviction. The control-group recall path and every selected-count consumer must be traced before patching.
-
-## Existing trainer selection hooks
-
-Known trainer-related event sites `0x5A70C6` and `0x5A78CC` set per-unit `+0x3A8 = 1`. They are not the authoritative count. The central count is `0x841720` and central container is `0x841708`. F5/F6 remain excluded from the current large-selection isolation.
+Trainer event sites `0x5A70C6` and `0x5A78CC` touch per-unit selected flag `+0x3A8`; they are not authoritative count/storage. F5/F6 remain excluded from this investigation.
 
 ## Next mandatory trace
 
-1. Find the exact 1..9 control-group recall routine and determine whether it calls `0x5A6FD8`, calls `0x4ACB59` directly, or uses a separate bulk-copy/list path.
-2. Audit every meaningful xref to `0x841720` and selection-container iterators for assumptions of <=90.
-3. Trace UI portrait/card code, order dispatch/pathing group construction, battle gear indexing, deselection/death cleanup, and control-group serialization.
-4. Compare WOTW implementation structurally and determine whether 90 is legacy or ZE-specific.
-5. Only after consumer safety is proven, create an F4 Max Population companion patch that raises selection capacity. Target stress tests: 100, 150, 200 simultaneous selected units.
+1. Audit downstream consumers reached immediately after `0x5A780B` / `0x5A78E6` when count is >90.
+2. Audit all xrefs to `0x841720`, especially UI, order dispatch, pathing-group creation, battle gear, and selection post-processing.
+3. Audit hard-coded 90 (`0x5A`) constants in selection-related code. Distinguish policy guards from allocator block-size constants and unrelated numeric 90s.
+4. Determine exact crash consumer before raising manual cap.
+5. Build F4 companion patch only after >90 consumer safety/fixes are known. Target 200 simultaneous selected units.
 
 ## Population status
 
-Keep max-pop behavior unchanged during this isolation. Existing max-pop audit has not shown the large numeric max-pop value to size this selection container.
+Keep max-pop unchanged during isolation. Existing max-pop audit has not shown max-pop sizing this selection container.
 
 ## Acceptance gate
 
 - native manual cap: PROVEN = 90
-- central selected count: PROVEN = VA 0x841720
-- central selected container: PROVEN = VA 0x841708, linked node container
-- control-group overflow path: NOT YET PROVEN
-- all >90 consumers safe: NOT YET PROVEN
+- central selected count: PROVEN = VA `0x841720`
+- central selected container: PROVEN = VA `0x841708`, linked node container
+- allocator can grow beyond first 90 nodes: PROVEN
+- control-group recall bypasses normal 90 guard: PROVEN at `0x5A78C7`
+- exact downstream >90 crash consumer: NOT YET PROVEN
 - raised-cap patch safe: NOT YET PROVEN
 - 100/150/200 runtime stress: NOT YET RUN
