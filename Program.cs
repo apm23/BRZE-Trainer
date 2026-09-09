@@ -18,7 +18,7 @@ internal sealed class MainForm : Form
     readonly CheckBox f1 = new() { Text = "F1 Infinite Rice", AutoSize = true };
     readonly CheckBox f2 = new() { Text = "F2 Infinite Water", AutoSize = true };
     readonly CheckBox f3 = new() { Text = "F3 Infinite Yin + Yang", AutoSize = true };
-    readonly CheckBox f4 = new() { Text = "F4 Unlimited Population (9,999,999)", AutoSize = true };
+    readonly CheckBox f4 = new() { Text = "F4 Max Population + Selection Capacity 120 — INTERROGATION", AutoSize = true };
     readonly CheckBox f5 = new() { Text = "F5 No Stamina Loss (selected only) — SPECIMEN B NATIVE DELTA", AutoSize = true };
     readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — SPECIMEN B NATIVE DELTA", AutoSize = true };
     readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — LEGACY F4 EXACT REMAP", AutoSize = true };
@@ -82,6 +82,7 @@ internal static class Native
     const int RVA_UNIT_POOL=0x4796A0,UNIT_STRIDE=0x818,UNIT_COUNT=2000,OFF_DEF=0x74,OFF_OWNER=0x240,OFF_SEL_A=0x3A8,OFF_SEL_B=0x3AC,OFF_HP=0x404,OFF_ST=0x408,RVA_SELECTION_LIST=0x441708,RVA_SELECTED_BUILDING_A=0x4417D4,RVA_SELECTED_BUILDING_B=0x4417D8;
     const int RVA_ADD_HEALTH=0x1CCD78,RVA_ADD_STAMINA=0x1CCE03,RVA_TRAIN_PROGRESS_READ=0x0D5DDB;
     const int RVA_SELECT_ONE=0x1A70C6,RVA_SELECT_BOX=0x1A78CC;
+    const int RVA_SELECTION_CAP_CMP_IMM=0x1A7006,RVA_SELECTION_GROWTH=0x44172C,RVA_TEMPSEL_A_GROWTH=0x4417A8,RVA_TEMPSEL_B_GROWTH=0x4417D0;
     const int RVA_PEASANT_CREATION=0x467AF4,RVA_DEMOLISH_ENABLE=0x3D7A1C;
     const int RVA_CFG_BASE_PTR=0x43FF2C,RVA_CFG_INDEX_PTR=0x440034;
     const int RVA_BUILDING_POOL=0x4814E0,BUILDING_STRIDE=0x6A4,BUILDING_COUNT=500,OFF_BUILD_OWNER=0x84,OFF_TRAIN_TYPE=0x488,OFF_TRAIN_PROGRESS=0x490,OFF_TRAIN_GATE=0x4B8,OFF_BUILD_SPECIAL=0x68C,RVA_TRAIN_SPECIAL_GLOBAL=0x46779C;
@@ -287,7 +288,7 @@ internal static class Native
     public static string Apply(bool rice,bool water,bool yinYang,bool pop,bool instantTrain)
     {
         if(!Attach())return "Waiting for Battle_Realms_F.exe...";uint lid=R32(moduleBase+RVA_LOCAL_ID),playerPtr=R32(moduleBase+RVA_PLAYER_PTR);if(playerPtr==0)return "Attached, waiting for match/player data...";localId=lid;long player=(long)playerPtr+(long)lid*PLAYER_STRIDE;
-        if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop)W32(moduleBase+RVA_MAX_UNITS+lid*4,9_999_999);
+        if(rice)W32(player+OFF_RICE,50000);if(water)W32(player+OFF_WATER,50000);if(yinYang){W32(player+OFF_YIN,10);W32(player+OFF_YANG,10);}if(pop){W32(moduleBase+RVA_MAX_UNITS+lid*4,99_999_999); W8(moduleBase+RVA_SELECTION_CAP_CMP_IMM,0x78); W32(moduleBase+RVA_SELECTION_GROWTH,120); W32(moduleBase+RVA_TEMPSEL_A_GROWTH,120); W32(moduleBase+RVA_TEMPSEL_B_GROWTH,120);}
         return $"Attached | hooks:{hooksInstalled} selected:{selectedLocked} F7LegacyHook:{instantTrain} | F5:{wantStamina} F6:{wantHp} F7:{instantTrain}"+(hookError.Length==0?"":" | "+hookError);
     }
 }
