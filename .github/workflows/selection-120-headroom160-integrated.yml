@@ -1,0 +1,31 @@
+name: Selection 120 Headroom160 Integrated
+
+on:
+  push:
+    branches:
+      - selection-120-headroom160-integrated
+    paths:
+      - 'Integrated120Headroom160.cs'
+      - 'Integrated120Headroom160.csproj'
+      - '.github/workflows/selection-120-headroom160-integrated.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: selection-120-headroom160-integrated
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile smoke
+        run: dotnet build Integrated120Headroom160.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish Integrated120Headroom160.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-integrated
+      - name: Upload integrated trainer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Selection-120-Headroom160-Integrated
+          path: publish-integrated/BRZE-Selection-120-Headroom160-Integrated.exe
