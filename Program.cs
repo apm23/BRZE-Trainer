@@ -18,21 +18,21 @@ internal static class Program
 
 internal sealed class MainForm : Form
 {
-    readonly CheckBox f4 = new() { Text = "F4 Max Population + FIRST BLOCK 120 + manual cap 120 — SINGLE BLOCK PROBE", AutoSize = true };
+    readonly CheckBox f4 = new() { Text = "F4 Max Population + SORT PIPELINE 120 — SURGICAL", AutoSize = true };
     readonly Label note = new()
     {
         AutoSize = true,
-        MaximumSize = new Size(720, 0),
-        Text = "Diagnostic only. Growth stays 0. This probe changes the ACTIVE selection first allocation 90→120 only while the allocator is still pristine, then opens the proven manual guard 90→120. If the 90→91 boundary works here, the previous crash points at second-block growth/transition rather than count >90 itself."
+        MaximumSize = new Size(790, 0),
+        Text = "Diagnostic only. Growth remains 0. Keeps active selection and the two native sort/rebuild temp lists on one 120-node first block. Does NOT patch the shared constructor or unrelated auxiliary lists. Enable F4 before selecting anything."
     };
-    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 86, TextAlign = ContentAlignment.MiddleLeft };
+    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 108, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 50 };
     bool f4Held;
 
     public MainForm()
     {
-        Text = "BRZE 1.60 — Selection First-Block 120 Probe";
-        ClientSize = new Size(790, 245);
+        Text = "BRZE 1.60 — Selection Sort Pipeline 120 Probe";
+        ClientSize = new Size(850, 280);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -82,23 +82,31 @@ internal static class Native
 
     const uint Access = 0x10 | 0x20 | 0x8 | 0x400;
     const uint PAGE_EXECUTE_READWRITE = 0x40;
+
     const int RVA_LOCAL_ID = 0x4416D0;
     const int RVA_MAX_UNITS = 0x467B90;
-    const int RVA_SELECTION_LIST = 0x441708;
-    const int RVA_MANUAL_CAP_IMM = 0x1A7006;
+    const int RVA_ACTIVE = 0x441708;
+    const int RVA_SORT_A = 0x441784;
+    const int RVA_SORT_B = 0x4417AC;
+
+    const int RVA_MANUAL_CAP_IMM = 0x1A7006;      // cmp selected, 90
+    const int RVA_SORT_A_FIRST_IMM = 0x1A71B1;    // push 90 for 0x841784
+    const int RVA_SORT_B_FIRST_IMM = 0x1A71B9;    // push 90 for 0x8417AC
+    const int RVA_SORT_ACTIVE_FIRST_IMM = 0x1A7299;// push 90 when rebuilding 0x841708
 
     const int OFF_FREE_NODE = 0x08;
-    const int OFF_SELECTED_COUNT = 0x18;
+    const int OFF_COUNT = 0x18;
     const int OFF_BLOCK_COUNT = 0x1C;
-    const int OFF_FIRST_BLOCK = 0x20;
-    const int OFF_GROWTH_BLOCK = 0x24;
+    const int OFF_FIRST = 0x20;
+    const int OFF_GROWTH = 0x24;
 
     static IntPtr h = IntPtr.Zero;
     static Process? p;
     static long moduleBase;
     static int pid;
     static string patchError = "";
-    static bool armed120;
+    static bool armed;
+    static bool sortPatched;
 
     static bool Attach()
     {
@@ -108,7 +116,7 @@ internal static class Native
         }
         catch { }
 
-        Detach();
+        DetachHandleOnly();
         var ps = Process.GetProcessesByName("Battle_Realms_F");
         if (ps.Length == 0) return false;
         p = ps[0];
@@ -152,18 +160,56 @@ internal static class Native
         return ok;
     }
 
+    static bool PatchExpectedByte(int rva, byte from, byte to, string name)
+    {
+        long a = moduleBase + rva;
+        byte cur = R8(a);
+        if (cur == to) return true;
+        if (cur != from)
+        {
+            patchError = $"{name}: unexpected byte 0x{cur:X2}";
+            return false;
+        }
+        if (!WriteCodeByte(a, to))
+        {
+            patchError = $"{name}: write failed";
+            return false;
+        }
+        return R8(a) == to;
+    }
+
+    static bool PatchSortPipeline()
+    {
+        if (!PatchExpectedByte(RVA_SORT_A_FIRST_IMM, 0x5A, 0x78, "sort-A")) return false;
+        if (!PatchExpectedByte(RVA_SORT_B_FIRST_IMM, 0x5A, 0x78, "sort-B")) return false;
+        if (!PatchExpectedByte(RVA_SORT_ACTIVE_FIRST_IMM, 0x5A, 0x78, "sort-active")) return false;
+        sortPatched = true;
+        return true;
+    }
+
+    static string ListState(long list)
+    {
+        uint count = R32(list + OFF_COUNT);
+        uint blocks = R32(list + OFF_BLOCK_COUNT);
+        uint first = R32(list + OFF_FIRST);
+        uint growth = R32(list + OFF_GROWTH);
+        return $"n:{count} b:{blocks} first:{first} grow:{growth}";
+    }
+
     public static string Tick(bool enabled)
     {
         if (!Attach()) return "Waiting for Battle_Realms_F.exe...";
 
-        long list = moduleBase + RVA_SELECTION_LIST;
+        long active = moduleBase + RVA_ACTIVE;
+        long sortA = moduleBase + RVA_SORT_A;
+        long sortB = moduleBase + RVA_SORT_B;
         long capAddr = moduleBase + RVA_MANUAL_CAP_IMM;
 
-        uint free = R32(list + OFF_FREE_NODE);
-        uint selected = R32(list + OFF_SELECTED_COUNT);
-        uint blocks = R32(list + OFF_BLOCK_COUNT);
-        uint first = R32(list + OFF_FIRST_BLOCK);
-        uint growth = R32(list + OFF_GROWTH_BLOCK);
+        uint free = R32(active + OFF_FREE_NODE);
+        uint selected = R32(active + OFF_COUNT);
+        uint blocks = R32(active + OFF_BLOCK_COUNT);
+        uint first = R32(active + OFF_FIRST);
+        uint growth = R32(active + OFF_GROWTH);
         byte cap = R8(capAddr);
 
         if (enabled)
@@ -171,80 +217,78 @@ internal static class Native
             uint lid = R32(moduleBase + RVA_LOCAL_ID);
             W32(moduleBase + RVA_MAX_UNITS + lid * 4L, 99_999_999u);
 
-            // Arm only before the allocator has ever created its first node block.
-            if (!armed120)
+            if (!sortPatched && !PatchSortPipeline())
+                return Status(active, sortA, sortB, capAddr, "NOT ARMED");
+
+            if (!armed)
             {
+                // The active list must still be pristine. Changing +0x20 after a 90-node block
+                // already exists would lie about the actual allocation size and is unsafe.
                 if (selected == 0 && blocks == 0 && free == 0 && first == 90 && growth == 0)
                 {
-                    if (!W32(list + OFF_FIRST_BLOCK, 120u))
-                        patchError = "first-block write failed";
+                    if (!W32(active + OFF_FIRST, 120u))
+                        patchError = "active first-block write failed";
                     else
-                        armed120 = R32(list + OFF_FIRST_BLOCK) == 120u;
+                        armed = R32(active + OFF_FIRST) == 120u;
                 }
                 else if (first == 120 && growth == 0)
                 {
-                    armed120 = true;
+                    armed = true;
                 }
                 else
                 {
-                    patchError = "allocator already used or unexpected state — restart BRZE, enable F4 before selecting anything";
+                    patchError = "active allocator already used/unexpected — restart BRZE and enable F4 before selecting anything";
                 }
             }
 
-            // Never enable growth in this specimen. We want one 120-node block only.
-            growth = R32(list + OFF_GROWTH_BLOCK);
-            first = R32(list + OFF_FIRST_BLOCK);
-            if (armed120 && first == 120 && growth == 0)
+            if (armed && sortPatched && R32(active + OFF_GROWTH) == 0)
             {
-                if (cap == 0x5A)
-                {
-                    if (!WriteCodeByte(capAddr, 0x78)) patchError = "manual cap patch failed";
-                    cap = R8(capAddr);
-                }
-                else if (cap != 0x78)
-                {
-                    patchError = $"unexpected cap byte 0x{cap:X2}; not patching";
-                }
+                if (!PatchExpectedByte(RVA_MANUAL_CAP_IMM, 0x5A, 0x78, "manual-cap"))
+                    return Status(active, sortA, sortB, capAddr, "NOT ARMED");
             }
         }
         else
         {
-            // Close admission again when F4 is disabled. Leave an allocated 120-node block alone.
-            if (cap == 0x78)
-            {
-                WriteCodeByte(capAddr, 0x5A);
-                cap = R8(capAddr);
-            }
-            if (blocks == 0 && selected == 0 && first == 120 && growth == 0)
-            {
-                W32(list + OFF_FIRST_BLOCK, 90u);
-                armed120 = false;
-                first = R32(list + OFF_FIRST_BLOCK);
-            }
+            // Closing admission is safe. We intentionally keep the sort-pipeline code patch
+            // while the process is alive; restoring it with >90 selected could make the next
+            // native rebuild reset back to 90 and crash. Full reset = restart BRZE.
+            if (cap == 0x78) WriteCodeByte(capAddr, 0x5A);
         }
 
-        free = R32(list + OFF_FREE_NODE);
-        selected = R32(list + OFF_SELECTED_COUNT);
-        blocks = R32(list + OFF_BLOCK_COUNT);
-        first = R32(list + OFF_FIRST_BLOCK);
-        growth = R32(list + OFF_GROWTH_BLOCK);
-        cap = R8(capAddr);
-
-        string mode = armed120 ? "ARMED single-block-120" : "NOT ARMED";
-        string err = patchError.Length == 0 ? "" : $" | ERROR:{patchError}";
-        return $"Attached pid:{pid} | F4:{enabled} | {mode} | selected:{selected} | blocks:{blocks} | first:{first} | growth:{growth} | free:0x{free:X8} | cap:0x{cap:X2} ({cap}){err}";
+        return Status(active, sortA, sortB, capAddr, armed && sortPatched ? "ARMED sort-pipeline-120" : "NOT ARMED");
     }
 
-    public static void Stop() => Detach();
+    static string Status(long active, long sortA, long sortB, long capAddr, string mode)
+    {
+        byte cap = R8(capAddr);
+        byte a = R8(moduleBase + RVA_SORT_A_FIRST_IMM);
+        byte b = R8(moduleBase + RVA_SORT_B_FIRST_IMM);
+        byte r = R8(moduleBase + RVA_SORT_ACTIVE_FIRST_IMM);
+        string err = patchError.Length == 0 ? "" : $" | ERROR:{patchError}";
+        return $"pid:{pid} | {mode} | cap:0x{cap:X2} | sort bytes:{a:X2}/{b:X2}/{r:X2}\r\n" +
+               $"ACTIVE {ListState(active)} | SORT-A {ListState(sortA)} | SORT-B {ListState(sortB)}{err}";
+    }
 
-    static void Detach()
+    public static void Stop()
+    {
+        if (h != IntPtr.Zero)
+        {
+            // Close >90 admission. Keep sort pipeline at 120 until BRZE restart for safety.
+            long capAddr = moduleBase + RVA_MANUAL_CAP_IMM;
+            if (R8(capAddr) == 0x78) WriteCodeByte(capAddr, 0x5A);
+        }
+        DetachHandleOnly();
+        patchError = "";
+        armed = false;
+        sortPatched = false;
+    }
+
+    static void DetachHandleOnly()
     {
         if (h != IntPtr.Zero) CloseHandle(h);
         h = IntPtr.Zero;
         p = null;
         moduleBase = 0;
         pid = 0;
-        patchError = "";
-        armed120 = false;
     }
 }
