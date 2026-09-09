@@ -1,0 +1,27 @@
+name: Full selection pipeline 120
+on:
+  workflow_dispatch:
+  push:
+    branches: [ selection-capacity-manual-120 ]
+    paths: ['.trigger-full-selection-pipeline-120']
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: selection-capacity-manual-120
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply full selection pipeline diagnostic
+        run: python tools/build_full_selection_pipeline_120.py
+      - name: Compile smoke
+        run: dotnet build BRZETrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o publish
+      - name: Upload full selection pipeline probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Full-Selection-Pipeline-120
+          path: publish/BRZE-Trainer.exe
