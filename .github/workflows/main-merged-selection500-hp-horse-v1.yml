@@ -1,0 +1,52 @@
+name: Main Trainer + Selection500 + Hard Locks v1
+
+on:
+  push:
+    branches:
+      - main-merge-selection500-hp-stamina-horse-v1
+    paths:
+      - 'Program.cs'
+      - 'SelectionCore.cs'
+      - 'HookCore.cs'
+      - 'MergedTrainer.csproj'
+      - 'tools/prepare_merged_v1.py'
+      - '.github/workflows/main-merged-selection500-hp-horse-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main-merge-selection500-hp-stamina-horse-v1
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Generate merged main source
+        shell: pwsh
+        run: python tools/prepare_merged_v1.py
+      - name: Merge smoke assertions
+        shell: pwsh
+        run: |
+          $s = Get-Content MergedProgram.cs -Raw
+          if (-not $s.Contains('HookCore.Tick(f5.Checked, f6.Checked, f7.Checked)')) { throw 'HookCore not wired' }
+          if (-not $s.Contains('SelectionCore.Tick(fastPeasant.Checked)')) { throw 'SelectionCore not wired' }
+          if (-not $s.Contains('ApplyMaxPopulation(lid,pop)')) { throw 'F4 restore-aware max-pop path missing' }
+          if (-not $s.Contains('Unlimited Horses — native stable stock / instant respawn')) { throw 'horse UI missing' }
+          $h = Get-Content HookCore.cs -Raw
+          if (-not $h.Contains('HP-hard')) { throw 'hard HP lock core missing' }
+          if (-not $h.Contains('lastTopUp = TopUpSelected')) { throw 'one-shot selected top-up missing' }
+          $c = Get-Content SelectionCore.cs -Raw
+          if (-not $c.Contains('SELECTION_LIMIT = 500')) { throw 'selection500 core missing' }
+          if (-not $c.Contains('LOGICAL_WINDOW = 160')) { throw 'headroom160 missing' }
+          if (-not $c.Contains('PEASANT_FIXED_MS = 1000')) { throw 'fixed1s peasant missing' }
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-merged-v1
+      - name: Upload merged trainer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-Merged-Selection500-HardLocks-Horses-v1
+          path: publish-merged-v1/BRZE-Trainer-Merged-v1.exe
