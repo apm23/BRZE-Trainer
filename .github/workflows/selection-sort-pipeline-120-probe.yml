@@ -1,0 +1,25 @@
+name: Selection sort pipeline 120 probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [ selection-sort-pipeline-120-probe ]
+    paths: ['.trigger-selection-sort-pipeline-120-probe']
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: selection-sort-pipeline-120-probe
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile smoke
+        run: dotnet build BRZETrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o publish
+      - name: Upload sort pipeline 120 probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Selection-Sort-Pipeline-120-Probe
+          path: publish/BRZE-Trainer.exe
