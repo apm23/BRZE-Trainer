@@ -1,0 +1,30 @@
+name: Selection bulk telemetry observer
+on:
+  workflow_dispatch:
+  push:
+    branches: [ selection-bulk-telemetry-observer ]
+    paths:
+      - 'TelemetryObserver.cs'
+      - 'TelemetryObserver.csproj'
+      - '.github/workflows/selection-bulk-telemetry-observer.yml'
+      - '.trigger-selection-bulk-telemetry-observer'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: selection-bulk-telemetry-observer
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile smoke
+        run: dotnet build TelemetryObserver.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish TelemetryObserver.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o telemetry-publish
+      - name: Upload telemetry observer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Selection-Bulk-Telemetry-Observer
+          path: telemetry-publish/BRZE-Selection-Telemetry-Observer.exe
