@@ -1,0 +1,24 @@
+name: Specimen C zero selection
+on:
+  push:
+    branches: [ specimen-c-legacy-hybrid ]
+    paths:
+      - '.trigger-specimen-c-zero-selection'
+      - '.github/workflows/specimen-c-zero-selection.yml'
+      - 'Program.cs'
+      - 'BRZETrainer.csproj'
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build specimen C
+        shell: pwsh
+        run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-Specimen-C-ZeroSelection
+          path: bin/Release/net8.0-windows/win-x86/publish/*
