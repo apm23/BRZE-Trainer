@@ -4,6 +4,8 @@
 
 Specimen B with only F1-F4 and F7 enabled crashes when recalling a large ~100-unit control group. F5/F6 are disabled. Manual box/Shift selection does not crash; additional units are refused after the native cap.
 
+The first raised-cap interrogation specimen changed the manual cap to 120 and repeatedly wrote 120 into selection growth fields. Runtime result: the original crash changed into a **hard simulation freeze around a 64-unit selection**. Audio/UI input still accepted commands, but simulation/animation stopped. This is a new failure mode and must NOT be interpreted as proof that 64 is a native selection cap.
+
 ## PROVEN native manual cap = 90
 
 Normal AddUnitToSelection at VA `0x5A6FD8` contains:
@@ -42,9 +44,9 @@ It bypasses guarded `0x5A6FD8`, so a group with >90 members attempts insertion #
 
 ## EXACT >90 CRASH MECHANISM — PROVEN
 
-The previous audit incorrectly treated the linked allocator as safely growable beyond 90. Full allocator inspection proves the important missing detail: the selection container is initialized with **first block = 90, growth block = 0**.
+Selection-related containers are initialized with **first block = 90, growth block = 0**.
 
-Selection post-processing `0x5A719F` initializes/reinitializes its selection-related containers with:
+Selection post-processing `0x5A719F` reinitializes temporary and active selection containers with:
 
 ```asm
 5A71AF push 0
@@ -62,59 +64,50 @@ Selection post-processing `0x5A719F` initializes/reinitializes its selection-rel
 5A729F call 0x4ABFE6
 ```
 
-Because of cdecl/thiscall stack order, `0x4ABFE6` receives arg1=`0x5A` and arg2=`0`. It stores:
+`0x4ABFE6` stores arg1 into `+0x20` and arg2 into `+0x24`. Therefore those calls configure 90/0.
+
+When the first 90 nodes are consumed, insertion #91 enters `0x4AC4C1`. Since block count is already nonzero it selects object `+0x24`, which is zero. No usable freelist nodes are produced. `0x4ACB2D` then reaches:
 
 ```asm
-4AC013 mov [esi+0x20],eax   ; first block size = 90
-4AC016 mov eax,[ebp+0x0C]
-4AC019 mov [esi+0x24],eax   ; growth block size = 0
+4ACB3D mov ecx,[esi+0x8]    ; NULL freelist
+4ACB40 mov eax,[ecx]        ; NULL dereference
 ```
 
-The insertion allocator `0x4ACB2D` checks the freelist at object `+0x8`. When the first 90 nodes are consumed, insertion #91 sees an empty freelist and calls `0x4AC4C1`.
+This matches the original ~100-unit Team recall crash.
 
-`0x4AC4C1` chooses allocation size as follows:
+## Why the FIRST raised-cap interrogation specimen is rejected
 
-```asm
-4AC4D3 cmp dword ptr [ecx+0x1C],0
-4AC4D8 cmovne eax,edx
-4AC4DB mov ebx,[eax+ecx]
-```
+Static review after the 64-unit freeze found two confounders in that specimen:
 
-For the first allocation it reads `+0x20` = 90. For every later allocation it reads `+0x24` = **0**.
+1. **Timer-race/incomplete allocator patch.** F4 wrote active/temp `+0x24 = 120` every 16 ms, but native post-selection code at `0x5A71B0`, `0x5A71B8`, and `0x5A7298` re-runs `0x4ABFE6` with 90/0. Therefore the trainer and the game were racing over allocator configuration instead of changing the native construction path coherently.
+2. **Selection hooks were still installable through F7.** `EnsureHooks()` installs HP, stamina, training, and both selection-event hooks as one bundle. Therefore running with F7 active can install `0x5A70C6` / `0x5A78CC` hooks even while F5/F6 are OFF. This contaminates a test intended to isolate selection capacity.
 
-On insertion #91, `0x4AC4C1` therefore allocates a block with zero nodes and cannot populate the freelist. Control returns to `0x4ACB2D`, which immediately assumes a node exists:
+The 64-unit freeze is therefore evidence that the first diagnostic patch is invalid for root-cause isolation. It is **not** evidence that the proven 90 guard or #91 NULL-dereference findings were wrong.
 
-```asm
-4ACB3D mov ecx,[esi+0x8]    ; still NULL after zero-node growth
-4ACB40 mov eax,[ecx]        ; NULL dereference -> crash
-```
+## Clean-room diagnostic design
 
-This is the exact native crash mechanism matching the user's runtime observation.
+Branch `selection-capacity-cleanroom` removes both confounders:
 
-### Why manual selection is safe
+- F5/F6/F7 are disabled; `SetHooks(false,false,false)` guarantees no HP/stamina/training/selection-event cave is installed.
+- F4 changes the native manual cap immediate `0x5A -> 0x78` (120).
+- It patches the native selection-manager constructor/rebuild immediate values to create **120-node first pools** instead of depending on repeated external growth-field writes:
+  - `0x5A6BCC` match/init capacity source
+  - `0x5A71B1` temp selection A
+  - `0x5A71B9` temp selection B
+  - `0x5A7299` active-selection rebuild
+- `+0x24 = 120` is written only once when enabling F4, solely so an already-constructed 90-node current pool can grow before the next native rebuild.
 
-Manual/Shift selection never reaches insertion #91 because `0x5A7000` rejects additions once count is 90.
-
-### Why a 100-unit Team recall crashes
-
-Control-group recall bypasses the 90 guard and calls `0x4ACB59` directly. Inserts 1..90 consume the initial 90-node pool. Insert #91 requests a growth block, but growth size is configured as zero, leaving the freelist NULL; `0x4ACB2D` then dereferences NULL.
-
-This means the crash is not presently evidence that UI/pathing/order consumers cannot handle >90. The game crashes **before a valid 91st selection node is created**. Downstream consumers still need auditing before declaring 200 selections safe, but the immediate crash culprit is now proven.
+Run `34340574604` compiled and published this clean-room specimen successfully.
 
 ## Safe patch direction
 
-Do NOT only change the manual `cmp 90` guard. A correct Large Selection companion for F4 must at minimum change both parts coherently:
+Do NOT only change the manual `cmp 90` guard. A correct Large Selection companion for F4 must coherently enlarge the allocator initialization/rebuild path as well.
 
-1. raise the manual policy cap at `0x5A7000`;
-2. ensure selection container allocation can supply enough nodes by changing/replacing the `first=90, growth=0` initialization used for `0x841708`.
-
-For a target of 200 selected units, a conservative first diagnostic specimen should configure the active selection container for at least 200 nodes before permitting the manual guard above 90. Temporary selection containers at `0x841784` and `0x8417AC` created in `0x5A719F` must also be audited because the same 90/0 constructor pattern is used there.
-
-After allocator capacity is fixed, audit post-selection/UI/order/pathing consumers and runtime stress at 100/150/200 before merging into production F4.
+The next runtime gate is intentionally 120 rather than 200. First prove 100-unit Team recall and manual selection without freeze/crash in the clean-room specimen. Only then audit/raise to 150/200.
 
 ## Population status
 
-Max-pop remains independent of this root cause. F4 will eventually bundle Max Population + Large Selection Capacity, but the population value itself is not the selection crash mechanism.
+Max-pop remains independent of the original #91 crash. F4 will eventually bundle Max Population + Large Selection Capacity, but population value itself is not the identified selection crash mechanism.
 
 ## Acceptance gate
 
@@ -123,8 +116,9 @@ Max-pop remains independent of this root cause. F4 will eventually bundle Max Po
 - central selected container: PROVEN = `0x841708`
 - control-group recall bypass: PROVEN = `0x5A78C7`
 - initial selection node pool: PROVEN = 90
-- growth block size: PROVEN = 0
+- growth block size in native selection rebuild: PROVEN = 0
 - exact insertion #91 failure: PROVEN = NULL freelist dereference at `0x4ACB40`
+- first 120-cap interrogation specimen: REJECTED (64-unit simulation freeze; contaminated by timer writes + bundled selection hooks)
+- clean-room 120-cap specimen: BUILT, awaiting runtime test
 - downstream >90 consumers safe: NOT YET PROVEN
-- raised-cap diagnostic patch: NOT YET RUNTIME TESTED
-- 100/150/200 runtime stress: NOT YET RUN
+- 100/150/200 runtime stress: NOT YET PASSED
