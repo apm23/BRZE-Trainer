@@ -1,0 +1,31 @@
+name: Selection 500 Always + Fixed1s Peasant
+
+on:
+  push:
+    branches:
+      - selection-500-always-fixed1s-peasant
+    paths:
+      - 'Selection500AlwaysFixedPeasant.cs'
+      - 'Selection500AlwaysFixedPeasant.csproj'
+      - '.github/workflows/selection-500-always-fixed1s-peasant.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: selection-500-always-fixed1s-peasant
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile smoke
+        run: dotnet build Selection500AlwaysFixedPeasant.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish Selection500AlwaysFixedPeasant.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-selection500-always
+      - name: Upload probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Selection-500-Always-Fixed1s-Peasant
+          path: publish-selection500-always/BRZE-Selection-500-Always-Fixed1s-Peasant.exe
