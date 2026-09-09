@@ -19,8 +19,8 @@ internal sealed class MainForm : Form
     readonly CheckBox f2 = new() { Text = "F2 Infinite Water", AutoSize = true };
     readonly CheckBox f3 = new() { Text = "F3 Infinite Yin + Yang", AutoSize = true };
     readonly CheckBox f4 = new() { Text = "F4 Unlimited Population (9,999,999)", AutoSize = true };
-    readonly CheckBox f5 = new() { Text = "F5 No Stamina Loss (selected only) — SAFE DELTA V62", AutoSize = true };
-    readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — SAFE DELTA V62", AutoSize = true };
+    readonly CheckBox f5 = new() { Text = "F5 No Stamina Loss (selected only) — SPECIMEN B NATIVE DELTA", AutoSize = true };
+    readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — SPECIMEN B NATIVE DELTA", AutoSize = true };
     readonly CheckBox f7 = new() { Text = "F7 Instant Unit Training — LEGACY F4 EXACT REMAP", AutoSize = true };
     readonly CheckBox legacyTower = new() { Text = "Legacy Infinite Watchtowers — experimental remap slot", AutoSize = true };
     readonly CheckBox pausePeasant = new() { Text = "Legacy F9 Pause Peasant Production (F12)", AutoSize = true };
@@ -80,7 +80,7 @@ internal static class Native
     const uint Access=0x10|0x20|0x8|0x400; const uint MEM_COMMIT=0x1000,MEM_RESERVE=0x2000,MEM_RELEASE=0x8000,PAGE_EXECUTE_READWRITE=0x40;
     const int RVA_PLAYER_PTR=0x4416A0,RVA_LOCAL_ID=0x4416D0,PLAYER_STRIDE=0x5E8,OFF_RICE=0xD8,OFF_WATER=0xDC,OFF_YIN=0x2E8,OFF_YANG=0x2EC,RVA_MAX_UNITS=0x467B90;
     const int RVA_UNIT_POOL=0x4796A0,UNIT_STRIDE=0x818,UNIT_COUNT=2000,OFF_DEF=0x74,OFF_OWNER=0x240,OFF_SEL_A=0x3A8,OFF_SEL_B=0x3AC,OFF_HP=0x404,OFF_ST=0x408,RVA_SELECTION_LIST=0x441708,RVA_SELECTED_BUILDING_A=0x4417D4,RVA_SELECTED_BUILDING_B=0x4417D8;
-    const int RVA_ADD_HEALTH=0x1CCD4D,RVA_ADD_STAMINA=0x1CCDFB,RVA_TRAIN_PROGRESS_READ=0x0D5DDB;
+    const int RVA_ADD_HEALTH=0x1CCD78,RVA_ADD_STAMINA=0x1CCE03,RVA_TRAIN_PROGRESS_READ=0x0D5DDB;
     const int RVA_SELECT_ONE=0x1A70C6,RVA_SELECT_BOX=0x1A78CC;
     const int RVA_PEASANT_CREATION=0x467AF4,RVA_DEMOLISH_ENABLE=0x3D7A1C;
     const int RVA_CFG_BASE_PTR=0x43FF2C,RVA_CFG_INDEX_PTR=0x440034;
@@ -92,14 +92,15 @@ internal static class Native
     static DateTime lastUnitCache=DateTime.MinValue,lastBuildingScan=DateTime.MinValue; static UnitInfo[] localUnits=Array.Empty<UnitInfo>();
     static readonly byte[] unitRaw=new byte[UNIT_COUNT*UNIT_STRIDE],buildingRaw=new byte[BUILDING_COUNT*BUILDING_STRIDE];
     static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag,trainFlag; static bool hooksInstalled; static uint horseOriginal; static bool horseSaved; static int remoteTrainState=-1; static string hookError="";
-    static readonly byte[] HpOriginal={0x55,0x8B,0xEC,0x83,0xE4,0xF8,0x56,0x8B,0xF1,0x57};
-    static readonly byte[] StOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1,0x57,0x56};
+    static readonly byte[] HpOriginal={0x8B,0x86,0x04,0x04,0x00,0x00,0x03,0x45,0x08};
+    static readonly byte[] StOriginal={0x8B,0xBE,0x08,0x04,0x00,0x00,0x8B,0x46,0x74,0x03,0x7D,0x08};
     static readonly byte[] SelectOriginal={0xC7,0x86,0xA8,0x03,0x00,0x00,0x01,0x00,0x00,0x00}; static readonly byte[] TrainOriginal={0x8B,0x83,0x90,0x04,0x00,0x00};
 
     readonly struct UnitInfo { public readonly long Addr; public readonly uint MaxHp,MaxSt; public UnitInfo(long a,uint hp,uint st){Addr=a;MaxHp=hp;MaxSt=st;} }
     // Old trainer PageUp did its HP/stamina work in injected game-side code instead of
     // repeatedly walking every selected unit through ReadProcessMemory/WriteProcessMemory.
-    // Our central delta hooks are already event-driven, so external top-up polling is removed.
+    // Specimen B suppresses only the native negative add instruction and preserves the rest of the game function.
+    // External selected-unit polling remains removed.
     public static void Start(){ running=true; }
     public static void Stop(){ running=false; Detach(); }
 
@@ -129,33 +130,47 @@ internal static class Native
 
     static byte[] BuildHook(long stub,long flag,long target,byte[] original,int backOffset)
     {
-        // Safe event hook: preserve the original function prologue.  If the feature is
-        // enabled and this call is a negative delta for a selected local unit, return
-        // without applying it. Positive deltas/healing remain native. No sentinel writes.
+        // Specimen B: hook the real delta application site, not the function entry.
+        // Negative selected-local deltas are suppressed, but the game continues through
+        // its native post-delta path (events/clamps/death checks/etc). No ret 4 shortcut.
+        bool hp = target == moduleBase + RVA_ADD_HEALTH;
         var b=new List<byte>();
-        b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)flag);b.Add(0);
-        b.AddRange(new byte[]{0x0F,0x84});int jDisabled=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x83,0x7C,0x24,0x04,0x00}); // cmp dword [esp+4],0
-        b.AddRange(new byte[]{0x0F,0x8D});int jNonNeg=b.Count;I32(b,0);
-        b.Add(0x50); // preserve eax
-        b.Add(0xA1);U32(b,(uint)(moduleBase+RVA_LOCAL_ID));
-        b.AddRange(new byte[]{0x39,0x81,0x40,0x02,0x00,0x00}); // cmp [ecx+240],eax
-        b.AddRange(new byte[]{0x0F,0x85});int jOwner=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x83,0xB9,0xA8,0x03,0x00,0x00,0x01});
-        b.AddRange(new byte[]{0x0F,0x85});int jSelA=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x83,0xB9,0xAC,0x03,0x00,0x00,0x01});
-        b.AddRange(new byte[]{0x0F,0x85});int jSelB=b.Count;I32(b,0);
-        b.Add(0x58);b.AddRange(new byte[]{0xC2,0x04,0x00}); // block negative delta
-        int popOriginal=b.Count;b.Add(0x58);
-        int originalLabel=b.Count;b.AddRange(original);b.Add(0xE9);int jBack=b.Count;I32(b,0);
-        PatchRel(b,jDisabled,stub+jDisabled+4,stub+originalLabel);
-        PatchRel(b,jNonNeg,stub+jNonNeg+4,stub+originalLabel);
-        PatchRel(b,jOwner,stub+jOwner+4,stub+popOriginal);
-        PatchRel(b,jSelA,stub+jSelA+4,stub+popOriginal);
-        PatchRel(b,jSelB,stub+jSelB+4,stub+popOriginal);
+        if(hp)
+            b.AddRange(new byte[]{0x8B,0x86,0x04,0x04,0x00,0x00}); // mov eax,[esi+404]
+        else
+            b.AddRange(new byte[]{0x8B,0xBE,0x08,0x04,0x00,0x00,0x8B,0x46,0x74}); // mov edi,[esi+408]; mov eax,[esi+74]
+
+        b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)flag);b.Add(0); // cmp [flag],0
+        b.AddRange(new byte[]{0x0F,0x84});int jAddDisabled=b.Count;I32(b,0);
+        b.AddRange(new byte[]{0x83,0x7D,0x08,0x00}); // cmp [ebp+8],0
+        b.AddRange(new byte[]{0x0F,0x8D});int jAddNonNeg=b.Count;I32(b,0);
+        b.Add(0x52); // push edx
+        b.AddRange(new byte[]{0x8B,0x15});U32(b,(uint)(moduleBase+RVA_LOCAL_ID)); // mov edx,[localId]
+        b.AddRange(new byte[]{0x39,0x96,0x40,0x02,0x00,0x00}); // cmp [esi+240],edx
+        b.AddRange(new byte[]{0x0F,0x85});int jRestoreAddOwner=b.Count;I32(b,0);
+        b.AddRange(new byte[]{0x83,0xBE,0xA8,0x03,0x00,0x00,0x01}); // selected A
+        b.AddRange(new byte[]{0x0F,0x85});int jRestoreAddA=b.Count;I32(b,0);
+        b.AddRange(new byte[]{0x83,0xBE,0xAC,0x03,0x00,0x00,0x01}); // selected B
+        b.AddRange(new byte[]{0x0F,0x85});int jRestoreAddB=b.Count;I32(b,0);
+        b.Add(0x5A); // pop edx; selected local negative delta -> skip add only
+        b.Add(0xE9);int jDoneBlocked=b.Count;I32(b,0);
+
+        int restoreAdd=b.Count;b.Add(0x5A); // pop edx
+        int doAdd=b.Count;
+        if(hp) b.AddRange(new byte[]{0x03,0x45,0x08});      // add eax,[ebp+8]
+        else   b.AddRange(new byte[]{0x03,0x7D,0x08});      // add edi,[ebp+8]
+        int done=b.Count;b.Add(0xE9);int jBack=b.Count;I32(b,0);
+
+        PatchRel(b,jAddDisabled,stub+jAddDisabled+4,stub+doAdd);
+        PatchRel(b,jAddNonNeg,stub+jAddNonNeg+4,stub+doAdd);
+        PatchRel(b,jRestoreAddOwner,stub+jRestoreAddOwner+4,stub+restoreAdd);
+        PatchRel(b,jRestoreAddA,stub+jRestoreAddA+4,stub+restoreAdd);
+        PatchRel(b,jRestoreAddB,stub+jRestoreAddB+4,stub+restoreAdd);
+        PatchRel(b,jDoneBlocked,stub+jDoneBlocked+4,stub+done);
         PatchRel(b,jBack,stub+jBack+4,target+backOffset);
         return b.ToArray();
     }
+
     static byte[] BuildTrainingHook(long stub,long flag,long target)
     {
         var b=new List<byte>();
