@@ -1,0 +1,10 @@
+User-supplied observer log from the decisive large-drag freeze test.
+
+23:45:42.106 ATTACH pid:52328 base:0x00FF0000
+23:45:42.133      15ms | C:  0 A:  0 S:  0 | E:   0/ 256 | Cb:0 Ab:0 Sb:0
+23:46:18.287   36171ms | C:  0 A:  0 S:  0 | E:   0/ 256 | Cb:0 Ab:0 Sb:0
+23:46:26.418   44312ms | C:  0 A: 64 S:  0 | E: 258/4294967294 | Cb:0 Ab:1 Sb:0
+23:49:17.735 ATTACH pid:52328 base:0x00FF0000
+23:49:17.753      15ms | C:  0 A: 64 S:  0 | E: 258/4294967294 | Cb:0 Ab:1 Sb:0
+
+Interpretation: the invalid event state persisted across observer re-attach while the frozen BRZE process remained alive. ACTIVE stayed 64, SIM stayed 0, EVENT stayed used=258 / remain=0xFFFFFFFE.
