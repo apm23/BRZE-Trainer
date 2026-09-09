@@ -17,6 +17,16 @@ A one-shot large rectangle drag reproduced the known simulation freeze. The obse
 - event pointer non-null (`0x02D41898` in this run)
 - history transition from `A:0 S:0 E:0/256` to `A:64 S:0 E:258/4294967294`
 
+## User-supplied raw log corroboration
+
+The uploaded observer log independently preserves the same boundary:
+
+- `23:46:26.418   44312ms | C:  0 A: 64 S:  0 | E: 258/4294967294 | Cb:0 Ab:1 Sb:0`
+- after observer re-attach to the still-frozen process, the state persisted:
+- `23:49:17.753      15ms | C:  0 A: 64 S:  0 | E: 258/4294967294 | Cb:0 Ab:1 Sb:0`
+
+Archived verbatim at `reference/current-brze/bulk-telemetry-freeze-64-log-20260909.txt`.
+
 ## Interpretation
 
 This is direct runtime evidence that the large-drag freeze occurs before simulation-side selection consumption begins. The UI/producer side reaches 64 selected units, while the event-buffer state crosses its nominal 256-byte boundary and the remaining counter underflows to `0xFFFFFFFE`.
@@ -24,5 +34,7 @@ This is direct runtime evidence that the large-drag freeze occurs before simulat
 `CAND n:0` means the sampled post-freeze state no longer contains rectangle candidates. Because the candidate phase is very short and observer sampling is ~5 ms, `MAX cand:0` does not prove the candidate list was never populated; it only means the observer did not catch it while non-zero.
 
 The decisive signal is the producer/queue divergence: ACTIVE=64, SIM=0, EVENT remaining underflowed.
+
+The raw log adds one more useful fact: the corrupted queue state was not a one-sample transient. It remained unchanged across observer re-attach while the same frozen BRZE process stayed alive.
 
 This re-opens the event-buffer/flush path as the primary suspect despite the earlier EventBuffer-1024 probe failure. That earlier probe must be audited for whether its 1024-byte backing state and all queue semantics were truly active during the failing drag; its runtime failure can no longer be treated as proof that the stock 256-byte boundary is irrelevant.
