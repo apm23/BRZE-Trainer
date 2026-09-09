@@ -1,0 +1,31 @@
+name: Selection 500 Fast Peasant Probe
+
+on:
+  push:
+    branches:
+      - selection-500-fast-peasant-probe
+    paths:
+      - 'Selection500FastPeasant.cs'
+      - 'Selection500FastPeasant.csproj'
+      - '.github/workflows/selection-500-fast-peasant-probe.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: selection-500-fast-peasant-probe
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile smoke
+        run: dotnet build Selection500FastPeasant.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish Selection500FastPeasant.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-selection500
+      - name: Upload selection500 probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Selection-500-Fast-Peasant-Probe
+          path: publish-selection500/BRZE-Selection-500-Fast-Peasant-Probe.exe
