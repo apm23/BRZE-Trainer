@@ -1,4 +1,4 @@
-name: Selection rectangle throttle 1ms probe
+name: Selection rectangle throttle 1ms probe fixed
 on:
   workflow_dispatch:
   push:
@@ -14,12 +14,20 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Hotfix wrapper length
+        shell: pwsh
+        run: |
+          $p = Get-Content Program.cs -Raw
+          if ($p -notmatch 'new byte\[23\]') { throw 'Expected wrapper allocation not found' }
+          $p = $p.Replace('var code = new byte[23];','var code = new byte[24];')
+          Set-Content Program.cs $p -NoNewline
+          if ((Get-Content Program.cs -Raw) -notmatch 'new byte\[24\]') { throw 'Hotfix verification failed' }
       - name: Compile smoke
         run: dotnet build BRZETrainer.csproj -c Release -r win-x86
       - name: Publish x86 single-file EXE
         run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o publish
-      - name: Upload rectangle throttle 1ms probe
+      - name: Upload fixed rectangle throttle probe
         uses: actions/upload-artifact@v4
         with:
-          name: BRZE-Selection-Rectangle-Throttle-1ms-Probe
+          name: BRZE-Selection-Rectangle-Throttle-1ms-Probe-FIXED
           path: publish/BRZE-Trainer.exe
