@@ -80,8 +80,6 @@ For each type-0 event:
 4. set `unit+0x3AC=1`
 5. call `0x5A7B97(player)` at VA `0x5A739E`
 
-Call bytes at `0x5A739E`: `E8 F4 07 00 00`.
-
 ---
 
 ## Rectangle selection path — static proof
@@ -91,19 +89,17 @@ Function `0x5D4356`:
 - candidate list `0x879748`
 - candidate append around `0x5D44B5`
 - candidate list default constructor gives first=128, growth=128
-- accepted candidates call the same AddUnit at `0x5D455A`
-- candidate list clear `0x5D4573`
+- accepted candidates call AddUnit at `0x5D455A`
+- candidate clear `0x5D4573`
 - UI sort/rebuild `0x5A719F` at `0x5D457D`
 
-Important: candidate capacity is not the ~80 freeze cause. Small drags that eventually accumulate >100 also run the same final sort, so final UI sort itself is not the leading cause.
-
-The rectangle-only accepted-unit call site is:
+Rectangle-only accepted-unit call site:
 
 - VA `0x5D455A`, RVA `0x1D455A`
 - original bytes `E8 79 2A FD FF` -> call `0x5A6FD8`
 - immediately preceded by `push esi` at `0x5D4559`
 
-This site is useful for rectangle-only throttling without touching manual single-click AddUnit.
+Candidate capacity is not the ~80 freeze cause. Small drags that accumulate >100 also run the same final sort, so final UI sort itself is not the leading cause.
 
 ---
 
@@ -111,7 +107,7 @@ This site is useful for rectangle-only throttling without touching manual single
 
 ## Surgical Growth
 
-- active growth 0->90, manual cap stayed 90
+- growth 0->90, manual cap stayed 90
 - stable at 90, #91 rejected
 
 ## Manual 120 — FAILED
@@ -149,11 +145,7 @@ This site is useful for rectangle-only throttling without touching manual single
 - run `34352052932` SUCCESS
 - EXE `46a6d19bfbc8cf6e942c1872283454245d168f0aeced7a1f8e684a5147aaf7ff`
 
-Patch:
-
-- UI/sort first=120, growth=0
-- simulation init/reset/current local first=120, growth=0
-- event type-0 LIVE
+Patch: UI/sort/simulation first=120, growth=0, event type-0 LIVE.
 
 Runtime:
 
@@ -161,7 +153,7 @@ Runtime:
 - >90 + normal move/attack materially work
 - one large rectangle drag still immediately freezes
 
-Conclusion: the 90-boundary problem is materially solved. Remaining problem is one-shot rectangle/burst-specific.
+Conclusion: 90-boundary problem materially solved; remaining problem is one-shot rectangle/burst-specific.
 
 ## EventBuffer-1024 + Sim120 — FAILED TO FIX BULK DRAG
 
@@ -170,9 +162,9 @@ Conclusion: the 90-boundary problem is materially solved. Remaining problem is o
 - run `34358214184` SUCCESS
 - EXE `c797463a44a7c283747a36f0af2827c409536a83f386bd9a4b6cd9a00d45803b`
 - real event backing buffer widened 256 -> 1024
-- runtime: one large drag still immediately freezes
+- runtime: large drag still immediately freezes
 
-Proof: native 256-byte event rollover is not sufficient to explain freeze. Do not carry EventBuffer-1024 into later probes by default.
+Proof: 256-byte event-buffer rollover is not sufficient to explain freeze.
 
 ## No-Per-Add-Refresh + Sim120 — FAILED TO FIX BULK DRAG
 
@@ -180,28 +172,15 @@ Proof: native 256-byte event rollover is not sufficient to explain freeze. Do no
 - built head `13b857c92c7fcf8af166d3dee8a4cd842c540a45`
 - run `34359923529` SUCCESS
 - artifact `BRZE-Selection-No-Per-Add-Refresh-Probe`, ID `10107440081`
-- EXE SHA-256 `853ec688772da02fbd244a848803588dbfed4bda114eb340247f356b0e3a2e98`
+- EXE `853ec688772da02fbd244a848803588dbfed4bda114eb340247f356b0e3a2e98`
+- only per-add `call 0x5A7B97` suppressed
+- runtime: **large drag still immediately freezes**
 
-Differential from clean Sim120:
-
-- event type-0 LIVE
-- simulation membership check and append LIVE
-- selected flag LIVE
-- only `call 0x5A7B97` at `0x5A739E` NOPed
-
-Runtime reported by user:
-
-- **one large drag still immediately freezes**
-
-Proof / conclusion:
-
-- per-add `0x5A7B97` refresh is not sufficient to explain the bulk-drag freeze
-- do not keep this NOP in the next specimen
-- return to clean Sim120 base for further tests
+Proof: per-add refresh storm is not sufficient to explain freeze. Do not carry this NOP forward.
 
 ---
 
-# CURRENT NEXT PROBE — RECTANGLE ADDUNIT THROTTLE 1 MS
+# CURRENT DECISIVE PROBE — RECTANGLE ADDUNIT THROTTLE 1 MS
 
 Branch:
 
@@ -211,26 +190,60 @@ Base:
 
 - exact clean Sim120 built head `eb8a610b810ba5f17d4eb1b9fe3c914889caedad`
 
+Commits/build:
+
+- source logic `a96cc49c9d69aaef3bf98e047023d6f2e5299425`
+- workflow `a078e46135850e9aaeffe93800789d4f6d60435a`
+- built head/trigger `6de1082baec2fc68f8ba4c481e99cb2212939062`
+- Actions run `34361753497` — **SUCCESS**
+- compile smoke success
+- x86 publish success
+- artifact upload success
+
+Artifact:
+
+- `BRZE-Selection-Rectangle-Throttle-1ms-Probe`
+- artifact ID `10108169188`
+- ZIP SHA-256 `f13cf148da16e1d0f51f877e51b63d4192c06b1e84cafa15285fdf74312edfed`
+- EXE SHA-256 `5290a2b36c1e35c7f88a95733d6344255e4d5435c11163c7668336c3d6753ad9`
+
 Hypothesis:
 
-- the remaining failure is caused by too many otherwise-valid AddUnit/type-0 operations produced essentially back-to-back inside one rectangle invocation
-- the issue is timing/scheduling/burst pressure rather than persistent capacity, candidate capacity, event-buffer size, or the single per-add refresh call
+- otherwise-valid AddUnit/type-0 operations are produced too tightly back-to-back inside one rectangle invocation
+- remaining failure is timing/scheduling/burst pressure, not persistent capacity, candidate capacity, event-buffer size, or the single per-add refresh call
 
-Minimal design:
+Exact differential from clean Sim120:
 
-- keep original AddUnit `0x5A6FD8` semantics completely intact
-- keep event type-0 LIVE
-- keep simulation append/refresh LIVE
-- patch only rectangle call site `0x5D455A`
-- wrapper calls original AddUnit, then yields/sleeps about 1 ms before returning to the rectangle loop
-- manual/single-click AddUnit path remains untouched
+- original AddUnit semantics remain intact
+- event type-0 remains LIVE
+- simulation membership/append/refresh remain LIVE
+- manual/single-click AddUnit path untouched
+- only rectangle call site `0x5D455A` is redirected to a small in-process wrapper
+- wrapper calls original `0x5A6FD8`, then `Sleep(1)`, then returns with the same stdcall stack shape
+- remote Sleep address is resolved by module+offset, not assumed
+- F4 off / trainer stop restores original rectangle call bytes and frees the code cave
 - no EventBuffer-1024
 - no refresh NOP
 
-Expected interpretation:
+Status target:
 
-- large drag becomes stable -> burst timing/scheduling confirmed; optimize final throttle/yield frequency rather than changing selection semantics
-- large drag still freezes -> continue into another rectangle-specific synchronous structure or dispatcher end-of-batch behavior; capacity/buffer/refresh hypotheses remain disproven
+- `ARMED rect-throttle-1ms`
+- `rect-addunit-throttle:1ms`
+- `event0:LIVE`
+- `sim-refresh:LIVE`
+- ACTIVE/SIM first=120 grow=0
+
+Required runtime test:
+
+1. fresh BRZE, enable F4 before any selection
+2. immediately do one large rectangle drag like the known freeze case (~80-100 units)
+3. if stable, test right-click move and attack
+4. verify ACTIVE/SIM counts
+
+Interpretation:
+
+- stable -> burst timing/scheduling strongly confirmed; optimize final yield frequency rather than changing selection semantics
+- still freezes -> continue into rectangle-specific synchronous/end-of-batch behavior; capacity/buffer/per-add-refresh remain disproven
 
 ---
 
@@ -243,7 +256,7 @@ Expected interpretation:
 - EventBuffer-1024 by default
 - permanent `0x5A7B97` suppression
 - heavy per-frame selected-unit scans
-- multiple unrelated changes in one probe
+- multiple unrelated changes per probe
 
 ## Handoff
 
@@ -251,4 +264,4 @@ Expected interpretation:
 
 Read this file first.
 
-**Current unresolved hinge:** runtime result of clean Sim120 plus rectangle-only AddUnit throttle/yield probe.
+**Current unresolved hinge:** runtime result of `BRZE-Selection-Rectangle-Throttle-1ms-Probe` on one large rectangle drag and subsequent move/attack.
