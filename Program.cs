@@ -18,21 +18,21 @@ internal static class Program
 
 internal sealed class MainForm : Form
 {
-    readonly CheckBox f4 = new() { Text = "F4 Max Population + UI/SORT/SIM SELECTION 120 — SURGICAL", AutoSize = true };
+    readonly CheckBox f4 = new() { Text = "F4 Max Population + UI/SORT/SIM 120 + EVENT BUFFER 1024 — BULK DRAG PROBE", AutoSize = true };
     readonly Label note = new()
     {
         AutoSize = true,
-        MaximumSize = new Size(900, 0),
-        Text = "Diagnostic only. Keeps the local UI selection, native sort/rebuild lists, and the local-player simulation selection container at first=120 with growth=0. The selection-add event remains LIVE so right-click move/attack commands stay authoritative. Enable F4 before selecting anything."
+        MaximumSize = new Size(940, 0),
+        Text = "Diagnostic only. Keeps UI/sort/simulation selection at 120 with LIVE events, then replaces the native 256-byte event buffer with a real 1024-byte allocation from BRZE's own allocator. This avoids the forced mid-drag flush after roughly 64 selection-add events. Enable F4 before selecting anything."
     };
-    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 132, TextAlign = ContentAlignment.MiddleLeft };
+    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 158, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 50 };
     bool f4Held;
 
     public MainForm()
     {
-        Text = "BRZE 1.60 — Selection Simulation Pipeline 120 Probe";
-        ClientSize = new Size(960, 320);
+        Text = "BRZE 1.60 — Selection Event Buffer 1024 Probe";
+        ClientSize = new Size(1010, 350);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -74,14 +74,29 @@ internal static class Native
     [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool VirtualProtectEx(IntPtr h, IntPtr addr, UIntPtr size, uint newProtect, out uint oldProtect);
     [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr VirtualAllocEx(IntPtr h, IntPtr address, UIntPtr size, uint allocationType, uint protect);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool VirtualFreeEx(IntPtr h, IntPtr address, UIntPtr size, uint freeType);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr CreateRemoteThread(IntPtr h, IntPtr attrs, UIntPtr stackSize, IntPtr startAddress, IntPtr parameter, uint creationFlags, out uint threadId);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetExitCodeThread(IntPtr thread, out uint exitCode);
+    [DllImport("kernel32.dll", SetLastError = true)]
     static extern bool FlushInstructionCache(IntPtr h, IntPtr addr, UIntPtr size);
     [DllImport("kernel32.dll")]
     static extern bool CloseHandle(IntPtr h);
     [DllImport("user32.dll")]
     public static extern short GetAsyncKeyState(int key);
 
-    const uint Access = 0x10 | 0x20 | 0x8 | 0x400;
+    const uint PROCESS_CREATE_THREAD = 0x0002;
+    const uint Access = PROCESS_CREATE_THREAD | 0x10 | 0x20 | 0x8 | 0x400;
     const uint PAGE_EXECUTE_READWRITE = 0x40;
+    const uint MEM_COMMIT = 0x1000;
+    const uint MEM_RESERVE = 0x2000;
+    const uint MEM_RELEASE = 0x8000;
+    const uint WAIT_OBJECT_0 = 0;
 
     const int RVA_LOCAL_ID = 0x4416D0;
     const int RVA_MAX_UNITS = 0x467B90;
@@ -89,18 +104,29 @@ internal static class Native
     const int RVA_SORT_A = 0x441784;
     const int RVA_SORT_B = 0x4417AC;
     const int RVA_SIM_LISTS_PTR = 0x441730;
+    const int RVA_DRAG_CANDIDATES = 0x479748;
 
     const int RVA_MANUAL_CAP_IMM = 0x1A7006;
     const int RVA_SORT_A_FIRST_IMM = 0x1A71B1;
     const int RVA_SORT_B_FIRST_IMM = 0x1A71B9;
     const int RVA_SORT_ACTIVE_FIRST_IMM = 0x1A7299;
-
-    // Simulation-side per-player selection list construction/reset.
-    // 0x5A6C52 = push 0x5A during 10-list initialization, immediate at +1.
-    // 0x5A6E36 = push 0x5A during 10-list reset, immediate at +1.
     const int RVA_SIM_INIT_FIRST_IMM = 0x1A6C53;
     const int RVA_SIM_RESET_FIRST_IMM = 0x1A6E37;
     const int SIM_LIST_STRIDE = 0x28;
+
+    // Global command/event queue used by selection-add event 0x552FFA.
+    const int RVA_EVENT_GATE = 0x441194;
+    const int RVA_EVENT_USED = 0x441C94;
+    const int RVA_EVENT_REMAIN = 0x441C98;
+    const int RVA_EVENT_PTR = 0x441C9C;
+    const uint EVENT_BUFFER_NEW_SIZE = 0x400;
+
+    // All three are the 0x01 byte in a little-endian 0x00000100 immediate.
+    // Changing only this byte 01 -> 04 converts 0x100 -> 0x400 without touching instruction layout.
+    const int RVA_EVENT_CTOR_SIZE_BYTE = 0x150CCD;  // mov eax,0x100 at 0x550CCB
+    const int RVA_EVENT_INIT_SIZE_BYTE = 0x161771;  // remaining=0x100 at 0x56176A
+    const int RVA_EVENT_RESET_SIZE_BYTE = 0x161D78; // remaining=0x100 at 0x561D71
+    const int RVA_GAME_MALLOC = 0x32FC28;           // 0x72FC28, cdecl malloc wrapper
 
     const int OFF_FREE_NODE = 0x08;
     const int OFF_COUNT = 0x18;
@@ -117,6 +143,9 @@ internal static class Native
     static bool sortPatched;
     static bool simCodePatched;
     static bool simArmed;
+    static bool eventBufferExpanded;
+    static uint oldEventBuffer;
+    static uint newEventBuffer;
 
     static bool Attach()
     {
@@ -137,11 +166,13 @@ internal static class Native
         return h != IntPtr.Zero;
     }
 
+    static IntPtr A(long addr) => new(unchecked((int)(uint)addr));
+
     static uint R32(long addr)
     {
         if (h == IntPtr.Zero) return 0;
         var b = new byte[4];
-        return ReadProcessMemory(h, new IntPtr(unchecked((int)(uint)addr)), b, 4, out var n) && n.ToInt64() == 4
+        return ReadProcessMemory(h, A(addr), b, 4, out var n) && n.ToInt64() == 4
             ? BitConverter.ToUInt32(b, 0) : 0;
     }
 
@@ -149,20 +180,26 @@ internal static class Native
     {
         if (h == IntPtr.Zero) return 0;
         var b = new byte[1];
-        return ReadProcessMemory(h, new IntPtr(unchecked((int)(uint)addr)), b, 1, out var n) && n.ToInt64() == 1 ? b[0] : (byte)0;
+        return ReadProcessMemory(h, A(addr), b, 1, out var n) && n.ToInt64() == 1 ? b[0] : (byte)0;
     }
 
     static bool W32(long addr, uint value)
     {
         if (h == IntPtr.Zero) return false;
         var b = BitConverter.GetBytes(value);
-        return WriteProcessMemory(h, new IntPtr(unchecked((int)(uint)addr)), b, 4, out var n) && n.ToInt64() == 4;
+        return WriteProcessMemory(h, A(addr), b, 4, out var n) && n.ToInt64() == 4;
+    }
+
+    static bool WriteRaw(long addr, byte[] value)
+    {
+        if (h == IntPtr.Zero) return false;
+        return WriteProcessMemory(h, A(addr), value, value.Length, out var n) && n.ToInt64() == value.Length;
     }
 
     static bool WriteCodeByte(long addr, byte value)
     {
         if (h == IntPtr.Zero) return false;
-        var a = new IntPtr(unchecked((int)(uint)addr));
+        var a = A(addr);
         if (!VirtualProtectEx(h, a, (UIntPtr)1, PAGE_EXECUTE_READWRITE, out uint old)) return false;
         bool ok = WriteProcessMemory(h, a, new[] { value }, 1, out var n) && n.ToInt64() == 1;
         if (ok) FlushInstructionCache(h, a, (UIntPtr)1);
@@ -203,6 +240,144 @@ internal static class Native
         if (!PatchExpectedByte(RVA_SIM_RESET_FIRST_IMM, 0x5A, 0x78, "sim-reset")) return false;
         simCodePatched = true;
         return true;
+    }
+
+    static bool PatchEventBufferCode()
+    {
+        if (!PatchExpectedByte(RVA_EVENT_CTOR_SIZE_BYTE, 0x01, 0x04, "event-ctor-size")) return false;
+        if (!PatchExpectedByte(RVA_EVENT_INIT_SIZE_BYTE, 0x01, 0x04, "event-init-size")) return false;
+        if (!PatchExpectedByte(RVA_EVENT_RESET_SIZE_BYTE, 0x01, 0x04, "event-reset-size")) return false;
+        return true;
+    }
+
+    static uint RemoteGameMalloc(uint size)
+    {
+        if (h == IntPtr.Zero) return 0;
+
+        IntPtr stub = VirtualAllocEx(h, IntPtr.Zero, (UIntPtr)0x100, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        if (stub == IntPtr.Zero)
+        {
+            patchError = "remote malloc stub allocation failed";
+            return 0;
+        }
+
+        try
+        {
+            uint mallocAddr = unchecked((uint)(moduleBase + RVA_GAME_MALLOC));
+            var code = new List<byte>();
+            code.Add(0x68); code.AddRange(BitConverter.GetBytes(size));          // push size
+            code.Add(0xB8); code.AddRange(BitConverter.GetBytes(mallocAddr));    // mov eax,malloc
+            code.Add(0xFF); code.Add(0xD0);                                     // call eax
+            code.Add(0x83); code.Add(0xC4); code.Add(0x04);                     // add esp,4
+            code.Add(0xC2); code.Add(0x04); code.Add(0x00);                     // ret 4 (thread param)
+
+            if (!WriteRaw(stub.ToInt64(), code.ToArray()))
+            {
+                patchError = "remote malloc stub write failed";
+                return 0;
+            }
+            FlushInstructionCache(h, stub, (UIntPtr)code.Count);
+
+            IntPtr thread = CreateRemoteThread(h, IntPtr.Zero, UIntPtr.Zero, stub, IntPtr.Zero, 0, out _);
+            if (thread == IntPtr.Zero)
+            {
+                patchError = "CreateRemoteThread for game malloc failed";
+                return 0;
+            }
+
+            try
+            {
+                if (WaitForSingleObject(thread, 5000) != WAIT_OBJECT_0)
+                {
+                    patchError = "game malloc thread timeout";
+                    return 0;
+                }
+                if (!GetExitCodeThread(thread, out uint result) || result == 0)
+                {
+                    patchError = "game malloc returned null";
+                    return 0;
+                }
+                return result;
+            }
+            finally
+            {
+                CloseHandle(thread);
+            }
+        }
+        finally
+        {
+            VirtualFreeEx(h, stub, UIntPtr.Zero, MEM_RELEASE);
+        }
+    }
+
+    static bool ExpandEventBuffer()
+    {
+        uint used = R32(moduleBase + RVA_EVENT_USED);
+        uint remain = R32(moduleBase + RVA_EVENT_REMAIN);
+        uint ptr = R32(moduleBase + RVA_EVENT_PTR);
+
+        if (ptr == 0)
+        {
+            patchError = "event buffer pointer is null";
+            return false;
+        }
+
+        if (eventBufferExpanded || (used == 0 && remain == EVENT_BUFFER_NEW_SIZE))
+        {
+            eventBufferExpanded = true;
+            newEventBuffer = ptr;
+            return PatchEventBufferCode();
+        }
+
+        // This probe intentionally swaps the backing buffer only while the queue is empty.
+        // Do not copy an in-flight deterministic command stream from another thread.
+        if (used != 0)
+        {
+            patchError = $"event queue busy (used={used}, free={remain}) — wait for used:0 or restart BRZE before F4";
+            return false;
+        }
+
+        uint gate = R32(moduleBase + RVA_EVENT_GATE);
+        if (!W32(moduleBase + RVA_EVENT_GATE, 0u))
+        {
+            patchError = "failed to pause event emission for buffer swap";
+            return false;
+        }
+
+        try
+        {
+            // Re-check after emission is paused.
+            used = R32(moduleBase + RVA_EVENT_USED);
+            if (used != 0)
+            {
+                patchError = $"event queue became busy during arm (used={used})";
+                return false;
+            }
+
+            uint fresh = RemoteGameMalloc(EVENT_BUFFER_NEW_SIZE);
+            if (fresh == 0) return false;
+
+            oldEventBuffer = ptr;
+            newEventBuffer = fresh;
+
+            if (!W32(moduleBase + RVA_EVENT_PTR, fresh) ||
+                !W32(moduleBase + RVA_EVENT_USED, 0u) ||
+                !W32(moduleBase + RVA_EVENT_REMAIN, EVENT_BUFFER_NEW_SIZE))
+            {
+                patchError = "event buffer state swap failed";
+                return false;
+            }
+
+            // Only after the real 1024-byte backing allocation is active do we widen native reset constants.
+            if (!PatchEventBufferCode()) return false;
+
+            eventBufferExpanded = true;
+            return true;
+        }
+        finally
+        {
+            W32(moduleBase + RVA_EVENT_GATE, gate);
+        }
     }
 
     static bool ArmPristineList(long list, string name)
@@ -254,6 +429,7 @@ internal static class Native
         long active = moduleBase + RVA_ACTIVE;
         long sortA = moduleBase + RVA_SORT_A;
         long sortB = moduleBase + RVA_SORT_B;
+        long dragCandidates = moduleBase + RVA_DRAG_CANDIDATES;
         long capAddr = moduleBase + RVA_MANUAL_CAP_IMM;
         uint lid = R32(moduleBase + RVA_LOCAL_ID);
         long simLocal = LocalSimulationList(lid);
@@ -261,13 +437,14 @@ internal static class Native
 
         if (enabled)
         {
+            patchError = "";
             W32(moduleBase + RVA_MAX_UNITS + lid * 4L, 99_999_999u);
 
             if (!sortPatched && !PatchSortPipeline())
-                return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
+                return Status(active, sortA, sortB, simLocal, dragCandidates, capAddr, lid, "NOT ARMED");
 
             if (!simCodePatched && !PatchSimulationCode())
-                return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
+                return Status(active, sortA, sortB, simLocal, dragCandidates, capAddr, lid, "NOT ARMED");
 
             if (!activeArmed)
                 activeArmed = ArmPristineList(active, "active");
@@ -275,34 +452,34 @@ internal static class Native
             if (simLocal == 0)
             {
                 patchError = "simulation selection list not initialized yet";
-                return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
+                return Status(active, sortA, sortB, simLocal, dragCandidates, capAddr, lid, "NOT ARMED");
             }
 
             if (!simArmed)
                 simArmed = ArmPristineList(simLocal, "sim-local");
 
-            if (activeArmed && sortPatched && simCodePatched && simArmed &&
+            if (!eventBufferExpanded && !ExpandEventBuffer())
+                return Status(active, sortA, sortB, simLocal, dragCandidates, capAddr, lid, "NOT ARMED");
+
+            if (activeArmed && sortPatched && simCodePatched && simArmed && eventBufferExpanded &&
                 R32(active + OFF_GROWTH) == 0 && R32(simLocal + OFF_GROWTH) == 0)
             {
                 if (!PatchExpectedByte(RVA_MANUAL_CAP_IMM, 0x5A, 0x78, "manual-cap"))
-                    return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
+                    return Status(active, sortA, sortB, simLocal, dragCandidates, capAddr, lid, "NOT ARMED");
             }
         }
         else
         {
-            // Close >90 local admission only. Keep sort + simulation reset code at 120
-            // until BRZE restart; restoring them while >90 state exists could reintroduce
-            // a 90-node reset underneath live selection state.
             if (cap == 0x78) WriteCodeByte(capAddr, 0x5A);
         }
 
-        string mode = activeArmed && sortPatched && simCodePatched && simArmed
-            ? "ARMED sim-pipeline-120"
+        string mode = activeArmed && sortPatched && simCodePatched && simArmed && eventBufferExpanded
+            ? "ARMED eventbuf1024+sim120"
             : "NOT ARMED";
-        return Status(active, sortA, sortB, simLocal, capAddr, lid, mode);
+        return Status(active, sortA, sortB, simLocal, dragCandidates, capAddr, lid, mode);
     }
 
-    static string Status(long active, long sortA, long sortB, long simLocal, long capAddr, uint lid, string mode)
+    static string Status(long active, long sortA, long sortB, long simLocal, long dragCandidates, long capAddr, uint lid, string mode)
     {
         byte cap = R8(capAddr);
         byte a = R8(moduleBase + RVA_SORT_A_FIRST_IMM);
@@ -310,10 +487,14 @@ internal static class Native
         byte r = R8(moduleBase + RVA_SORT_ACTIVE_FIRST_IMM);
         byte si = R8(moduleBase + RVA_SIM_INIT_FIRST_IMM);
         byte sr = R8(moduleBase + RVA_SIM_RESET_FIRST_IMM);
+        uint eventUsed = R32(moduleBase + RVA_EVENT_USED);
+        uint eventRemain = R32(moduleBase + RVA_EVENT_REMAIN);
+        uint eventPtr = R32(moduleBase + RVA_EVENT_PTR);
         string err = patchError.Length == 0 ? "" : $" | ERROR:{patchError}";
 
         return $"pid:{pid} | {mode} | player:{lid} | cap:0x{cap:X2} | sort:{a:X2}/{b:X2}/{r:X2} | sim-code:{si:X2}/{sr:X2} | add-notify:LIVE\r\n" +
-               $"ACTIVE {ListState(active)} | SIM {ListState(simLocal)}\r\n" +
+               $"EVENT ptr:0x{eventPtr:X8} used:{eventUsed} free:{eventRemain} target:{EVENT_BUFFER_NEW_SIZE} | old:0x{oldEventBuffer:X8} new:0x{newEventBuffer:X8}\r\n" +
+               $"ACTIVE {ListState(active)} | SIM {ListState(simLocal)} | DRAG-CAND {ListState(dragCandidates)}\r\n" +
                $"SORT-A {ListState(sortA)} | SORT-B {ListState(sortB)}{err}";
     }
 
@@ -323,6 +504,8 @@ internal static class Native
         {
             long capAddr = moduleBase + RVA_MANUAL_CAP_IMM;
             if (R8(capAddr) == 0x78) WriteCodeByte(capAddr, 0x5A);
+            // Keep expanded event backing + reset constants alive until BRZE exits.
+            // The replacement buffer came from BRZE's own allocator, so native cleanup can own it.
         }
         DetachHandleOnly();
         patchError = "";
@@ -330,6 +513,9 @@ internal static class Native
         sortPatched = false;
         simCodePatched = false;
         simArmed = false;
+        eventBufferExpanded = false;
+        oldEventBuffer = 0;
+        newEventBuffer = 0;
     }
 
     static void DetachHandleOnly()
