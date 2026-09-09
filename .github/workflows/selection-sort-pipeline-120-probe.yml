@@ -1,16 +1,16 @@
-name: Selection simulation pipeline 120 probe
+name: Selection no-per-add-refresh probe
 on:
   workflow_dispatch:
   push:
-    branches: [ selection-sim-pipeline-120-probe ]
-    paths: ['.trigger-selection-sim-pipeline-120-probe']
+    branches: [ selection-no-per-add-refresh-probe ]
+    paths: ['.trigger-selection-no-per-add-refresh-probe']
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: selection-sim-pipeline-120-probe
+          ref: selection-no-per-add-refresh-probe
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -18,8 +18,8 @@ jobs:
         run: dotnet build BRZETrainer.csproj -c Release -r win-x86
       - name: Publish x86 single-file EXE
         run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o publish
-      - name: Upload simulation pipeline 120 probe
+      - name: Upload no-per-add-refresh probe
         uses: actions/upload-artifact@v4
         with:
-          name: BRZE-Selection-Sim-Pipeline-120-Probe
+          name: BRZE-Selection-No-Per-Add-Refresh-Probe
           path: publish/BRZE-Trainer.exe
