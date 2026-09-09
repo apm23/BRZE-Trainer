@@ -1,0 +1,26 @@
+name: Selection event headroom 160 probe
+
+on:
+  push:
+    branches: [ selection-event-headroom-160-probe ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: selection-event-headroom-160-probe
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Compile smoke
+        run: dotnet build EventHeadroom160.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish EventHeadroom160.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-headroom160
+      - name: Upload event headroom probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Event-Headroom-160-Probe
+          path: publish-headroom160/BRZE-Event-Headroom-160-Probe.exe
