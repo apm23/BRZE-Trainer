@@ -18,21 +18,21 @@ internal static class Program
 
 internal sealed class MainForm : Form
 {
-    readonly CheckBox f4 = new() { Text = "F4 Max Population + SORT PIPELINE 120 — SURGICAL", AutoSize = true };
+    readonly CheckBox f4 = new() { Text = "F4 Max Population + SORT PIPELINE 120 + NO ADD-NOTIFY — ISOLATION PROBE", AutoSize = true };
     readonly Label note = new()
     {
         AutoSize = true,
-        MaximumSize = new Size(790, 0),
-        Text = "Diagnostic only. Growth remains 0. Keeps active selection and the two native sort/rebuild temp lists on one 120-node first block. Does NOT patch the shared constructor or unrelated auxiliary lists. Enable F4 before selecting anything."
+        MaximumSize = new Size(820, 0),
+        Text = "Diagnostic only. Same sort-pipeline-120 specimen as the previous build, plus ONE new change: suppress the per-unit post-add notification call at 0x5A70D0. This call runs after the unit is appended and its selected flag is set; rectangle/drag selection also reaches this path for each accepted unit. Growth remains 0."
     };
-    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 108, TextAlign = ContentAlignment.MiddleLeft };
+    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 118, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 50 };
     bool f4Held;
 
     public MainForm()
     {
-        Text = "BRZE 1.60 — Selection Sort Pipeline 120 Probe";
-        ClientSize = new Size(850, 280);
+        Text = "BRZE 1.60 — Selection No-Add-Notify 120 Probe";
+        ClientSize = new Size(890, 300);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -89,10 +89,14 @@ internal static class Native
     const int RVA_SORT_A = 0x441784;
     const int RVA_SORT_B = 0x4417AC;
 
-    const int RVA_MANUAL_CAP_IMM = 0x1A7006;      // cmp selected, 90
-    const int RVA_SORT_A_FIRST_IMM = 0x1A71B1;    // push 90 for 0x841784
-    const int RVA_SORT_B_FIRST_IMM = 0x1A71B9;    // push 90 for 0x8417AC
-    const int RVA_SORT_ACTIVE_FIRST_IMM = 0x1A7299;// push 90 when rebuilding 0x841708
+    const int RVA_MANUAL_CAP_IMM = 0x1A7006;
+    const int RVA_SINGLE_ADD_NOTIFY_CALL = 0x1A70D0; // call 0x552FFA after append + selected flag
+    const int RVA_SORT_A_FIRST_IMM = 0x1A71B1;
+    const int RVA_SORT_B_FIRST_IMM = 0x1A71B9;
+    const int RVA_SORT_ACTIVE_FIRST_IMM = 0x1A7299;
+
+    static readonly byte[] ADD_NOTIFY_ORIG = { 0xE8, 0x25, 0xBF, 0xFA, 0xFF };
+    static readonly byte[] NOP5 = { 0x90, 0x90, 0x90, 0x90, 0x90 };
 
     const int OFF_FREE_NODE = 0x08;
     const int OFF_COUNT = 0x18;
@@ -107,6 +111,7 @@ internal static class Native
     static string patchError = "";
     static bool armed;
     static bool sortPatched;
+    static bool notifySuppressed;
 
     static bool Attach()
     {
@@ -142,6 +147,21 @@ internal static class Native
         return ReadProcessMemory(h, new IntPtr(unchecked((int)(uint)addr)), b, 1, out var n) && n.ToInt64() == 1 ? b[0] : (byte)0;
     }
 
+    static byte[] RBytes(long addr, int len)
+    {
+        var b = new byte[len];
+        if (h == IntPtr.Zero) return Array.Empty<byte>();
+        return ReadProcessMemory(h, new IntPtr(unchecked((int)(uint)addr)), b, len, out var n) && n.ToInt64() == len
+            ? b : Array.Empty<byte>();
+    }
+
+    static bool Same(byte[] a, byte[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+        return true;
+    }
+
     static bool W32(long addr, uint value)
     {
         if (h == IntPtr.Zero) return false;
@@ -149,16 +169,18 @@ internal static class Native
         return WriteProcessMemory(h, new IntPtr(unchecked((int)(uint)addr)), b, 4, out var n) && n.ToInt64() == 4;
     }
 
-    static bool WriteCodeByte(long addr, byte value)
+    static bool WriteCodeBytes(long addr, byte[] value)
     {
         if (h == IntPtr.Zero) return false;
         var a = new IntPtr(unchecked((int)(uint)addr));
-        if (!VirtualProtectEx(h, a, (UIntPtr)1, PAGE_EXECUTE_READWRITE, out uint old)) return false;
-        bool ok = WriteProcessMemory(h, a, new[] { value }, 1, out var n) && n.ToInt64() == 1;
-        if (ok) FlushInstructionCache(h, a, (UIntPtr)1);
-        VirtualProtectEx(h, a, (UIntPtr)1, old, out _);
+        if (!VirtualProtectEx(h, a, (UIntPtr)value.Length, PAGE_EXECUTE_READWRITE, out uint old)) return false;
+        bool ok = WriteProcessMemory(h, a, value, value.Length, out var n) && n.ToInt64() == value.Length;
+        if (ok) FlushInstructionCache(h, a, (UIntPtr)value.Length);
+        VirtualProtectEx(h, a, (UIntPtr)value.Length, old, out _);
         return ok;
     }
+
+    static bool WriteCodeByte(long addr, byte value) => WriteCodeBytes(addr, new[] { value });
 
     static bool PatchExpectedByte(int rva, byte from, byte to, string name)
     {
@@ -178,6 +200,24 @@ internal static class Native
         return R8(a) == to;
     }
 
+    static bool PatchExpectedBytes(int rva, byte[] from, byte[] to, string name)
+    {
+        long a = moduleBase + rva;
+        byte[] cur = RBytes(a, from.Length);
+        if (Same(cur, to)) return true;
+        if (!Same(cur, from))
+        {
+            patchError = $"{name}: unexpected bytes {BitConverter.ToString(cur)}";
+            return false;
+        }
+        if (!WriteCodeBytes(a, to))
+        {
+            patchError = $"{name}: write failed";
+            return false;
+        }
+        return Same(RBytes(a, to.Length), to);
+    }
+
     static bool PatchSortPipeline()
     {
         if (!PatchExpectedByte(RVA_SORT_A_FIRST_IMM, 0x5A, 0x78, "sort-A")) return false;
@@ -185,6 +225,22 @@ internal static class Native
         if (!PatchExpectedByte(RVA_SORT_ACTIVE_FIRST_IMM, 0x5A, 0x78, "sort-active")) return false;
         sortPatched = true;
         return true;
+    }
+
+    static bool SuppressAddNotify()
+    {
+        if (!PatchExpectedBytes(RVA_SINGLE_ADD_NOTIFY_CALL, ADD_NOTIFY_ORIG, NOP5, "add-notify")) return false;
+        notifySuppressed = true;
+        return true;
+    }
+
+    static void RestoreAddNotify()
+    {
+        if (h == IntPtr.Zero) return;
+        long a = moduleBase + RVA_SINGLE_ADD_NOTIFY_CALL;
+        byte[] cur = RBytes(a, 5);
+        if (Same(cur, NOP5)) WriteCodeBytes(a, ADD_NOTIFY_ORIG);
+        notifySuppressed = false;
     }
 
     static string ListState(long list)
@@ -222,8 +278,6 @@ internal static class Native
 
             if (!armed)
             {
-                // The active list must still be pristine. Changing +0x20 after a 90-node block
-                // already exists would lie about the actual allocation size and is unsafe.
                 if (selected == 0 && blocks == 0 && free == 0 && first == 90 && growth == 0)
                 {
                     if (!W32(active + OFF_FIRST, 120u))
@@ -241,7 +295,10 @@ internal static class Native
                 }
             }
 
-            if (armed && sortPatched && R32(active + OFF_GROWTH) == 0)
+            if (!notifySuppressed && !SuppressAddNotify())
+                return Status(active, sortA, sortB, capAddr, "NOT ARMED");
+
+            if (armed && sortPatched && notifySuppressed && R32(active + OFF_GROWTH) == 0)
             {
                 if (!PatchExpectedByte(RVA_MANUAL_CAP_IMM, 0x5A, 0x78, "manual-cap"))
                     return Status(active, sortA, sortB, capAddr, "NOT ARMED");
@@ -249,13 +306,12 @@ internal static class Native
         }
         else
         {
-            // Closing admission is safe. We intentionally keep the sort-pipeline code patch
-            // while the process is alive; restoring it with >90 selected could make the next
-            // native rebuild reset back to 90 and crash. Full reset = restart BRZE.
             if (cap == 0x78) WriteCodeByte(capAddr, 0x5A);
+            RestoreAddNotify();
         }
 
-        return Status(active, sortA, sortB, capAddr, armed && sortPatched ? "ARMED sort-pipeline-120" : "NOT ARMED");
+        return Status(active, sortA, sortB, capAddr,
+            armed && sortPatched && notifySuppressed ? "ARMED no-add-notify-120" : "NOT ARMED");
     }
 
     static string Status(long active, long sortA, long sortB, long capAddr, string mode)
@@ -264,8 +320,9 @@ internal static class Native
         byte a = R8(moduleBase + RVA_SORT_A_FIRST_IMM);
         byte b = R8(moduleBase + RVA_SORT_B_FIRST_IMM);
         byte r = R8(moduleBase + RVA_SORT_ACTIVE_FIRST_IMM);
+        bool notifyNopped = Same(RBytes(moduleBase + RVA_SINGLE_ADD_NOTIFY_CALL, 5), NOP5);
         string err = patchError.Length == 0 ? "" : $" | ERROR:{patchError}";
-        return $"pid:{pid} | {mode} | cap:0x{cap:X2} | sort bytes:{a:X2}/{b:X2}/{r:X2}\r\n" +
+        return $"pid:{pid} | {mode} | cap:0x{cap:X2} | sort bytes:{a:X2}/{b:X2}/{r:X2} | add-notify:{(notifyNopped ? "NOP" : "LIVE")}\r\n" +
                $"ACTIVE {ListState(active)} | SORT-A {ListState(sortA)} | SORT-B {ListState(sortB)}{err}";
     }
 
@@ -273,14 +330,15 @@ internal static class Native
     {
         if (h != IntPtr.Zero)
         {
-            // Close >90 admission. Keep sort pipeline at 120 until BRZE restart for safety.
             long capAddr = moduleBase + RVA_MANUAL_CAP_IMM;
             if (R8(capAddr) == 0x78) WriteCodeByte(capAddr, 0x5A);
+            RestoreAddNotify();
         }
         DetachHandleOnly();
         patchError = "";
         armed = false;
         sortPatched = false;
+        notifySuppressed = false;
     }
 
     static void DetachHandleOnly()
