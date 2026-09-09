@@ -18,21 +18,21 @@ internal static class Program
 
 internal sealed class MainForm : Form
 {
-    readonly CheckBox f4 = new() { Text = "F4 Max Population + UI/SORT/SIM SELECTION 120 — SURGICAL", AutoSize = true };
+    readonly CheckBox f4 = new() { Text = "F4 Max Population + SIM120 + NO PER-ADD REFRESH — BULK ISOLATION", AutoSize = true };
     readonly Label note = new()
     {
         AutoSize = true,
-        MaximumSize = new Size(900, 0),
-        Text = "Diagnostic only. Keeps the local UI selection, native sort/rebuild lists, and the local-player simulation selection container at first=120 with growth=0. The selection-add event remains LIVE so right-click move/attack commands stay authoritative. Enable F4 before selecting anything."
+        MaximumSize = new Size(920, 0),
+        Text = "Diagnostic only. Clean Simulation-Pipeline-120 base. Event type-0 stays LIVE and still appends every unit to the simulation selection list. ONE change: suppress only the per-unit call 0x5A739E -> 0x5A7B97 to test whether repeated refresh work causes the one-shot large-drag freeze."
     };
-    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 132, TextAlign = ContentAlignment.MiddleLeft };
+    readonly Label status = new() { AutoSize = false, Dock = DockStyle.Bottom, Height = 142, TextAlign = ContentAlignment.MiddleLeft };
     readonly System.Windows.Forms.Timer timer = new() { Interval = 50 };
     bool f4Held;
 
     public MainForm()
     {
-        Text = "BRZE 1.60 — Selection Simulation Pipeline 120 Probe";
-        ClientSize = new Size(960, 320);
+        Text = "BRZE 1.60 — Selection No Per-Add Refresh Probe";
+        ClientSize = new Size(990, 330);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -94,14 +94,16 @@ internal static class Native
     const int RVA_SORT_A_FIRST_IMM = 0x1A71B1;
     const int RVA_SORT_B_FIRST_IMM = 0x1A71B9;
     const int RVA_SORT_ACTIVE_FIRST_IMM = 0x1A7299;
-
-    // Simulation-side per-player selection list construction/reset.
-    // 0x5A6C52 = push 0x5A during 10-list initialization, immediate at +1.
-    // 0x5A6E36 = push 0x5A during 10-list reset, immediate at +1.
     const int RVA_SIM_INIT_FIRST_IMM = 0x1A6C53;
     const int RVA_SIM_RESET_FIRST_IMM = 0x1A6E37;
-    const int SIM_LIST_STRIDE = 0x28;
 
+    // Event type-0 consumer -> 0x5A736F(player,unit).
+    // After membership lookup/append/flag it calls 0x5A7B97(player) here.
+    const int RVA_SIM_ADD_REFRESH_CALL = 0x1A739E;
+    static readonly byte[] SIM_ADD_REFRESH_ORIG = { 0xE8, 0xF4, 0x07, 0x00, 0x00 };
+    static readonly byte[] NOP5 = { 0x90, 0x90, 0x90, 0x90, 0x90 };
+
+    const int SIM_LIST_STRIDE = 0x28;
     const int OFF_FREE_NODE = 0x08;
     const int OFF_COUNT = 0x18;
     const int OFF_BLOCK_COUNT = 0x1C;
@@ -117,6 +119,9 @@ internal static class Native
     static bool sortPatched;
     static bool simCodePatched;
     static bool simArmed;
+    static bool refreshSuppressed;
+
+    static IntPtr A(long addr) => new(unchecked((int)(uint)addr));
 
     static bool Attach()
     {
@@ -141,34 +146,49 @@ internal static class Native
     {
         if (h == IntPtr.Zero) return 0;
         var b = new byte[4];
-        return ReadProcessMemory(h, new IntPtr(unchecked((int)(uint)addr)), b, 4, out var n) && n.ToInt64() == 4
-            ? BitConverter.ToUInt32(b, 0) : 0;
+        return ReadProcessMemory(h, A(addr), b, 4, out var n) && n.ToInt64() == 4 ? BitConverter.ToUInt32(b, 0) : 0;
     }
 
     static byte R8(long addr)
     {
         if (h == IntPtr.Zero) return 0;
         var b = new byte[1];
-        return ReadProcessMemory(h, new IntPtr(unchecked((int)(uint)addr)), b, 1, out var n) && n.ToInt64() == 1 ? b[0] : (byte)0;
+        return ReadProcessMemory(h, A(addr), b, 1, out var n) && n.ToInt64() == 1 ? b[0] : (byte)0;
+    }
+
+    static byte[] RBytes(long addr, int len)
+    {
+        var b = new byte[len];
+        if (h == IntPtr.Zero) return Array.Empty<byte>();
+        return ReadProcessMemory(h, A(addr), b, len, out var n) && n.ToInt64() == len ? b : Array.Empty<byte>();
+    }
+
+    static bool Same(byte[] a, byte[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+        return true;
     }
 
     static bool W32(long addr, uint value)
     {
         if (h == IntPtr.Zero) return false;
         var b = BitConverter.GetBytes(value);
-        return WriteProcessMemory(h, new IntPtr(unchecked((int)(uint)addr)), b, 4, out var n) && n.ToInt64() == 4;
+        return WriteProcessMemory(h, A(addr), b, 4, out var n) && n.ToInt64() == 4;
     }
 
-    static bool WriteCodeByte(long addr, byte value)
+    static bool WriteCodeBytes(long addr, byte[] value)
     {
         if (h == IntPtr.Zero) return false;
-        var a = new IntPtr(unchecked((int)(uint)addr));
-        if (!VirtualProtectEx(h, a, (UIntPtr)1, PAGE_EXECUTE_READWRITE, out uint old)) return false;
-        bool ok = WriteProcessMemory(h, a, new[] { value }, 1, out var n) && n.ToInt64() == 1;
-        if (ok) FlushInstructionCache(h, a, (UIntPtr)1);
-        VirtualProtectEx(h, a, (UIntPtr)1, old, out _);
+        var a = A(addr);
+        if (!VirtualProtectEx(h, a, (UIntPtr)value.Length, PAGE_EXECUTE_READWRITE, out uint old)) return false;
+        bool ok = WriteProcessMemory(h, a, value, value.Length, out var n) && n.ToInt64() == value.Length;
+        if (ok) FlushInstructionCache(h, a, (UIntPtr)value.Length);
+        VirtualProtectEx(h, a, (UIntPtr)value.Length, old, out _);
         return ok;
     }
+
+    static bool WriteCodeByte(long addr, byte value) => WriteCodeBytes(addr, new[] { value });
 
     static bool PatchExpectedByte(int rva, byte from, byte to, string name)
     {
@@ -188,6 +208,24 @@ internal static class Native
         return R8(a) == to;
     }
 
+    static bool PatchExpectedBytes(int rva, byte[] from, byte[] to, string name)
+    {
+        long a = moduleBase + rva;
+        byte[] cur = RBytes(a, from.Length);
+        if (Same(cur, to)) return true;
+        if (!Same(cur, from))
+        {
+            patchError = $"{name}: unexpected bytes {BitConverter.ToString(cur)}";
+            return false;
+        }
+        if (!WriteCodeBytes(a, to))
+        {
+            patchError = $"{name}: write failed";
+            return false;
+        }
+        return Same(RBytes(a, to.Length), to);
+    }
+
     static bool PatchSortPipeline()
     {
         if (!PatchExpectedByte(RVA_SORT_A_FIRST_IMM, 0x5A, 0x78, "sort-A")) return false;
@@ -203,6 +241,21 @@ internal static class Native
         if (!PatchExpectedByte(RVA_SIM_RESET_FIRST_IMM, 0x5A, 0x78, "sim-reset")) return false;
         simCodePatched = true;
         return true;
+    }
+
+    static bool SuppressPerAddRefresh()
+    {
+        if (!PatchExpectedBytes(RVA_SIM_ADD_REFRESH_CALL, SIM_ADD_REFRESH_ORIG, NOP5, "sim-add-refresh")) return false;
+        refreshSuppressed = true;
+        return true;
+    }
+
+    static void RestorePerAddRefresh()
+    {
+        if (h == IntPtr.Zero) return;
+        long a = moduleBase + RVA_SIM_ADD_REFRESH_CALL;
+        if (Same(RBytes(a, 5), NOP5)) WriteCodeBytes(a, SIM_ADD_REFRESH_ORIG);
+        refreshSuppressed = false;
     }
 
     static bool ArmPristineList(long list, string name)
@@ -222,9 +275,7 @@ internal static class Native
             }
             return R32(list + OFF_FIRST) == 120u;
         }
-
-        if (first == 120 && growth == 0)
-            return true;
+        if (first == 120 && growth == 0) return true;
 
         patchError = $"{name}: allocator already used/unexpected (n={count}, b={blocks}, first={first}, grow={growth}) — restart BRZE and enable F4 before selecting anything";
         return false;
@@ -233,18 +284,13 @@ internal static class Native
     static long LocalSimulationList(uint localId)
     {
         uint simBase = R32(moduleBase + RVA_SIM_LISTS_PTR);
-        if (simBase == 0) return 0;
-        return (long)simBase + localId * SIM_LIST_STRIDE;
+        return simBase == 0 ? 0 : (long)simBase + localId * SIM_LIST_STRIDE;
     }
 
     static string ListState(long list)
     {
         if (list == 0) return "unavailable";
-        uint count = R32(list + OFF_COUNT);
-        uint blocks = R32(list + OFF_BLOCK_COUNT);
-        uint first = R32(list + OFF_FIRST);
-        uint growth = R32(list + OFF_GROWTH);
-        return $"n:{count} b:{blocks} first:{first} grow:{growth}";
+        return $"n:{R32(list + OFF_COUNT)} b:{R32(list + OFF_BLOCK_COUNT)} first:{R32(list + OFF_FIRST)} grow:{R32(list + OFF_GROWTH)}";
     }
 
     public static string Tick(bool enabled)
@@ -263,25 +309,20 @@ internal static class Native
         {
             W32(moduleBase + RVA_MAX_UNITS + lid * 4L, 99_999_999u);
 
-            if (!sortPatched && !PatchSortPipeline())
-                return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
+            if (!sortPatched && !PatchSortPipeline()) return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
+            if (!simCodePatched && !PatchSimulationCode()) return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
+            if (!refreshSuppressed && !SuppressPerAddRefresh()) return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
 
-            if (!simCodePatched && !PatchSimulationCode())
-                return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
-
-            if (!activeArmed)
-                activeArmed = ArmPristineList(active, "active");
+            if (!activeArmed) activeArmed = ArmPristineList(active, "active");
 
             if (simLocal == 0)
             {
                 patchError = "simulation selection list not initialized yet";
                 return Status(active, sortA, sortB, simLocal, capAddr, lid, "NOT ARMED");
             }
+            if (!simArmed) simArmed = ArmPristineList(simLocal, "sim-local");
 
-            if (!simArmed)
-                simArmed = ArmPristineList(simLocal, "sim-local");
-
-            if (activeArmed && sortPatched && simCodePatched && simArmed &&
+            if (activeArmed && sortPatched && simCodePatched && simArmed && refreshSuppressed &&
                 R32(active + OFF_GROWTH) == 0 && R32(simLocal + OFF_GROWTH) == 0)
             {
                 if (!PatchExpectedByte(RVA_MANUAL_CAP_IMM, 0x5A, 0x78, "manual-cap"))
@@ -290,14 +331,12 @@ internal static class Native
         }
         else
         {
-            // Close >90 local admission only. Keep sort + simulation reset code at 120
-            // until BRZE restart; restoring them while >90 state exists could reintroduce
-            // a 90-node reset underneath live selection state.
             if (cap == 0x78) WriteCodeByte(capAddr, 0x5A);
+            RestorePerAddRefresh();
         }
 
-        string mode = activeArmed && sortPatched && simCodePatched && simArmed
-            ? "ARMED sim-pipeline-120"
+        string mode = activeArmed && sortPatched && simCodePatched && simArmed && refreshSuppressed
+            ? "ARMED no-per-add-refresh"
             : "NOT ARMED";
         return Status(active, sortA, sortB, simLocal, capAddr, lid, mode);
     }
@@ -310,10 +349,11 @@ internal static class Native
         byte r = R8(moduleBase + RVA_SORT_ACTIVE_FIRST_IMM);
         byte si = R8(moduleBase + RVA_SIM_INIT_FIRST_IMM);
         byte sr = R8(moduleBase + RVA_SIM_RESET_FIRST_IMM);
+        bool refreshNop = Same(RBytes(moduleBase + RVA_SIM_ADD_REFRESH_CALL, 5), NOP5);
         string err = patchError.Length == 0 ? "" : $" | ERROR:{patchError}";
 
-        return $"pid:{pid} | {mode} | player:{lid} | cap:0x{cap:X2} | sort:{a:X2}/{b:X2}/{r:X2} | sim-code:{si:X2}/{sr:X2} | add-notify:LIVE\r\n" +
-               $"ACTIVE {ListState(active)} | SIM {ListState(simLocal)}\r\n" +
+        return $"pid:{pid} | {mode} | player:{lid} | cap:0x{cap:X2} | sort:{a:X2}/{b:X2}/{r:X2} | sim-code:{si:X2}/{sr:X2}\r\n" +
+               $"event0:LIVE | sim-add-refresh:{(refreshNop ? "NOP" : "LIVE")} | ACTIVE {ListState(active)} | SIM {ListState(simLocal)}\r\n" +
                $"SORT-A {ListState(sortA)} | SORT-B {ListState(sortB)}{err}";
     }
 
@@ -323,6 +363,7 @@ internal static class Native
         {
             long capAddr = moduleBase + RVA_MANUAL_CAP_IMM;
             if (R8(capAddr) == 0x78) WriteCodeByte(capAddr, 0x5A);
+            RestorePerAddRefresh();
         }
         DetachHandleOnly();
         patchError = "";
@@ -330,6 +371,7 @@ internal static class Native
         sortPatched = false;
         simCodePatched = false;
         simArmed = false;
+        refreshSuppressed = false;
     }
 
     static void DetachHandleOnly()
