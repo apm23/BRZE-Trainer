@@ -1,0 +1,37 @@
+name: Selection capacity cleanroom
+on:
+  workflow_dispatch:
+  push:
+    branches: [ selection-capacity-cleanroom ]
+    paths: ['.trigger-selection-capacity-cleanroom']
+jobs:
+  patch-build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: selection-capacity-cleanroom
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply clean-room selection patch
+        run: python tools/patch_selection_capacity_cleanroom.py
+      - name: Compile smoke
+        run: dotnet build BRZETrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish BRZETrainer.csproj -c Release -r win-x86 --self-contained true /p:PublishSingleFile=true /p:PublishTrimmed=false -o publish
+      - name: Upload clean-room specimen
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Selection-Capacity-Cleanroom
+          path: publish/BRZE-Trainer.exe
+      - name: Commit patched source
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Program.cs
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) { git commit -m "Build clean-room selection capacity specimen"; git push origin HEAD:selection-capacity-cleanroom }
