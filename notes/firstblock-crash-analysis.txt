@@ -1,0 +1,1 @@
+First-block 120 probe crash at #91 is not yet proof of downstream count cap: selection sort/rebuild function 0x5A719F reinitializes active selection to 90/0 at 0x5A7298 and temp sort lists to 90/0 at 0x5A71B0 and 0x5A71B8.
