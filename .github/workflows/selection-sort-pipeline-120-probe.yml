@@ -4,6 +4,8 @@ on:
   push:
     branches: [ selection-rectangle-throttle-1ms-probe ]
     paths: ['.trigger-selection-rectangle-throttle-1ms-probe']
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: windows-latest
@@ -18,10 +20,21 @@ jobs:
         shell: pwsh
         run: |
           $p = Get-Content Program.cs -Raw
-          if ($p -notmatch 'new byte\[23\]') { throw 'Expected wrapper allocation not found' }
-          $p = $p.Replace('var code = new byte[23];','var code = new byte[24];')
-          Set-Content Program.cs $p -NoNewline
+          if ($p -match 'new byte\[23\]') {
+            $p = $p.Replace('var code = new byte[23];','var code = new byte[24];')
+            Set-Content Program.cs $p -NoNewline
+          }
           if ((Get-Content Program.cs -Raw) -notmatch 'new byte\[24\]') { throw 'Hotfix verification failed' }
+      - name: Persist hotfix source
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Program.cs
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "Fix rectangle throttle wrapper length"
+            git push origin HEAD:selection-rectangle-throttle-1ms-probe
+          }
       - name: Compile smoke
         run: dotnet build BRZETrainer.csproj -c Release -r win-x86
       - name: Publish x86 single-file EXE
