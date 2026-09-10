@@ -26,7 +26,9 @@ internal static class HorseCore
     const uint MEM_COMMIT=0x1000,MEM_RESERVE=0x2000,MEM_RELEASE=0x8000,PAGE_EXECUTE_READWRITE=0x40;
     const int RVA_LOCAL_ID=0x4416D0;
     const int RVA_HORSE_SLOT_LOOP=0x0D5482;
-    const int OWNER_FROM_SLOT0=0x528; // 0x5AC - building owner +0x84
+    // Native loop: slot0=building+0x5AC, stride=0x1C, EDX counts 6..1.
+    // base = ESI + EDX*0x1C - 0x654; owner = base+0x84 => ESI+EDX*0x1C-0x5D0.
+    const int OWNER_DYNAMIC_BIAS=0x5D0;
     static readonly byte[] Original={0x83,0x3E,0x00,0x8D,0x41,0x01};
 
     static IntPtr h=IntPtr.Zero,cave=IntPtr.Zero;
@@ -48,18 +50,20 @@ internal static class HorseCore
     static byte[] BuildStub(long stub,long target)
     {
         // Wand runtime diff proves this exact native loop owns the six Stable horse slots.
-        // When enabled, fill only local-player Stable slots with occupied=1, then execute
-        // the original cmp/lea and return to the untouched loop. This reproduces the
-        // observed 0->1 behavior at +5AC,+5C8,+5E4,+600,+61C,+638 without polling.
+        // For every iteration, reconstruct the Stable owner from current ESI + EDX.
+        // Local player only: force current slot occupied=1, then run original cmp/lea.
         var b=new List<byte>();
-        b.Add(0x50); // push eax
-        b.Add(0xA1);U32(b,(uint)(moduleBase+RVA_LOCAL_ID)); // eax=localId
-        b.AddRange(new byte[]{0x39,0x86});I32(b,-OWNER_FROM_SLOT0); // cmp [esi-0x528],eax
+        b.Add(0x53);                                     // push ebx
+        b.AddRange(new byte[]{0x8B,0xC2});              // mov eax,edx
+        b.AddRange(new byte[]{0x6B,0xC0,0x1C});         // imul eax,eax,0x1C
+        b.AddRange(new byte[]{0x8D,0x84,0x06});I32(b,-OWNER_DYNAMIC_BIAS); // lea eax,[esi+eax-0x5D0]
+        b.AddRange(new byte[]{0x8B,0x1D});U32(b,(uint)(moduleBase+RVA_LOCAL_ID)); // ebx=localId
+        b.AddRange(new byte[]{0x39,0x18});              // cmp [eax],ebx
         b.AddRange(new byte[]{0x0F,0x85});int jSkip=b.Count;I32(b,0);
         b.AddRange(new byte[]{0xC7,0x06,0x01,0x00,0x00,0x00}); // [esi]=1
         int skip=b.Count;
-        b.Add(0x58); // pop eax
-        b.AddRange(Original);
+        b.Add(0x5B);                                     // pop ebx
+        b.AddRange(Original);                            // cmp [esi],0 ; lea eax,[ecx+1]
         b.Add(0xE9);int jBack=b.Count;I32(b,0);
         Rel(b,jSkip,stub+jSkip+4,stub+skip);
         Rel(b,jBack,stub+jBack+4,target+Original.Length);
@@ -81,7 +85,7 @@ internal static class HorseCore
     public static string Tick(bool enabled)
     {
         if(!Attach())return "HORSE: waiting for Battle_Realms_F.exe...";
-        if(enabled){if(!EnsureInstalled())return "HORSE NOT ARMED | "+error;lastEnabled=true;return "HORSE: Wand slot-fill port ARMED (6 slots, local player)";}
+        if(enabled){if(!EnsureInstalled())return "HORSE NOT ARMED | "+error;lastEnabled=true;return "HORSE: Wand six-slot Stable port ARMED (local player)";}
         if(lastEnabled&&installed){WriteCode(moduleBase+RVA_HORSE_SLOT_LOOP,Original);installed=false;if(cave!=IntPtr.Zero){VirtualFreeEx(h,cave,UIntPtr.Zero,MEM_RELEASE);cave=IntPtr.Zero;}}
         lastEnabled=false;return "HORSE: OFF";
     }
