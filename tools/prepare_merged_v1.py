@@ -13,19 +13,19 @@ rep('readonly CheckBox f5 = new() { Text = "F5 No Stamina Loss (selected only) �
 rep('readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — SAFE DELTA V62", AutoSize = true };',
     'readonly CheckBox f6 = new() { Text = "F6 Unlimited HP (selected only) — HARD LOCK", AutoSize = true };')
 rep('readonly CheckBox horses = new() { Text = "Maximum Horses / instant horse respawn", AutoSize = true };',
-    'readonly CheckBox horses = new() { Text = "Unlimited Horses — Wand 6-slot Stable port", AutoSize = true };\n    readonly CheckBox fastPeasant = new() { Text = "Fast Peasant Spawn — FIXED 3.0 seconds (local player)", AutoSize = true };\n    readonly CheckBox instantDeath = new() { Text = "Instant Death V5 — direct Unit pointer (PageDown)", AutoSize = true };')
+    'readonly CheckBox horses = new() { Text = "Unlimited Horses — Wand 6-slot Stable port", AutoSize = true };\n    readonly CheckBox fastPeasant = new() { Text = "Fast Peasant Spawn — FIXED 3.0 seconds (local player)", AutoSize = true };\n    readonly CheckBox instantDeath = new() { Text = "Instant Death V6 — HOVER ONLY / no select (PageDown)", AutoSize = true };\n    readonly CheckBox revealMap = new() { Text = "Reveal Map — disable Fog of War", AutoSize = true };')
 rep('readonly Label status = new() { AutoSize = false, Height = 54, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };',
-    'readonly Label status = new() { AutoSize = false, Height = 205, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(FontFamily.GenericMonospace, 8.5f) };')
+    'readonly Label status = new() { AutoSize = false, Height = 225, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(FontFamily.GenericMonospace, 8.5f) };')
 rep('Text = "BRZE Trainer 1.60 — Hook Test"; ClientSize = new Size(650, 520); StartPosition = FormStartPosition.CenterScreen;',
-    'Text = "BRZE Trainer 1.60 — Instant Death V5 Direct Unit Pointer"; ClientSize = new Size(960, 690); StartPosition = FormStartPosition.CenterScreen;')
+    'Text = "BRZE Trainer 1.60 — Instant Death V6 Hover Only + Reveal Map"; ClientSize = new Size(960, 720); StartPosition = FormStartPosition.CenterScreen;')
 
 # Watchtower + Demolition stay deferred and hidden.
 rep('panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6, f7, legacyTower, pausePeasant, demolish, horses });',
-    'panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6, f7, pausePeasant, horses, fastPeasant, instantDeath });')
+    'panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6, f7, pausePeasant, horses, fastPeasant, instantDeath, revealMap });')
 rep('panel.Controls.Add(new Label { Text = "Delete = Instant Build/Repair/Research/BattleGear | PageDown = Instant Death", AutoSize = true });',
-    'panel.Controls.Add(new Label { Text = "Delete = Instant Build/Repair/Research/BattleGear | PageDown = toggle Death V5", AutoSize = true });')
+    'panel.Controls.Add(new Label { Text = "Delete = Instant Build/Repair/Research/BattleGear | PageDown = toggle Death V6", AutoSize = true });')
 rep('Native.Start(); timer.Tick += (_, _) => TickTrainer(); timer.Start(); FormClosed += (_, _) => Native.Stop();',
-    'Native.Start(); timer.Tick += (_, _) => TickTrainer(); timer.Start(); FormClosed += (_, _) => { InstantDeathCore.Stop(); StaminaCore.Stop(); HorseCore.Stop(); HookCore.Stop(); SelectionCore.Stop(); Native.Stop(); };')
+    'Native.Start(); timer.Tick += (_, _) => TickTrainer(); timer.Start(); FormClosed += (_, _) => { RevealMapCore.Stop(); InstantDeathCore.Stop(); StaminaCore.Stop(); HorseCore.Stop(); HookCore.Stop(); SelectionCore.Stop(); Native.Stop(); };')
 
 rep('Toggle(0x22,12,()=>Native.InstantDeathSelected());',
     'Toggle(0x22,12,()=>instantDeath.Checked=!instantDeath.Checked);')
@@ -34,9 +34,9 @@ rep('        Toggle(0x7A,14,()=>demolish.Checked=!demolish.Checked);\n', '')
 rep('Native.SetHooks(f5.Checked, f6.Checked, f7.Checked);',
     'string hookStatus = HookCore.Tick(false, f6.Checked, f7.Checked);\n        string staminaStatus = StaminaCore.Tick(f5.Checked);')
 rep('Native.ApplyLegacyRuntime(pausePeasant.Checked,demolish.Checked,horses.Checked,legacyTower.Checked);',
-    'Native.ApplyLegacyRuntime(pausePeasant.Checked,false,false,false);\n        string horseStatus = HorseCore.Tick(horses.Checked);\n        string deathStatus = InstantDeathCore.Tick(instantDeath.Checked);')
+    'Native.ApplyLegacyRuntime(pausePeasant.Checked,false,false,false);\n        string horseStatus = HorseCore.Tick(horses.Checked);\n        string deathStatus = InstantDeathCore.Tick(instantDeath.Checked);\n        string mapStatus = RevealMapCore.Tick(revealMap.Checked);')
 rep('status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked);',
-    'string selectionStatus = SelectionCore.Tick(fastPeasant.Checked);\n        status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked) + "\\r\\n" + hookStatus + "\\r\\n" + staminaStatus + "\\r\\n" + horseStatus + "\\r\\n" + deathStatus + "\\r\\n" + selectionStatus;')
+    'string selectionStatus = SelectionCore.Tick(fastPeasant.Checked);\n        status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked) + "\\r\\n" + hookStatus + "\\r\\n" + staminaStatus + "\\r\\n" + horseStatus + "\\r\\n" + deathStatus + "\\r\\n" + mapStatus + "\\r\\n" + selectionStatus;')
 
 rep('static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag,trainFlag; static bool hooksInstalled; static uint horseOriginal; static bool horseSaved; static int remoteTrainState=-1; static string hookError="";',
     'static int selectedLocked,trainingBuildings; static IntPtr cave=IntPtr.Zero; static long hpFlag,stFlag,trainFlag; static bool hooksInstalled; static uint horseOriginal; static bool horseSaved; static int remoteTrainState=-1; static string hookError="";\n    static bool maxPopSaved; static uint originalMaxPop,originalMaxPopPlayer=0xFFFFFFFF;')
