@@ -33,7 +33,8 @@ jobs:
           $h = Get-Content HorseCore.cs -Raw
           if (-not $h.Contains('RVA_HORSE_SLOT_LOOP=0x0D5482')) { throw 'horse RVA missing' }
           if (-not $h.Contains('Original={0x83,0x3E,0x00,0x8D,0x41,0x01}')) { throw 'horse stock bytes missing' }
-          if (-not $h.Contains('OWNER_FROM_SLOT0=0x528')) { throw 'local owner guard missing' }
+          if (-not $h.Contains('OWNER_DYNAMIC_BIAS=0x5D0')) { throw 'dynamic local owner guard missing' }
+          if (-not $h.Contains('0x6B,0xC0,0x1C')) { throw 'slot stride reconstruction missing' }
           $s = Get-Content SelectionCore.cs -Raw
           if (-not $s.Contains('SELECTION_LIMIT = 500')) { throw 'selection500 changed' }
           if (-not $s.Contains('LOGICAL_WINDOW = 160')) { throw 'headroom160 changed' }
