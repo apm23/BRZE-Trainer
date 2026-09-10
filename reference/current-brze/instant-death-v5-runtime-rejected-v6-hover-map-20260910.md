@@ -38,5 +38,22 @@ Current BRZE exports:
 
 Underlying native setter preferred VA `0x50DBD7` / RVA `0x10DBD7` accepts one argument and returns with `ret 4`. V6 uses a one-shot `CreateRemoteThread` call on state changes: argument `0` to reveal/disable fog, argument `1` to restore normal fog. The reveal code is not a memory freeze and does not scan units.
 
-## Runtime status
-V6 architecture: static/build test pending at creation of this note. Runtime proof requires user test.
+## Build pin — STATIC/COMPILE PROVEN
+Branch: `instant-death-v4-hover-telemetry`
+Head: `755a1f8f7888d496a7d43626c201df9dc56c5b80`
+Workflow: `Instant Death v6 — Hover Only + Reveal Map`
+Run: `34442885171` — SUCCESS
+Job: `102761415852` — SUCCESS
+Artifact: `10138596135` (`BRZE-Trainer-InstantDeathV6-HoverOnly-RevealMap`)
+Artifact ZIP SHA-256: `79b76d18e90d4bda2c5f1bf2b4fa46ea87e4dac2f5a292ea5278f34f9572a477`
+Published EXE SHA-256: `b7b2f0712213601761a2167be8587e01515987c773ed08149851ed551af07349`
+
+CI passed V6 architecture guard, Reveal Map native-path guard, merged UI wiring guard, compile smoke, x86 single-file publish, rename, and artifact upload.
+
+## Runtime status / required proof
+Runtime proof still pending. Required test:
+- with V6 ON and cursor parked on empty ground, no enemy anywhere should die;
+- hover exactly one enemy without selecting/clicking: only that hovered enemy should die;
+- hover friendly/local unit: it must not die;
+- move cursor to a second enemy: only the second hovered enemy should then die;
+- Reveal Map ON must remove fog; OFF must restore normal fog.
