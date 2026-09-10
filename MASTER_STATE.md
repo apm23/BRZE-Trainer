@@ -124,12 +124,11 @@ User runtime regression:
 - >90 stable
 - move + attack authoritative
 
-**This is the solved/runtime-proven selection baseline.**
 Reference: `reference/current-brze/selection120-headroom160-integrated-runtime-success-20260909.md`.
 
 ---
 
-# Selection500 architecture candidate
+# Selection500 architecture — RUNTIME PROVEN
 Because 500 cannot fit the old imm8 90->120 patch, Selection500 uses narrow wrappers:
 - local admission wrapper rejects count >=500
 - ACTIVE first=500/growth=0 before allocation
@@ -165,62 +164,99 @@ References:
 - `reference/current-brze/peasant-production-timing-remap-20260909.md`
 - `reference/current-brze/selection500-fast-peasant-popgate-static-20260910.md`
 
----
-
-# Runtime result — old Fast Peasant stopped around total unit 167
-Tested EXE `295e9a4c...`:
-- peasants initially came out extremely fast / burst-like
-- at total unit count about **167**, automatic peasant production stopped completely
-
-This is now correlated with the two native PeasantManager population-stop checks above.
-Reference: `reference/current-brze/selection500-fast-peasant-runtime-167-stop-20260910.md`.
-
-User requests after this test:
-1. Selection500 must stay active independently from Max Population; turning Max Pop off must not revert selection or reintroduce crash.
-2. Fast Peasant should not use a multiplier; use a fixed 1–2 second schedule.
-3. Fix production stopping at the population threshold.
+## Failed first fast-peasant attempt
+EXE `295e9a4c...` initially spawned very quickly but stopped completely around total unit 167. This correlated with the two native PeasantManager population-stop checks above.
 
 ---
 
-# CURRENT RUNTIME CANDIDATE — Selection500 ALWAYS + Fixed1s Peasant
+# LOCKED BASELINE — Selection500 ALWAYS + Fixed1s Peasant
 Branch: `selection-500-always-fixed1s-peasant`
-
-Files:
-- `Selection500AlwaysFixedPeasant.cs`
-- `Selection500AlwaysFixedPeasant.csproj`
-- `.github/workflows/selection-500-always-fixed1s-peasant.yml`
 
 Build pin:
 - head `774d17d90460570b51fe8f3f140c7d4a1c33c879`
 - run `34375730054` SUCCESS
-- artifact `BRZE-Selection-500-Always-Fixed1s-Peasant`
-- artifact ID `10113811417`
-- ZIP SHA-256 `7a29f99e5da33a638634d35b49a31a86397ff2f1e26d37775ffd036872ed4890`
+- artifact `10113811417`
 - EXE SHA-256 `40f37d73122ae0a827d7e8a197e535a534ae7e9cbef629f933f2e408cce2d1b0`
-- EXE size `151,059,694`
 
-Exact changes:
+Architecture:
 - Selection500 + headroom160 arms automatically; no selection toggle.
-- F4 controls ONLY local Max Population 500.
-- original local max-pop is saved when available and restored when F4 is OFF.
-- old Fast Peasant 20x/min1s logic removed.
-- local Fast Peasant calls native scheduler first, then forces next timestamp to **current game time + 1000 ms**.
-- two PeasantManager population-used calls at RVAs `0x17FF1B` and `0x17FF71` are wrapped.
-- native result is preserved normally; only local player + Fast Peasant returns 0 to those two PeasantManager stop checks.
-- no global population-counter patch; AI/non-local players remain native.
+- F4 controls only max population; selection remains independent.
+- local Fast Peasant calls native scheduler then forces next timestamp to current game time + fixed interval.
+- both PeasantManager population-used calls at `0x17FF1B` and `0x17FF71` are wrapped.
+- only local player + Fast Peasant sees those two stop checks bypassed; AI/non-local players stay native.
 
-Reference: `reference/current-brze/selection500-always-fixed1s-peasant-build-20260910.md`.
+**User runtime result: all requested Selection500/independent-F4/fixed1s behavior worked and peasant production continued beyond the previous ~167 stop.**
+Reference: `reference/current-brze/selection500-always-fixed1s-runtime-success-20260910.md`.
 
-Status: compile/build proven; runtime not yet proven.
+Pop9M successor:
+- branch `selection-500-always-fixed1s-pop9m`
+- run `34377039566` SUCCESS
+- artifact `10114328832`
+- selection remains 500; F4 population value restored to `9,999,999`.
 
-## Required next runtime test
-1. fresh restart BRZE; use only this EXE
-2. open trainer before selecting anything
-3. leave F4 OFF and verify Selection500 status is already armed; test a large drag and move/attack
-4. toggle F4 ON/OFF and verify selection remains 500 both ways
-5. enable Fast Peasant; verify roughly one peasant per second rather than burst
-6. specifically pass total unit 167 without production stopping
-7. continue toward 200+/300+ if practical; selection/move/attack should remain stable
+---
+
+# Merged main trainer v1 — BUILD PROVEN, PARTIAL RUNTIME FAILURE
+Branch `main-merge-selection500-hp-stamina-horse-v1`.
+Build run `34378691096` SUCCESS, artifact `10114980884`.
+
+Merged features include existing rice/water/yin-yang/pop/training/building/wolf/demolition plus Selection500/headroom160/Fast Peasant and experimental HP/stamina/horse work.
+
+Runtime feedback:
+- Selection500/peasant path remained usable.
+- fixed 1s Peasant was too aggressive for balance: user reached roughly 800 peasants within minutes and FPS dropped. New requested balance = **fixed 3 seconds**.
+- Unlimited Stamina v1 FAILED: selection top-up worked once, but running/skills still depleted stamina. Therefore hooking only `AddStamina` is not the complete stamina-consumption path.
+- Unlimited Horses v1 FAILED: after building/selecting a Stable, enabling the cheat left Stable horse stock at 0. Writing the assumed `HorseRespawnTime=0` config is NOT the required Stable-stock mechanism.
+
+Do not treat either v1 stamina or v1 horse implementation as solved.
+
+---
+
+# Stamina static lead
+Target exports/disassembly show `UnitSetStamina` at RVA `0x0CC7DF` / VA `0x4CC7DF`. That function eventually calls `0x5CCE79` with a computed fixed-point stamina amount. This is evidence that paths can set stamina without going through the currently hooked `AddStamina` entry at `0x5CCDFB`; it is a candidate central setter to compare against the proven Wand implementation.
+
+Do not patch this candidate blindly before comparison/runtime evidence.
+
+# Horse static leads
+Target exports include:
+- `GetPlayerNumHorsesCollected` RVA `0x0CC2F0`
+- `RegisterHorseBefriended` RVA `0x0CA9EA`
+- `RegisterNumHorsesCaptured` RVA `0x0CA81D`
+
+`GetPlayerNumHorsesCollected` reads through global pointer `0x8416A4` and per-player stride `0xA0`, field `+0x2C`. Nearby code also accesses `+0x30` and a six-DWORD region beginning `+0x34`; these are promising horse/stat counters but are not yet mapped to Stable stock. Do not guess-write them.
+
+---
+
+# Wand / WeMod 12.53.0 reverse-engineering lead
+User supplied Wand install/package data. Static analysis of `app.asar` established that game-specific trainer artifacts are NOT in `%LOCALAPPDATA%\\Wand\\packages`.
+
+Wand config uses:
+- storage root = Electron `userData/App`
+- trainer cache = `${storage}/trainers`
+
+Expected Windows location for this install:
+**`%APPDATA%\\Wand\\App\\trainers`**
+
+Cache naming observed in Wand source:
+- native: `Trainer_<trainerId>_<hash10>.dll`
+- Lua/Wand contract: `Artifact_<id>_<artifactHash10>.wlc`
+- WLC envelope begins `WLC1`.
+
+The supplied `%LOCALAPPDATA%` package contained generic TrainerLib/CELib/Lua runtime and an overlay log, but not the game-specific Battle Realms horse/stamina trainer logic.
+
+Next exact evidence: obtain `%APPDATA%\\Wand\\App\\trainers` after launching BRZE 1.60 Wand trainer and activating Unlimited Horses / Unlimited Stamina at least once. Analyze statically only; never execute imported trainer binaries.
+
+A read-only `WeModHorseStaminaDiff` observer is also being built on branch `main-merge-v2-peasant3s-wemod-port`; it snapshots BRZE `.text`, selected Stable, selected unit, and local horse-player block before/after a Wand cheat toggle to identify exact code/data diffs.
+
+---
+
+# CURRENT DEVELOPMENT — merged v2
+Branch `main-merge-v2-peasant3s-wemod-port`.
+
+Locked deltas:
+- Selection500/headroom160 unchanged.
+- Fast Peasant interval changed only from 1000 ms to **3000 ms** while preserving native scheduler + local pop-gate bypass.
+- Horse and stamina remain under investigation; no new guessed write is allowed before Wand/runtime-diff evidence.
 
 ---
 
@@ -233,6 +269,8 @@ Status: compile/build proven; runtime not yet proven.
 - permanent `0x5A7B97` suppression
 - in-function Sleep throttle
 - heavy selected-unit polling scans
+- horse `HorseRespawnTime=0` as a claim of Stable-stock unlimited
+- stamina `AddStamina`-only hook as a claim of complete hard lock
 
 ## Current hinge
-Runtime-test pinned **Selection500 ALWAYS + Fixed1s Peasant** build. The locked Selection120 + Headroom160 predecessor remains the known-good fallback baseline.
+Obtain/compare proven Wand BRZE 1.60 Unlimited Horses + Unlimited Stamina implementation, either from `%APPDATA%\\Wand\\App\\trainers` artifacts or the read-only before/after diff observer. Then port only exact horse/stamina semantics into merged v2. Peasant3s is a balance-only delta on the proven Selection500/Fast Peasant base.
