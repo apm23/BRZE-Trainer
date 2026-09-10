@@ -1,0 +1,74 @@
+name: Death V8 Wolves Den Stock
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.death-v8-wolfstock-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify locked death modes
+        shell: pwsh
+        run: |
+          $d = Get-Content InstantDeathCore.cs -Raw
+          if ($d -match 'RVA_CURRENT_UNIT_PTR\s*=\s*0x3DD858') { throw 'rejected V5 sweeping pointer reintroduced' }
+          foreach ($x in @('RVA_FRAME_MOUSE_DRAW=0x135C43','RVA_INTERFACE_MOUSE=0x443640','RVA_CURSOR_UNIT_QUERY=0x135EFB','RVA_RELATION=0x1848E8','MODE_IDLE=0,MODE_BURST=1,MODE_SINGLE=2','TriggerSingle()')) { if ($d -notmatch [regex]::Escape($x)) { throw "missing death invariant: $x" } }
+
+      - name: Verify V8 exact Wolves Den stock path
+        shell: pwsh
+        run: |
+          $w = Get-Content WolfCore.cs -Raw
+          if ($w -match 'RVA_WOLF_CAP_CMP') { throw 'rejected V7 per-unit wolf-cap hook still present' }
+          foreach ($x in @('RVA_SELECTED_BUILDING_A=0x4417D4','RVA_SELECTED_BUILDING_B=0x4417D8','OFF_BUILD_TYPE=0x78','OFF_BUILD_OWNER=0x84','OFF_WOLF_STOCK=0x250','WOLVES_DEN_TYPE=0x44','MAX_WOLF_STOCK=250','W8(den+OFF_WOLF_STOCK,MAX_WOLF_STOCK)','HashSet<long>')) { if ($w -notmatch [regex]::Escape($x)) { throw "missing V8 wolf invariant: $x" } }
+          $p = Get-Content MergedTrainer.csproj -Raw
+          if ($p -notmatch 'Compile Include="WolfCore.cs"') { throw 'WolfCore not compiled' }
+
+      - name: Verify Reveal Map remains locked
+        shell: pwsh
+        run: |
+          $r = Get-Content RevealMapCore.cs -Raw
+          if ($r -notmatch 'RVA_SET_FOG_OF_WAR=0x10DBD7') { throw 'Reveal Map native setter missing' }
+
+      - name: Generate V8 merged source
+        run: python tools/prepare_merged_v3_wolfstock.py
+
+      - name: Verify V8 UI wiring
+        shell: pwsh
+        run: |
+          $m = Get-Content MergedProgram.cs -Raw
+          foreach ($x in @('Instant Death BURST / ERASER','Instant Death SINGLE','Reveal Map — disable Fog of War','Unlimited Wolves V8 — select Wolves Den once (F10)','InstantDeathCore.TriggerSingle()','InstantDeathCore.Tick(deathBurstEnabled)','WolfCore.Tick(unlimitedWolves.Checked)','WolfCore.Stop()')) { if ($m -notmatch [regex]::Escape($x)) { throw "missing V8 UI/wiring: $x" } }
+          if ($m -notmatch 'Toggle\(0x79,10,\(\)=>unlimitedWolves\.Checked=!unlimitedWolves\.Checked\)') { throw 'F10 V8 toggle missing' }
+          if ($m -match 'Native\.MaxWolves\(\)') { throw 'obsolete legacy MaxWolves call active in merged UI' }
+          if ($m -notmatch 'ApplyLegacyRuntime\(pausePeasant\.Checked,false,false,false\)') { throw 'deferred legacy writes changed' }
+
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+
+      - name: Publish x86 single-file
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+
+      - name: Rename artifact
+        shell: pwsh
+        run: |
+          Move-Item publish/BRZE-Trainer-Merged-v1.exe publish/BRZE-Trainer-V8-WolvesDenStock.exe
+          Get-FileHash publish/BRZE-Trainer-V8-WolvesDenStock.exe -Algorithm SHA256
+
+      - name: Upload trainer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-V8-WolvesDenStock
+          path: publish/BRZE-Trainer-V8-WolvesDenStock.exe
