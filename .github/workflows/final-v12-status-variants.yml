@@ -1,0 +1,92 @@
+name: Final V12 Status Variants
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v12-status-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify locked cores and Journey safety
+        shell: pwsh
+        run: |
+          $d=Get-Content InstantDeathCore.cs -Raw
+          foreach($x in @('RVA_FRAME_MOUSE_DRAW=0x135C43','RVA_CURSOR_UNIT_QUERY=0x135EFB','MODE_IDLE=0,MODE_BURST=1,MODE_SINGLE=2','TriggerSingle()')){if($d -notmatch [regex]::Escape($x)){throw "death regression: $x"}}
+          if($d -match 'RVA_CURRENT_UNIT_PTR\s*=\s*0x3DD858'){throw 'rejected V5 death sweep reintroduced'}
+          $w=Get-Content WolfCore.cs -Raw
+          foreach($x in @('OFF_WOLF_STOCK=0x250','WOLVES_DEN_TYPE=0x44','MAX_WOLF_STOCK=250')){if($w -notmatch [regex]::Escape($x)){throw "wolves regression: $x"}}
+          if($w -match 'RVA_WOLF_CAP_CMP'){throw 'rejected V7 wolf hook reintroduced'}
+          $r=Get-Content RevealMapCore.cs -Raw
+          foreach($x in @('RVA_SET_FOG_OF_WAR=0x10DBD7','RVA_FOW_REINIT=0x10D868','MAP: TRANSITION SAFE','Stop(bool safeRestore)')){if($r -notmatch [regex]::Escape($x)){throw "Journey-safe Reveal regression: $x"}}
+
+      - name: Generate V11 base
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+
+      - name: Apply V12 status layouts
+        run: python tools/finalize_v12_status_panels.py
+
+      - name: Verify V12 status design and preserved behavior
+        shell: pwsh
+        run: |
+          $m=Get-Content MergedProgram.cs -Raw
+          foreach($x in @(
+            'GAME\r\n','ACTIVE CHEATS\r\n','CHEAT STATUS\r\n','RAW DIAGNOSTICS\r\n',
+            '#if RAW_STATUS','RawDiagnostics(','RawLine("WOLVES"','RawLine("DEATH"','RawLine("HORSES"','RawLine("PEASANT/SEL"','RawLine("STAMINA"','RawLine("HOOKS"','RawLine("NATIVE"',
+            'ClientSize=new Size(1270,920)','ClientSize=new Size(1270,770)',
+            'horses.Checked=false;wolves.Checked=false;reveal.Checked=false;burst.Checked=false',
+            'ALL ON — Horses / Wolves / Death Burst unchanged (manual)',
+            'SelectionCore.Tick(peasant.Checked)','RevealMapCore.Stop(revealSafe)'
+          )){if($m -notmatch [regex]::Escape($x)){throw "V12 invariant missing: $x"}}
+          if($m -match 'GAME       \{gate.Label\}|MAP        \{OnOff'){throw 'old stacked status presentation leaked into V12'}
+
+      - name: Compile smoke clean
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Compile smoke diagnostics
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish CLEAN standalone
+        run: |
+          dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
+          Move-Item publish-clean/BRZE-Trainer-Merged-v1.exe publish-clean/BRZE-Trainer-FINAL-V12-Clean.exe
+
+      - name: Publish DIAGNOSTICS standalone
+        run: |
+          dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diagnostics
+          Move-Item publish-diagnostics/BRZE-Trainer-Merged-v1.exe publish-diagnostics/BRZE-Trainer-FINAL-V12-Diagnostics.exe
+
+      - name: Report hashes and sizes
+        shell: pwsh
+        run: |
+          $c=Get-Item publish-clean/BRZE-Trainer-FINAL-V12-Clean.exe
+          $d=Get-Item publish-diagnostics/BRZE-Trainer-FINAL-V12-Diagnostics.exe
+          Write-Host ('CLEAN_BYTES='+$c.Length)
+          Write-Host ('DIAGNOSTICS_BYTES='+$d.Length)
+          Get-FileHash $c.FullName -Algorithm SHA256
+          Get-FileHash $d.FullName -Algorithm SHA256
+
+      - name: Upload V12 pair
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V12-Clean-and-Diagnostics
+          compression-level: 0
+          path: |
+            publish-clean/BRZE-Trainer-FINAL-V12-Clean.exe
+            publish-diagnostics/BRZE-Trainer-FINAL-V12-Diagnostics.exe
