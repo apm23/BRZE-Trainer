@@ -21,5 +21,6 @@
     <Compile Include="HorseCore.cs" />
     <Compile Include="StaminaCore.cs" />
     <Compile Include="InstantDeathCore.cs" />
+    <Compile Include="RevealMapCore.cs" />
   </ItemGroup>
 </Project>
