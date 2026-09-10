@@ -178,15 +178,38 @@ User reports **SUCCESS BESAR**:
 - other enemy units no longer die globally;
 - V5 global sweep behavior is gone.
 
-Screenshot while enabled showed trainer status `DEATH V6: ON ... NO SELECT / NO SWEEP`; after the cursor was no longer over a target, `hover:0x00000000`, confirming the target does not remain sticky. The current `kills` telemetry is a per-frame execution/write count, not a count of unique dead units.
+Screenshot while enabled showed trainer status `DEATH V6: ON ... NO SELECT / NO SWEEP`; after the cursor was no longer over a target, `hover:0x00000000`, confirming the target does not remain sticky. The old `kills` telemetry is a per-frame execution/write count, not a count of unique dead units.
 
-**LOCK:** V6 active per-frame InterfaceMouse query is now the runtime-proven Instant Death baseline. Preserve it exactly unless a later regression is demonstrated.
+**LOCK:** V6 active per-frame InterfaceMouse query is now the runtime-proven Instant Death baseline. Preserve its native targeting/filter/sentinel architecture unless a later regression is demonstrated.
 
 Reference: `reference/current-brze/instant-death-v5-runtime-rejected-v6-hover-map-20260910.md`.
 
+## V7 control-mode candidate — BURST + SINGLE
+Requested UX while preserving V6 targeting:
+- `BURST / ERASER`: persistent cursor eraser; every enemy crossed by the cursor is killed while enabled.
+- `SINGLE`: one-shot trigger; only pressing the button/PageDown arms one live cursor query, then returns to idle.
+
+V7 implementation keeps the V6 native query but adds remote mode gate:
+- `MODE_IDLE=0`
+- `MODE_BURST=1`
+- `MODE_SINGLE=2`
+- SINGLE self-clears after one active render frame even on ground/friendly.
+- Pressing SINGLE disables BURST in the UI.
+
+Build candidate:
+- head `0b51ac108f03a8a0588876b6e12512b9a00e9f0d`
+- workflow `Death V7 Modes + Unlimited Wolves`
+- run `34445622029` SUCCESS
+- job `102769659900` SUCCESS
+- artifact `10139554308` (`BRZE-Trainer-V7-DeathModes-UnlimitedWolves`)
+- artifact ZIP SHA-256 `c2231cea7e0543c6c73e61d9017045070317c800f17cf726c7f435efe54e0899`
+- published EXE SHA-256 `3114f51f5ad7741bca346a825f0533972f7391993d77948d02c0afc4ac8f9dab`
+
+V7 control split is compile/CI-proven only until user runtime confirms both BURST and SINGLE behavior.
+
 ---
 
-# Reveal Map — native implementation present
+# Reveal Map — LOCKED RUNTIME-PROVEN
 
 Current BRZE FOW setter:
 - preferred VA `0x50DBD7`, RVA `0x10DBD7`
@@ -196,9 +219,43 @@ Current BRZE FOW setter:
 
 `RevealMapCore.cs` calls the native setter only when checkbox state changes: `0` reveals/disables fog, `1` restores normal fog. Trainer shutdown restores normal FOW when Reveal Map was active.
 
-V6 screenshot while enabled reports `MAP: REVEALED — native Fog-of-War disabled`, proving the trainer-side native call completed. Visual in-game reveal and OFF/restoration still require explicit user confirmation before this feature is marked fully runtime-locked.
+### Runtime proof — 2026-09-10
+User confirms:
+- Reveal Map ON shows the full map / removes Fog of War.
+- Reveal Map OFF immediately restores normal Fog of War.
 
-Reference: `reference/current-brze/instant-death-v5-runtime-rejected-v6-hover-map-20260910.md`.
+**LOCK:** native FOW setter implementation is solved; do not reopen unless a regression appears.
+
+Reference: `reference/current-brze/v6-runtime-success-v7-death-modes-wolves-candidate-20260910.md`.
+
+---
+
+# Unlimited Wolves — CURRENT RUNTIME CANDIDATE
+
+Old F10 selected-building `+0x250` remap is not authoritative for unlimited owned wolves and must not be treated as the final solution.
+
+Current static path in `UnitGiveWolfToUnit`:
+- RVA `0x0C5704`: native 6-byte `cmp eax,[ecx+0x1B8]`
+- current owned-wolf count comes from master unit `+0x63C`
+- native max is `UnitDef.NumOwnedWolves` at `+0x1B8`
+- following native `JGE` rejects if current >= max
+- master unit owner is `unit+0x240`
+
+`WolfCore.cs` candidate hooks only that compare:
+- local player: manufacture flags so native JGE does not reject due to owned-wolf cap;
+- non-local/AI: execute the exact original compare, preserving native AI cap;
+- no global UnitDef mutation;
+- OFF restores the original compare bytes.
+
+V7 build pin is the same run/artifact listed above. This candidate is **not runtime-locked yet**.
+
+Runtime acceptance test must confirm:
+- a local unit can receive more wolves than its normal cap;
+- existing wolf behavior remains normal;
+- AI/enemy units remain native-capped;
+- turning OFF restores normal cap behavior without corrupting already-owned wolves.
+
+Reference: `reference/current-brze/v6-runtime-success-v7-death-modes-wolves-candidate-20260910.md`.
 
 ---
 
@@ -213,6 +270,7 @@ Reference: `reference/current-brze/instant-death-v5-runtime-rejected-v6-hover-ma
 - heavy selected-unit polling scans
 - Instant Death RVA `0x3DD858` direct-pointer polling
 - Instant Death V3/V4 call-site-only hook at `0x135F27`
+- old F10 selected-building `+0x250` write as the Unlimited Wolves solution
 
 ## Current hinge
-**Instant Death V6 is solved and runtime-locked.** Next unresolved item in this V6 package is only visual confirmation that Reveal Map ON visibly removes FOW and OFF restores it. For future Instant Death work, start from V6 and do not reopen V3/V4/V5 target-source experiments unless a regression appears.
+**Instant Death V6 targeting and Reveal Map are solved/runtime-locked.** V7 now needs runtime confirmation for the BURST/SINGLE control split and especially the local-only Unlimited Wolves cap bypass. Test Unlimited Wolves before final pack; do not mark it solved from CI alone.
