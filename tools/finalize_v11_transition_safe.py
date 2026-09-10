@@ -15,12 +15,11 @@ rep('        allOn.Click+=(_,_)=>SetAll(true);\n        allOff.Click+=(_,_)=>Set
 rep('    void SetAll(bool e){rice.Checked=e;water.Checked=e;yinYang.Checked=e;population.Checked=e;training.Checked=e;peasant.Checked=e;hp.Checked=e;stamina.Checked=e;horses.Checked=e;wolves.Checked=e;reveal.Checked=e;burst.Checked=e;}',
 '''    void AllOn()
     {
-        // Requested safe master preset: enable normal/core cheats, but leave the three special/manual
-        // features alone/off so they can only be armed deliberately by their own switches.
+        // Safe master preset: enable the normal/core group only.
+        // Horses / Wolves / Death Burst remain fully manual and ALL ON never changes their state.
         rice.Checked=true;water.Checked=true;yinYang.Checked=true;population.Checked=true;
         training.Checked=true;peasant.Checked=true;hp.Checked=true;stamina.Checked=true;reveal.Checked=true;
-        horses.Checked=false;wolves.Checked=false;burst.Checked=false;
-        SetNotice("ALL ON — Horses / Wolves / Death Burst stay manual");
+        SetNotice("ALL ON — Horses / Wolves / Death Burst unchanged (manual)");
     }
     void AllOff()
     {
@@ -42,4 +41,4 @@ rep('        timer.Stop();\n        try{WolfCore.Stop();}catch{}try{RevealMapCor
         try{WolfCore.Stop();}catch{}try{RevealMapCore.Stop(revealSafe);}catch{}try{InstantDeathCore.Stop();}catch{}''')
 
 p.write_text(s,encoding='utf-8')
-print('V11 transition-safe Reveal + ALL ON exclusions applied OK')
+print('V11 transition-safe Reveal + manual ALL ON exclusions applied OK')
