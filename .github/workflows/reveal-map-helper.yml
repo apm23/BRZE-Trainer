@@ -1,0 +1,33 @@
+name: Reveal Map Helper
+
+on:
+  push:
+    branches:
+      - instant-death-v2-hover-sentinel
+    paths:
+      - 'RevealMapHelper.cs'
+      - 'RevealMapHelper.csproj'
+      - '.reveal-map-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v2-hover-sentinel
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile smoke
+        run: dotnet build RevealMapHelper.csproj -c Release -r win-x86
+      - name: Publish x86 single-file
+        run: dotnet publish RevealMapHelper.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-reveal
+      - name: Upload helper
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Reveal-Map-Helper
+          path: publish-reveal/BRZE-Reveal-Map-Helper.exe
