@@ -64,212 +64,141 @@ Function `0x5A6FD8`:
 - logical post-flush reset RVA `0x161D77`
 - flush helper `0x561B2A`
 
----
-
-# Selection runtime history
-
-Failed/partial:
+## Selection failures that must stay rejected
 - Surgical Growth: stable to 90; #91 rejected.
 - Manual120 run `34343788268`: #91 crash.
-- FirstBlock120 run `34347542420`: #91 crash; later found sort reset issue.
-- SortPipeline120 run `34348488434`: large drag freeze; slow #91 briefly selected then crash.
-- NoAddNotify120 run `34349623960`: UI reached 108 but move/attack and multi-drag semantics broke; event path required.
-- EventBuffer1024 run `34358214184`: failed; old 1024 implementation must not be reused.
+- FirstBlock120 run `34347542420`: #91 crash; sort reset issue.
+- SortPipeline120 run `34348488434`: large drag freeze.
+- NoAddNotify120 run `34349623960`: UI reached 108 but move/attack semantics broke; event path required.
+- EventBuffer1024 run `34358214184`: failed; do not reuse.
 - NoPerAddRefresh run `34359923529`: failed.
 - Rectangle Sleep(1) run `34363669046`: failed.
 
-## Decisive bulk-drag failure telemetry
+## Decisive bulk-drag telemetry
 Observer run `34365054121`:
 - ACTIVE=64
 - SIM=0
 - EVENT used=258
 - EVENT remain=`0xFFFFFFFE` (-2)
 
-Boundary:
-- rectangle clear contributes 2 bytes
-- `2 + 63*4 = 254`
-- next 4-byte add reaches native flush too late -> `258/-2`
+Boundary: rectangle clear contributes 2 bytes; `2 + 63*4 = 254`; next 4-byte add reaches native flush too late -> `258/-2`.
+Reference: `reference/current-brze/bulk-telemetry-freeze-64-20260909.md`.
 
-References:
-- `reference/current-brze/bulk-telemetry-freeze-64-20260909.md`
-- `reference/current-brze/bulk-telemetry-freeze-64-log-20260909.txt`
-
-## Runtime-proven bulk fix — headroom160
+## Runtime-proven headroom160 fix
 Branch `selection-event-headroom-160-probe`, run `34367473165`.
 - physical backing stays 256
 - logical reset window = 160
 - type-0 event remains LIVE
-
-Runtime proof:
-- one-shot large rectangle no freeze
-- MAX ACTIVE=103
-- MAX SIM=103
-- repeated healthy flushes `used=0/remain=160`
-- SIM catches ACTIVE
+- large one-shot rectangle no freeze
+- MAX ACTIVE=103, MAX SIM=103
+- healthy flushes `used=0/remain=160`
 
 Reference: `reference/current-brze/event-headroom160-runtime-success-20260909.md`.
 
----
-
-# LOCKED BASELINE — Integrated Selection120 + Headroom160
+## LOCKED selection baseline — Integrated Selection120 + Headroom160
 Branch `selection-120-headroom160-integrated`.
 - head `b623167036bed91299f4cc8184bb2a2fd821ca34`
 - run `34368982513` SUCCESS
 - artifact `10111151679`
 - EXE SHA-256 `5a13f24b7bc6b6dafbea9bf837e5037358c265f01594ea1c6bd934f23e85790c`
 
-User runtime regression:
-- single integrated EXE passed
-- large one-shot drag passed
-- >90 stable
-- move + attack authoritative
-
-**This is the solved/runtime-proven selection baseline.**
+User runtime regression passed large one-shot drag, >90 selection, move, and attack.
 Reference: `reference/current-brze/selection120-headroom160-integrated-runtime-success-20260909.md`.
 
 ---
 
-# Selection500 architecture candidate
-Because 500 cannot fit the old imm8 90->120 patch, Selection500 uses narrow wrappers:
-- local admission wrapper rejects count >=500
-- ACTIVE first=500/growth=0 before allocation
-- only five proven selection reset call sites route through a wrapper that substitutes first=500
+# Selection500 / Peasant state
+
+Selection500 candidate uses narrow wrappers only:
+- local admission rejects count >=500
+- ACTIVE first=500/growth=0
+- only five proven selection reset call sites substitute first=500
 - shared `0x4ABFE6` is NOT globally patched
-- event type-0 stays LIVE
+- type-0 stays LIVE
 - headroom160 retained
 - rectangle candidate list remains native 128/128
 
-Initial Selection500 + Fast Peasant build:
-- branch `selection-500-fast-peasant-probe`
-- run `34371976218` SUCCESS
-- artifact `10112324559`
-- EXE `295e9a4c65d9e63092189b6bb96c3c22898ec7ef1d90da457ad570af7203babf`
+Peasant timing static mapping:
+- creation enable array RVA `0x467AF4`
+- MinTime race config `+0x6C`
+- MaxTime race config `+0x70`
+- scheduler `0x57FFB2`
+- auto update `0x57FEE9 -> 0x57FFA5`
+- pop-stop calls `0x57FF1B -> 0x582D5E` and `0x57FF71 -> 0x582D5E`
+
+Old fast-peasant runtime stopped around total unit 167. Current Selection500/peasant implementations remain separate from the locked selection fallback; do not regress the proven Selection120 + Headroom160 architecture while iterating them.
 
 ---
 
-# Peasant production — proven static paths
+# Instant Death — LOCKED RUNTIME-PROVEN BASELINE
 
-Timing:
-- creation enable array RVA `0x467AF4` is enable/disable, not timing
-- `MinTimeToCreatePeasant` -> race config `+0x6C`
-- `MaxTimeToCreatePeasant` -> race config `+0x70`
-- scheduler `0x57FFB2` converts those values to milliseconds
-- automatic update `0x57FEE9` calls scheduler at `0x57FFA5`
+## Legacy behavior
+Old PageDown trainer uses game-internal target state and writes sentinel `0xFF000000` to target HP/stamina. It does not use Win32 cursor APIs.
+Reference: `reference/current-brze/instant-death-oldtrainer-exact-pagedown-static-20260910.md`.
 
-Population-stop gates in automatic update:
-- `0x57FF1B -> 0x582D5E`, compare at `0x57FF20` against per-player max-pop array `0x867B90`
-- `0x57FF71 -> 0x582D5E`, compare at `0x57FF76` against same max-pop
-- when population-used is at/above max, native PeasantManager stops/avoids further automatic production scheduling/spawn
+## Rejected V3/V4
+V3/V4 intercepted the existing call at RVA `0x135F27` inside InterfaceMouse helper RVA `0x135EFB`. Runtime V4 telemetry showed `qcalls:0` on passive hover. This action/context-specific call-site interception is rejected.
 
-References:
-- `reference/current-brze/peasant-production-timing-remap-20260909.md`
-- `reference/current-brze/selection500-fast-peasant-popgate-static-20260910.md`
-
----
-
-# Runtime result — old Fast Peasant stopped around total unit 167
-Tested EXE `295e9a4c...`:
-- peasants initially came out extremely fast / burst-like
-- at total unit count about **167**, automatic peasant production stopped completely
-
-This is now correlated with the two native PeasantManager population-stop checks above.
-Reference: `reference/current-brze/selection500-fast-peasant-runtime-167-stop-20260910.md`.
-
-User requests after this test:
-1. Selection500 must stay active independently from Max Population; turning Max Pop off must not revert selection or reintroduce crash.
-2. Fast Peasant should not use a multiplier; use a fixed 1–2 second schedule.
-3. Fix production stopping at the population threshold.
-
----
-
-# CURRENT RUNTIME CANDIDATE — Selection500 ALWAYS + Fixed1s Peasant
-Branch: `selection-500-always-fixed1s-peasant`
-
-Files:
-- `Selection500AlwaysFixedPeasant.cs`
-- `Selection500AlwaysFixedPeasant.csproj`
-- `.github/workflows/selection-500-always-fixed1s-peasant.yml`
-
-Build pin:
-- head `774d17d90460570b51fe8f3f140c7d4a1c33c879`
-- run `34375730054` SUCCESS
-- artifact `BRZE-Selection-500-Always-Fixed1s-Peasant`
-- artifact ID `10113811417`
-- ZIP SHA-256 `7a29f99e5da33a638634d35b49a31a86397ff2f1e26d37775ffd036872ed4890`
-- EXE SHA-256 `40f37d73122ae0a827d7e8a197e535a534ae7e9cbef629f933f2e408cce2d1b0`
-- EXE size `151,059,694`
-
-Exact changes:
-- Selection500 + headroom160 arms automatically; no selection toggle.
-- F4 controls ONLY local Max Population 500.
-- original local max-pop is saved when available and restored when F4 is OFF.
-- old Fast Peasant 20x/min1s logic removed.
-- local Fast Peasant calls native scheduler first, then forces next timestamp to **current game time + 1000 ms**.
-- two PeasantManager population-used calls at RVAs `0x17FF1B` and `0x17FF71` are wrapped.
-- native result is preserved normally; only local player + Fast Peasant returns 0 to those two PeasantManager stop checks.
-- no global population-counter patch; AI/non-local players remain native.
-
-Reference: `reference/current-brze/selection500-always-fixed1s-peasant-build-20260910.md`.
-
-Status: compile/build proven; runtime not yet proven.
-
-## Required next runtime test
-1. fresh restart BRZE; use only this EXE
-2. open trainer before selecting anything
-3. leave F4 OFF and verify Selection500 status is already armed; test a large drag and move/attack
-4. toggle F4 ON/OFF and verify selection remains 500 both ways
-5. enable Fast Peasant; verify roughly one peasant per second rather than burst
-6. specifically pass total unit 167 without production stopping
-7. continue toward 200+/300+ if practical; selection/move/attack should remain stable
-
----
-
-# Instant Death — current state
-
-## Exact legacy behavior
-Old PageDown trainer reads game-internal target state, not Win32 cursor APIs. Primary old path dereferences `[global+0x08]` and writes sentinel `0xFF000000` to the target's HP/stamina fields. Reference: `reference/current-brze/instant-death-oldtrainer-exact-pagedown-static-20260910.md`.
-
-## V3/V4 — rejected call-site strategy
-Current BRZE InterfaceMouse helper RVA `0x135EFB` reads live cursor coordinates and returns a native Unit* through query RVA `0x1D4888`. V3/V4 intercepted only its existing call at RVA `0x135F27`. Runtime V4 telemetry showed `qcalls:0`, so passive hover does not traverse that specific action/context call site. Do not reuse that call-site-only architecture.
-
-## V5 — runtime rejected as hover source
-V5 read Unit* directly from RVA `0x3DD858`. User runtime result:
+## Rejected V5
+V5 directly polled Unit* global RVA `0x3DD858`.
+User runtime result was decisive:
 - enabling the cheat alone affected enemies globally;
 - no cursor aim was needed;
 - enemies became near-dead and died when movement stopped.
 
-Therefore RVA `0x3DD858` is confirmed simulation/spatial scratch state that sweeps through units. The sentinel write is effective, but this RVA is **permanently rejected as hover-only target source**.
+Conclusion: RVA `0x3DD858` is simulation/spatial scratch state that sweeps through units. Sentinel death value is effective, but this RVA is permanently rejected as hover target source.
 
-## V6 — current hover-only candidate
+## V6 — SUCCESS, LOCK THIS ARCHITECTURE
 Branch: `instant-death-v4-hover-telemetry`.
-V6 actively invokes BRZE's own InterfaceMouse Unit* query once per render frame on the game thread instead of waiting for an action-specific call site:
-- per-frame hook RVA `0x135C43`, reached each frame from preferred VA `0x544086`
-- InterfaceMouse object RVA `0x443640`; cursor coordinates are object `+4/+8`
-- cursor Unit* helper RVA `0x135EFB`, called with native common args `(1,0)`
-- target definition guard `+0x74`
-- target owner `+0x240`
-- native same/allied filter RVA `0x1848E8` using local ID RVA `0x4416D0`
-- enemy-only sentinel writes: HP `+0x404`, stamina `+0x408`, value `0xFF000000`
+Build pin:
+- source/build head `755a1f8f7888d496a7d43626c201df9dc56c5b80`
+- workflow `Instant Death v6 — Hover Only + Reveal Map`
+- run `34442885171` SUCCESS
+- job `102761415852` SUCCESS
+- artifact `10138596135` (`BRZE-Trainer-InstantDeathV6-HoverOnly-RevealMap`)
+- artifact ZIP SHA-256 `79b76d18e90d4bda2c5f1bf2b4fa46ea87e4dac2f5a292ea5278f34f9572a477`
+- published EXE SHA-256 `b7b2f0712213601761a2167be8587e01515987c773ed08149851ed551af07349`
+
+Architecture:
+- per-frame game-thread hook RVA `0x135C43`, reached from preferred VA `0x544086`
+- InterfaceMouse object RVA `0x443640`
+- invoke cursor Unit* helper RVA `0x135EFB` with native common args `(1,0)` once per frame
+- require target definition `+0x74`
+- owner `+0x240`
+- same/allied filter RVA `0x1848E8`, local ID RVA `0x4416D0`
+- enemy-only sentinel writes HP `+0x404`, stamina `+0x408`, value `0xFF000000`
 - no selection dependency
 - no unit-pool scan
-- rejected RVA `0x3DD858` removed entirely
+- no `0x3DD858`
+
+### Runtime proof — 2026-09-10
+User reports **SUCCESS BESAR**:
+- only the enemy unit directly under the mouse cursor dies;
+- no select/click is required;
+- other enemy units no longer die globally;
+- V5 global sweep behavior is gone.
+
+Screenshot while enabled showed trainer status `DEATH V6: ON ... NO SELECT / NO SWEEP`; after the cursor was no longer over a target, `hover:0x00000000`, confirming the target does not remain sticky. The current `kills` telemetry is a per-frame execution/write count, not a count of unique dead units.
+
+**LOCK:** V6 active per-frame InterfaceMouse query is now the runtime-proven Instant Death baseline. Preserve it exactly unless a later regression is demonstrated.
 
 Reference: `reference/current-brze/instant-death-v5-runtime-rejected-v6-hover-map-20260910.md`.
-Status at ledger update: source committed; V6 workflow run `34442659795` started, runtime proof pending.
 
 ---
 
-# Reveal Map — current state
+# Reveal Map — native implementation present
 
-Current BRZE native fog-of-war setter is preferred VA `0x50DBD7`, RVA `0x10DBD7`:
-- native `EnableFogOfWar` wrapper pushes `1`
-- native `DisableFogOfWar` wrapper pushes `0`
-- routine returns `ret 4`
+Current BRZE FOW setter:
+- preferred VA `0x50DBD7`, RVA `0x10DBD7`
+- `EnableFogOfWar` pushes `1`
+- `DisableFogOfWar` pushes `0`
+- native setter returns `ret 4`
 
-`RevealMapCore.cs` invokes that native setter only on checkbox state changes: `0` for reveal/disable fog, `1` for normal/restore. Trainer shutdown restores normal FOW if Reveal Map was active.
+`RevealMapCore.cs` calls the native setter only when checkbox state changes: `0` reveals/disables fog, `1` restores normal fog. Trainer shutdown restores normal FOW when Reveal Map was active.
+
+V6 screenshot while enabled reports `MAP: REVEALED — native Fog-of-War disabled`, proving the trainer-side native call completed. Visual in-game reveal and OFF/restoration still require explicit user confirmation before this feature is marked fully runtime-locked.
 
 Reference: `reference/current-brze/instant-death-v5-runtime-rejected-v6-hover-map-20260910.md`.
-Status: source committed; build/runtime proof pending.
 
 ---
 
@@ -286,4 +215,4 @@ Status: source committed; build/runtime proof pending.
 - Instant Death V3/V4 call-site-only hook at `0x135F27`
 
 ## Current hinge
-Runtime-test the pinned V6 build after CI succeeds: Instant Death must kill **only the enemy Unit* currently under the cursor with no selection**, and Reveal Map must reveal/restore FOW cleanly. Selection120 + Headroom160 remains the known-good selection fallback baseline.
+**Instant Death V6 is solved and runtime-locked.** Next unresolved item in this V6 package is only visual confirmation that Reveal Map ON visibly removes FOW and OFF restores it. For future Instant Death work, start from V6 and do not reopen V3/V4/V5 target-source experiments unless a regression appears.
