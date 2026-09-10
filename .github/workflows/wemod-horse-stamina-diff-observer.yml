@@ -1,0 +1,39 @@
+name: WeMod Horse Stamina Diff Observer
+
+on:
+  push:
+    branches:
+      - main-merge-v2-peasant3s-wemod-port
+    paths:
+      - 'WeModHorseStaminaDiff.cs'
+      - 'WeModHorseStaminaDiff.csproj'
+      - '.github/workflows/wemod-horse-stamina-diff-observer.yml'
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main-merge-v2-peasant3s-wemod-port
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify observer read-only contract
+        shell: pwsh
+        run: |
+          $s=Get-Content WeModHorseStaminaDiff.cs -Raw
+          if ($s.Contains('WriteProcessMemory')) { throw 'observer must not write target memory' }
+          if (-not $s.Contains('ReadProcessMemory')) { throw 'RPM missing' }
+          if (-not $s.Contains('[.TEXT CODE DIFF]')) { throw 'text diff missing' }
+          if (-not $s.Contains('SELECTED BUILDING')) { throw 'building diff missing' }
+          if (-not $s.Contains('SELECTED UNIT')) { throw 'unit diff missing' }
+      - name: Compile smoke
+        run: dotnet build WeModHorseStaminaDiff.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish WeModHorseStaminaDiff.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-wemod-diff
+      - name: Upload observer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-WeMod-Horse-Stamina-Diff-Observer
+          path: publish-wemod-diff/BRZE-WeMod-Horse-Stamina-Diff-Observer.exe
