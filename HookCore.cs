@@ -23,6 +23,10 @@ internal static class HookCore
     const int RVA_SELECTION_LIST = 0x441708;
     const int RVA_ADD_HEALTH = 0x1CCD4D;
     const int RVA_ADD_STAMINA = 0x1CCDFB;
+    // Absolute stamina setter at VA 0x5CCE79. Running/skill paths can reach this
+    // without passing through AddStamina, which is why the v1 delta-only hook leaked.
+    const int RVA_SET_STAMINA = 0x1CCE79;
+    const int RVA_STAMINA_MAX_HELPER = 0x1D19B1;
     const int RVA_TRAIN_PROGRESS_READ = 0x0D5DDB;
     const int RVA_SELECT_ONE = 0x1A70C6;
     const int RVA_SELECT_BOX = 0x1A78CC;
@@ -30,6 +34,7 @@ internal static class HookCore
 
     static readonly byte[] HpOriginal = { 0x55, 0x8B, 0xEC, 0x83, 0xE4, 0xF8, 0x56, 0x8B, 0xF1, 0x57 };
     static readonly byte[] StOriginal = { 0x55, 0x8B, 0xEC, 0x56, 0x8B, 0xF1, 0x57, 0x56 };
+    static readonly byte[] SetStOriginal = { 0x55, 0x8B, 0xEC, 0x56, 0x8B, 0xF1, 0x57, 0x8B, 0x7D, 0x08 };
     static readonly byte[] TrainOriginal = { 0x8B, 0x83, 0x90, 0x04, 0x00, 0x00 };
     static readonly byte[] SelectOriginal = { 0xC7, 0x86, 0xA8, 0x03, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00 };
 
@@ -129,6 +134,51 @@ internal static class HookCore
         return b.ToArray();
     }
 
+    static byte[] BuildSetStaminaHook(long stub, long flag, long target)
+    {
+        // BRZE has an absolute SetStamina path at 0x5CCE79 in addition to AddStamina.
+        // For a selected local unit while F5 is ON, replace SetStamina(value) with
+        // SetStamina(native effective max). We still execute the original setter so its
+        // native clamp/side effects remain intact. No external per-tick unit scan.
+        var b = new List<byte>();
+        b.AddRange(new byte[] { 0x83, 0x3D }); U32(b, (uint)flag); b.Add(0);
+        b.AddRange(new byte[] { 0x0F, 0x84 }); int jDisabled = b.Count; I32(b, 0);
+        b.Add(0x50); // preserve EAX; original stack arg moves from +4 to +8
+        b.Add(0xA1); U32(b, (uint)(moduleBase + RVA_LOCAL_ID));
+        b.AddRange(new byte[] { 0x39, 0x81, 0x40, 0x02, 0x00, 0x00 }); // owner == localId
+        b.AddRange(new byte[] { 0x0F, 0x85 }); int jOwner = b.Count; I32(b, 0);
+        b.AddRange(new byte[] { 0x83, 0xB9, 0xA8, 0x03, 0x00, 0x00, 0x01 });
+        b.AddRange(new byte[] { 0x0F, 0x84 }); int jSelected = b.Count; I32(b, 0);
+        b.AddRange(new byte[] { 0x83, 0xB9, 0xAC, 0x03, 0x00, 0x00, 0x01 });
+        b.AddRange(new byte[] { 0x0F, 0x85 }); int jNotSelected = b.Count; I32(b, 0);
+        int selected = b.Count;
+        b.AddRange(new byte[] { 0x8B, 0x41, 0x74 }); // eax=[ecx+def]
+        b.AddRange(new byte[] { 0x85, 0xC0 });
+        b.AddRange(new byte[] { 0x0F, 0x84 }); int jNoDef = b.Count; I32(b, 0);
+        b.Add(0x51); // preserve ECX across native max helper
+        b.Add(0x51); // helper arg2 = unit
+        b.AddRange(new byte[] { 0xFF, 0xB0, 0x80, 0x00, 0x00, 0x00 }); // helper arg1 = def->maxStamina
+        b.Add(0xE8); int helperCall = b.Count; I32(b, 0);
+        b.AddRange(new byte[] { 0xC1, 0xE0, 0x10 }); // native fixed16
+        // helper is ret 8, so ESP is entryESP-8 here; original arg is [esp+0x0C].
+        b.AddRange(new byte[] { 0x89, 0x44, 0x24, 0x0C });
+        b.Add(0x59); // restore ECX
+        int restore = b.Count;
+        b.Add(0x58); // restore EAX
+        int originalLabel = b.Count;
+        b.AddRange(SetStOriginal);
+        b.Add(0xE9); int jBack = b.Count; I32(b, 0);
+
+        Rel(b, jDisabled, stub + jDisabled + 4, stub + originalLabel);
+        Rel(b, jOwner, stub + jOwner + 4, stub + restore);
+        Rel(b, jSelected, stub + jSelected + 4, stub + selected);
+        Rel(b, jNotSelected, stub + jNotSelected + 4, stub + restore);
+        Rel(b, jNoDef, stub + jNoDef + 4, stub + restore);
+        Rel(b, helperCall, stub + helperCall + 4, moduleBase + RVA_STAMINA_MAX_HELPER);
+        Rel(b, jBack, stub + jBack + 4, target + SetStOriginal.Length);
+        return b.ToArray();
+    }
+
     static byte[] BuildTrainingHook(long stub, long flag, long target)
     {
         var b = new List<byte>();
@@ -182,14 +232,15 @@ internal static class HookCore
         if (cave == IntPtr.Zero) { error = "hook cave allocation failed"; return false; }
         long c = cave.ToInt64();
         hpFlag = c; stFlag = c + 4; trainFlag = c + 8;
-        long hpStub = c + 32, stStub = c + 224, trainStub = c + 416, sel1Stub = c + 640, sel2Stub = c + 896;
-        long hpTarget = moduleBase + RVA_ADD_HEALTH, stTarget = moduleBase + RVA_ADD_STAMINA;
+        long hpStub = c + 32, stStub = c + 224, trainStub = c + 416, sel1Stub = c + 640, sel2Stub = c + 896, setStStub = c + 1152;
+        long hpTarget = moduleBase + RVA_ADD_HEALTH, stTarget = moduleBase + RVA_ADD_STAMINA, setStTarget = moduleBase + RVA_SET_STAMINA;
         long trainTarget = moduleBase + RVA_TRAIN_PROGRESS_READ, s1 = moduleBase + RVA_SELECT_ONE, s2 = moduleBase + RVA_SELECT_BOX;
 
-        var hn = new byte[HpOriginal.Length]; var sn = new byte[StOriginal.Length]; var tn = new byte[TrainOriginal.Length];
+        var hn = new byte[HpOriginal.Length]; var sn = new byte[StOriginal.Length]; var ssn = new byte[SetStOriginal.Length]; var tn = new byte[TrainOriginal.Length];
         var q1 = new byte[SelectOriginal.Length]; var q2 = new byte[SelectOriginal.Length];
         if (!ReadExact(hpTarget, hn) || !System.Linq.Enumerable.SequenceEqual(hn, HpOriginal)) { error = "HP hook byte mismatch"; return false; }
-        if (!ReadExact(stTarget, sn) || !System.Linq.Enumerable.SequenceEqual(sn, StOriginal)) { error = "stamina hook byte mismatch"; return false; }
+        if (!ReadExact(stTarget, sn) || !System.Linq.Enumerable.SequenceEqual(sn, StOriginal)) { error = "stamina AddStamina hook byte mismatch"; return false; }
+        if (!ReadExact(setStTarget, ssn) || !System.Linq.Enumerable.SequenceEqual(ssn, SetStOriginal)) { error = "stamina SetStamina hook byte mismatch"; return false; }
         if (!ReadExact(trainTarget, tn) || !System.Linq.Enumerable.SequenceEqual(tn, TrainOriginal)) { error = "training hook byte mismatch"; return false; }
         if (!ReadExact(s1, q1) || !System.Linq.Enumerable.SequenceEqual(q1, SelectOriginal) ||
             !ReadExact(s2, q2) || !System.Linq.Enumerable.SequenceEqual(q2, SelectOriginal)) { error = "selection refill hook byte mismatch"; return false; }
@@ -197,13 +248,15 @@ internal static class HookCore
         W32(hpFlag, 0); W32(stFlag, 0); W32(trainFlag, 0);
         byte[] hs = BuildHardLockHook(hpStub, hpFlag, hpTarget, HpOriginal);
         byte[] ss = BuildHardLockHook(stStub, stFlag, stTarget, StOriginal);
+        byte[] sss = BuildSetStaminaHook(setStStub, stFlag, setStTarget);
         byte[] ts = BuildTrainingHook(trainStub, trainFlag, trainTarget);
         byte[] a = BuildSelectionRefillHook(sel1Stub, s1);
         byte[] b = BuildSelectionRefillHook(sel2Stub, s2);
-        if (!WriteRaw(hpStub, hs) || !WriteRaw(stStub, ss) || !WriteRaw(trainStub, ts) || !WriteRaw(sel1Stub, a) || !WriteRaw(sel2Stub, b))
+        if (!WriteRaw(hpStub, hs) || !WriteRaw(stStub, ss) || !WriteRaw(setStStub, sss) || !WriteRaw(trainStub, ts) || !WriteRaw(sel1Stub, a) || !WriteRaw(sel2Stub, b))
         { error = "hook cave write failed"; return false; }
         if (!WriteCode(hpTarget, JmpPatch(hpTarget, hpStub, HpOriginal.Length)) ||
             !WriteCode(stTarget, JmpPatch(stTarget, stStub, StOriginal.Length)) ||
+            !WriteCode(setStTarget, JmpPatch(setStTarget, setStStub, SetStOriginal.Length)) ||
             !WriteCode(trainTarget, JmpPatch(trainTarget, trainStub, TrainOriginal.Length)) ||
             !WriteCode(s1, JmpPatch(s1, sel1Stub, SelectOriginal.Length)) ||
             !WriteCode(s2, JmpPatch(s2, sel2Stub, SelectOriginal.Length)))
@@ -264,7 +317,7 @@ internal static class HookCore
             if (hpRise || stRise) lastTopUp = TopUpSelected(hpRise, stRise);
         }
         lastHp = hp; lastStamina = stamina; lastTraining = training;
-        return $"LOCKS hooks:{hooksInstalled} | HP-hard:{hp} ST-hard:{stamina} F7:{training} | lastTopUp:{lastTopUp}" + (error.Length == 0 ? "" : $" | ERR:{error}");
+        return $"LOCKS hooks:{hooksInstalled} | HP-hard:{hp} ST-v2(Add+Set):{stamina} F7:{training} | lastTopUp:{lastTopUp}" + (error.Length == 0 ? "" : $" | ERR:{error}");
     }
 
     public static void Stop() => Detach(true);
@@ -277,6 +330,7 @@ internal static class HookCore
             {
                 WriteCode(moduleBase + RVA_ADD_HEALTH, HpOriginal);
                 WriteCode(moduleBase + RVA_ADD_STAMINA, StOriginal);
+                WriteCode(moduleBase + RVA_SET_STAMINA, SetStOriginal);
                 WriteCode(moduleBase + RVA_TRAIN_PROGRESS_READ, TrainOriginal);
                 WriteCode(moduleBase + RVA_SELECT_ONE, SelectOriginal);
                 WriteCode(moduleBase + RVA_SELECT_BOX, SelectOriginal);
