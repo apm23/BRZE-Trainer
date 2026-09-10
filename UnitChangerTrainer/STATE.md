@@ -26,7 +26,7 @@ Example target: Spearman enters Dojo again; slots 1..3 are enabled and configure
 - Prove 1->2 first before 1->9.
 - Keep all hooks reversible and stage-safe.
 
-## Phase 0 — BUILT
+## Phase 0 — BUILT + OBSERVER RUNTIME PROVEN
 Separate read-only observer trainer.
 - 9 output slot UI exists.
 - Output names are configuration placeholders until UnitDef IDs are mapped.
@@ -44,6 +44,30 @@ Build pin:
 - artifact ZIP SHA-256 `19cefdaee6a1e7a9f62a1ebaf720218e565e7f04b5e2ffe100e593c3c33a4a77`
 - standalone size `66,001,071` bytes, SHA-256 `3449abf307d95683a5436eab5dfa2c8e317be88b6139f6f00265b0baa57e8bf9`
 - small size `144,536` bytes, SHA-256 `ea9e417e5d169293ffdec343784a7eb098b052ff2f372d17746e5e5ac68d2e88`
+
+## Observer runtime result — 2026-09-11
+User supplied three screenshots in the requested sequence: idle, normal training, rejected retraining/red-X.
+
+Observed selected building stayed local at `0x23239D6C`.
+
+Idle:
+- `trainType = 0xFFFFFFFF`
+- `progress = 0x00000000`
+- `gate = 0xFFFFFFFF`
+
+Normal training active:
+- `trainType = 0x5`
+- `progress = 0x000A1220` (~10.1%)
+- `gate = 0xFFFFFFFF`
+
+Rejected retraining / red-X:
+- `trainType = 0xFFFFFFFF`
+- `progress = 0x00000000`
+- `gate = 0xFFFFFFFF`
+
+Conclusion: the red-X rejection happens **before** the building enters its training state. Do not attempt blocker A by editing building `+0x488/+0x490/+0x4B8`; the eligibility/order validation path must be intercepted earlier.
+
+`Local active training buildings` showed baseline `1`, rose to `2` during the selected building's normal training, then returned to `1`. Therefore the aggregate scanner is useful as delta telemetry but not a unique selected-building identifier by itself.
 
 ## Known observer mappings
 - target process: `Battle_Realms_F.exe`
