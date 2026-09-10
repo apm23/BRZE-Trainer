@@ -13,7 +13,7 @@ rep('readonly CheckBox f5 = new() { Text = "F5 No Stamina Loss (selected only) �
 rep('readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — SAFE DELTA V62", AutoSize = true };',
     'readonly CheckBox f6 = new() { Text = "F6 Unlimited HP (selected only) — HARD LOCK", AutoSize = true };')
 rep('readonly CheckBox horses = new() { Text = "Maximum Horses / instant horse respawn", AutoSize = true };',
-    'readonly CheckBox horses = new() { Text = "Unlimited Horses — native stable stock / instant respawn", AutoSize = true };\n    readonly CheckBox fastPeasant = new() { Text = "Fast Peasant Spawn — FIXED 1.0 second (local player)", AutoSize = true };')
+    'readonly CheckBox horses = new() { Text = "Unlimited Horses — native stable stock / instant respawn", AutoSize = true };\n    readonly CheckBox fastPeasant = new() { Text = "Fast Peasant Spawn — FIXED 3.0 seconds (local player)", AutoSize = true };')
 rep('readonly Label status = new() { AutoSize = false, Height = 54, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };',
     'readonly Label status = new() { AutoSize = false, Height = 165, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(FontFamily.GenericMonospace, 8.5f) };')
 rep('Text = "BRZE Trainer 1.60 — Hook Test"; ClientSize = new Size(650, 520); StartPosition = FormStartPosition.CenterScreen;',
