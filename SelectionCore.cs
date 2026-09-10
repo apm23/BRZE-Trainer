@@ -17,7 +17,7 @@ internal static class SelectionCore
 
     const uint ACCESS = 0x10 | 0x20 | 0x8 | 0x400;
     const uint PAGE_EXECUTE_READWRITE = 0x40, MEM_COMMIT = 0x1000, MEM_RESERVE = 0x2000;
-    const uint SELECTION_LIMIT = 500, LOGICAL_WINDOW = 160, PEASANT_FIXED_MS = 1000;
+    const uint SELECTION_LIMIT = 500, LOGICAL_WINDOW = 160, PEASANT_FIXED_MS = 3000;
 
     const int RVA_LOCAL_ID = 0x4416D0, RVA_MAX_UNITS = 0x467B90, RVA_ACTIVE = 0x441708;
     const int RVA_SIM_LISTS_PTR = 0x441730, SIM_STRIDE = 0x28;
@@ -316,7 +316,7 @@ internal static class SelectionCore
         uint creation = R32(moduleBase + RVA_PEASANT_CREATION + lid * 4L);
         uint pf = peasantFlag == 0 ? 0 : R32(peasantFlag);
         string err = error.Length == 0 ? "" : $" | ERR:{error}";
-        return $"SEL500 {mode} | A[{LS(active)}] S[{LS(sim)}] | event:{used}/{remain} | pop:{max} | peasant1s:{fastPeasant}/{pf} creation:{creation} next:{next}{err}";
+        return $"SEL500 {mode} | A[{LS(active)}] S[{LS(sim)}] | event:{used}/{remain} | pop:{max} | peasant3s:{fastPeasant}/{pf} creation:{creation} next:{next}{err}";
     }
 
     public static void Stop()
