@@ -1,0 +1,99 @@
+name: Final V11 Journey Safe
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v11-journey-safe-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify locked proven cores
+        shell: pwsh
+        run: |
+          $d=Get-Content InstantDeathCore.cs -Raw
+          foreach($x in @('RVA_FRAME_MOUSE_DRAW=0x135C43','RVA_CURSOR_UNIT_QUERY=0x135EFB','MODE_IDLE=0,MODE_BURST=1,MODE_SINGLE=2','TriggerSingle()')){if($d -notmatch [regex]::Escape($x)){throw "death regression: $x"}}
+          if($d -match 'RVA_CURRENT_UNIT_PTR\s*=\s*0x3DD858'){throw 'rejected V5 death sweep reintroduced'}
+          $w=Get-Content WolfCore.cs -Raw
+          foreach($x in @('OFF_WOLF_STOCK=0x250','WOLVES_DEN_TYPE=0x44','MAX_WOLF_STOCK=250','W8(den+OFF_WOLF_STOCK,MAX_WOLF_STOCK)')){if($w -notmatch [regex]::Escape($x)){throw "wolves regression: $x"}}
+          if($w -match 'RVA_WOLF_CAP_CMP'){throw 'rejected V7 wolf hook reintroduced'}
+
+      - name: Verify V11 Reveal transition guard source
+        shell: pwsh
+        run: |
+          $r=Get-Content RevealMapCore.cs -Raw
+          foreach($x in @('RVA_SET_FOG_OF_WAR=0x10DBD7','RVA_FOG_STATE=0x441D04','RVA_FOW_REINIT=0x10D868','FowReinitOriginal={0x53,0x8B,0xDC,0x51,0x51}','InstallTransitionGuard()','inc dword ptr [generation]','reapplyAfterUtc=DateTime.UtcNow.AddMilliseconds(1200)','MAP: TRANSITION SAFE','Stop(bool safeRestore)')){if($r -notmatch [regex]::Escape($x)){throw "Reveal transition invariant missing: $x"}}
+
+      - name: Generate proven V8 merged base
+        run: python tools/prepare_merged_v3_wolfstock.py
+
+      - name: Apply V10 polished UI
+        run: python tools/finalize_v10_ui_safe.py
+
+      - name: Apply V11 Journey safety and master preset
+        run: python tools/finalize_v11_transition_safe.py
+
+      - name: Verify V11 UI and runtime wiring
+        shell: pwsh
+        run: |
+          $m=Get-Content MergedProgram.cs -Raw
+          foreach($x in @('void AllOn()','void AllOff()','horses.Checked=false;wolves.Checked=false;burst.Checked=false','training.Checked=true;peasant.Checked=true;hp.Checked=true;stamina.Checked=true;reveal.Checked=true','ALL ON — Horses / Wolves / Death Burst stay manual','ALL OFF — every cheat disabled','if(shift)AllOff();else AllOn();','RevealMapCore.Stop(revealSafe)','RevealMapCore intentionally stays attached across Journey/menu transitions')){if($m -notmatch [regex]::Escape($x)){throw "V11 wiring missing: $x"}}
+          if($m -match 'allOn\.Click\+=\(_,\)_=>SetAll\(true\)'){throw 'old ALL ON behavior still present'}
+          if($m -match 'try\{RevealMapCore\.Stop\(\);\}catch\{\}try\{InstantDeathCore\.Stop'){throw 'Reveal still stopped during transition suspend'}
+          # Peasant core is intentionally untouched in this iteration.
+          if($m -notmatch 'SelectionCore\.Tick\(peasant\.Checked\)'){throw 'Peasant wiring unexpectedly changed'}
+
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone compressed
+        shell: pwsh
+        run: |
+          dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-standalone
+          Move-Item publish-standalone/BRZE-Trainer-Merged-v1.exe publish-standalone/BRZE-Trainer-FINAL-V11-JourneySafe.exe
+
+      - name: Publish ultra-small framework dependent
+        shell: pwsh
+        run: |
+          dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+          Move-Item publish-small/BRZE-Trainer-Merged-v1.exe publish-small/BRZE-Trainer-FINAL-V11-JourneySafe-Small.exe
+
+      - name: Report sizes and hashes
+        shell: pwsh
+        run: |
+          $a=Get-Item publish-standalone/BRZE-Trainer-FINAL-V11-JourneySafe.exe
+          $s=Get-Item publish-small/BRZE-Trainer-FINAL-V11-JourneySafe-Small.exe
+          Write-Host ('STANDALONE_BYTES='+$a.Length)
+          Write-Host ('SMALL_BYTES='+$s.Length)
+          Get-FileHash $a.FullName -Algorithm SHA256
+          Get-FileHash $s.FullName -Algorithm SHA256
+
+      - name: Make ZIP copies
+        shell: pwsh
+        run: |
+          Compress-Archive -Path publish-standalone/BRZE-Trainer-FINAL-V11-JourneySafe.exe -DestinationPath BRZE-Trainer-FINAL-V11-JourneySafe.zip -CompressionLevel Optimal
+          Compress-Archive -Path publish-small/BRZE-Trainer-FINAL-V11-JourneySafe-Small.exe -DestinationPath BRZE-Trainer-FINAL-V11-JourneySafe-Small.zip -CompressionLevel Optimal
+
+      - name: Upload V11 pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V11-JourneySafe-Pack
+          compression-level: 0
+          path: |
+            publish-standalone/BRZE-Trainer-FINAL-V11-JourneySafe.exe
+            publish-small/BRZE-Trainer-FINAL-V11-JourneySafe-Small.exe
+            BRZE-Trainer-FINAL-V11-JourneySafe.zip
+            BRZE-Trainer-FINAL-V11-JourneySafe-Small.zip
