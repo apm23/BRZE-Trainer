@@ -50,10 +50,16 @@ Published EXE SHA-256: `b7b2f0712213601761a2167be8587e01515987c773ed08149851ed55
 
 CI passed V6 architecture guard, Reveal Map native-path guard, merged UI wiring guard, compile smoke, x86 single-file publish, rename, and artifact upload.
 
-## Runtime status / required proof
-Runtime proof still pending. Required test:
-- with V6 ON and cursor parked on empty ground, no enemy anywhere should die;
-- hover exactly one enemy without selecting/clicking: only that hovered enemy should die;
-- hover friendly/local unit: it must not die;
-- move cursor to a second enemy: only the second hovered enemy should then die;
-- Reveal Map ON must remove fog; OFF must restore normal fog.
+## V6 runtime result — SUCCESS / LOCKED
+User runtime test on 2026-09-10 reports decisive success:
+- Instant Death V6 affects only an enemy unit currently under the mouse cursor;
+- no selection/click is required;
+- non-hovered enemy units are no longer swept or killed globally;
+- this resolves the V5 global-sweep failure and proves the active per-frame InterfaceMouse query architecture.
+
+Screenshot status while enabled showed `DEATH V6: ON`, `NO SELECT / NO SWEEP`, and a null hover after the cursor was no longer over a target, consistent with no sticky global target. The on-screen `kills` counter is an execution/write counter accumulated per frame, not a unique-unit death count.
+
+**LOCK:** V6 per-frame `InterfaceMouse` query architecture is now the runtime-proven Instant Death baseline. Do not replace it with RVA `0x3DD858`, a unit-pool scan, selection-based targeting, or the V3/V4 action-specific call-site interception unless new evidence requires a redesign.
+
+## Reveal Map runtime status
+The screenshot shows the trainer reporting `MAP: REVEALED — native Fog-of-War disabled` while the checkbox is active. This confirms the trainer-side native call path executed successfully, but visual in-game fog removal/restoration should remain separately runtime-confirmed by the user before marking the feature fully locked.
