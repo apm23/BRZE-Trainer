@@ -1,0 +1,71 @@
+name: Stamina v2 Add+Set probe
+
+on:
+  push:
+    branches:
+      - stamina-v2-setter-probe
+    paths:
+      - '.stamina-v2-trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: stamina-v2-setter-probe
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Apply stamina v2 patch
+        shell: pwsh
+        run: python tools/patch_stamina_setter_v2.py
+
+      - name: Verify narrow stamina v2 source
+        shell: pwsh
+        run: |
+          $s = Get-Content HookCore.cs -Raw
+          if (-not $s.Contains('RVA_SET_STAMINA = 0x1CCE79')) { throw 'SetStamina RVA missing' }
+          if (-not $s.Contains('RVA_STAMINA_MAX_HELPER = 0x1D19B1')) { throw 'native max helper missing' }
+          if (-not $s.Contains('BuildSetStaminaHook')) { throw 'SetStamina wrapper missing' }
+          if (-not $s.Contains('SetStOriginal = { 0x55, 0x8B, 0xEC, 0x56, 0x8B, 0xF1, 0x57, 0x8B, 0x7D, 0x08 }')) { throw 'SetStamina stock-byte pin missing' }
+          if (-not $s.Contains('ST-v2(Add+Set)')) { throw 'v2 status marker missing' }
+          $c = Get-Content SelectionCore.cs -Raw
+          if (-not $c.Contains('SELECTION_LIMIT = 500')) { throw 'selection500 changed/missing' }
+          if (-not $c.Contains('LOGICAL_WINDOW = 160')) { throw 'headroom160 changed/missing' }
+          if (-not $c.Contains('PEASANT_FIXED_MS = 3000')) { throw 'peasant3s changed/missing' }
+          git diff --check
+
+      - name: Commit exact probe source
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add HookCore.cs
+          git commit -m 'Implement stamina v2 AddStamina plus SetStamina hook'
+          git push origin HEAD:stamina-v2-setter-probe
+
+      - name: Generate merged source
+        shell: pwsh
+        run: python tools/prepare_merged_v1.py
+
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+
+      - name: Publish x86 single-file EXE
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-stamina-v2
+
+      - name: Rename specimen
+        shell: pwsh
+        run: Copy-Item publish-stamina-v2/BRZE-Trainer-Merged-v1.exe publish-stamina-v2/BRZE-Trainer-Merged-Peasant3s-StaminaV2-Probe.exe -Force
+
+      - name: Upload specimen
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-Merged-Peasant3s-StaminaV2-Probe
+          path: publish-stamina-v2/BRZE-Trainer-Merged-Peasant3s-StaminaV2-Probe.exe
