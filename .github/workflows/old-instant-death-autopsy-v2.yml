@@ -1,0 +1,91 @@
+name: Old Instant Death Focused Autopsy v2
+
+on:
+  push:
+    branches:
+      - instant-death-v2-hover-sentinel
+    paths:
+      - '.instant-death-autopsy-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  autopsy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v2-hover-sentinel
+
+      - name: Reconstruct exact legacy trainer
+        shell: bash
+        run: |
+          set -euxo pipefail
+          root=reference/old-trainer
+          mkdir -p /tmp/candidates /tmp/autopsy
+          expected=41571fc8cd83e296a60a04d934440b5a01d22ce45d111acdc31b13f16e8aa24d
+
+          build_candidate() {
+            name="$1"; shift
+            cat "$@" | tr -d '\r\n\t ' > "/tmp/candidates/$name.b64"
+            base64 -d "/tmp/candidates/$name.b64" > "/tmp/candidates/$name.exe" || true
+            sha256sum "/tmp/candidates/$name.exe" || true
+          }
+
+          build_candidate allparts "$root"/sample.part01.b64 "$root"/sample.part02.b64 "$root"/sample.part03.b64 "$root"/sample.part04.b64 "$root"/sample.part05.b64 "$root"/sample.part06.b64
+          build_candidate fix01 "$root"/sample.fix01a.b64 "$root"/sample.fix01b.b64 "$root"/sample.part02.b64 "$root"/sample.part03.b64 "$root"/sample.part04.b64 "$root"/sample.part05.b64 "$root"/sample.part06.b64
+          build_candidate fix03 "$root"/sample.part01.b64 "$root"/sample.part02.b64 "$root"/sample.fix03a.b64 "$root"/sample.fix03b.b64 "$root"/sample.part04.b64 "$root"/sample.part05.b64 "$root"/sample.part06.b64
+          build_candidate fix0103 "$root"/sample.fix01a.b64 "$root"/sample.fix01b.b64 "$root"/sample.part02.b64 "$root"/sample.fix03a.b64 "$root"/sample.fix03b.b64 "$root"/sample.part04.b64 "$root"/sample.part05.b64 "$root"/sample.part06.b64
+
+          found=''
+          for f in /tmp/candidates/*.exe; do
+            sha="$(sha256sum "$f" | awk '{print $1}')"
+            if [ "$sha" = "$expected" ]; then found="$f"; break; fi
+          done
+          test -n "$found" || { echo 'No candidate matched exact legacy trainer SHA' >&2; ls -l /tmp/candidates; exit 40; }
+          cp "$found" /tmp/autopsy/BattleRealmsTrainer.exe
+          echo "matched=$found" | tee /tmp/autopsy/reconstruction.txt
+          file /tmp/autopsy/BattleRealmsTrainer.exe | tee -a /tmp/autopsy/reconstruction.txt
+
+      - name: Install UPX and unpack
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L --fail -o /tmp/upx.tar.xz https://github.com/upx/upx/releases/download/v5.2.0/upx-5.2.0-amd64_linux.tar.xz
+          echo '3db5d3294707439db97866feab8d75d800f028f48481a40547411824da4288a1  /tmp/upx.tar.xz' | sha256sum -c -
+          tar -xf /tmp/upx.tar.xz -C /tmp
+          cp /tmp/autopsy/BattleRealmsTrainer.exe /tmp/autopsy/legacy.unpacked.exe
+          /tmp/upx-5.2.0-amd64_linux/upx -d -f /tmp/autopsy/legacy.unpacked.exe
+          objdump -d -Mintel /tmp/autopsy/legacy.unpacked.exe > /tmp/autopsy/disassembly.txt
+          objdump -x /tmp/autopsy/legacy.unpacked.exe > /tmp/autopsy/headers.txt
+
+      - name: Extract PageDown and death sentinel neighborhoods
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('/tmp/autopsy/disassembly.txt')
+          lines=p.read_text(errors='replace').splitlines()
+          needles=['0xff000000','ff000000','push   0x22','push 0x22','6a 22']
+          hits=[]
+          for i,line in enumerate(lines):
+              lo=line.lower()
+              if any(n in lo for n in needles): hits.append(i)
+          out=[]
+          for n,i in enumerate(hits):
+              out.append(f'===== HIT {n+1} line {i+1}: {lines[i]} =====')
+              a=max(0,i-80); b=min(len(lines),i+81)
+              out.extend(f'{j+1:07d}: {lines[j]}' for j in range(a,b))
+              out.append('')
+          Path('/tmp/autopsy/instant-death-neighborhoods.txt').write_text('\n'.join(out))
+          print('hits',len(hits))
+          if not hits: raise SystemExit('no focused hits found')
+
+      - name: Upload focused autopsy
+        uses: actions/upload-artifact@v4
+        with:
+          name: old-instant-death-focused-autopsy-v2
+          path: |
+            /tmp/autopsy/reconstruction.txt
+            /tmp/autopsy/instant-death-neighborhoods.txt
+            /tmp/autopsy/headers.txt
