@@ -1,0 +1,66 @@
+name: Stamina v3 Wand read-site port
+
+on:
+  push:
+    branches:
+      - stamina-v3-wemod-readsite-probe
+    paths:
+      - '.stamina-v3-trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: stamina-v3-wemod-readsite-probe
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply Wand stamina v3 port
+        shell: pwsh
+        run: python tools/patch_stamina_wemod_v3.py
+      - name: Verify exact runtime evidence and locked baselines
+        shell: pwsh
+        run: |
+          $s = Get-Content StaminaCore.cs -Raw
+          if (-not $s.Contains('RVA_WEMOD_STAMINA_READ=0x1D3B42')) { throw 'stamina WeMod RVA missing' }
+          if (-not $s.Contains('Original={0x66,0x0F,0x6E,0x9E,0x08,0x04,0x00,0x00}')) { throw 'stamina original bytes missing' }
+          if (-not $s.Contains('WEMOD_RAW_STAMINA=100_000_000u')) { throw 'stamina observer sentinel missing' }
+          $m = Get-Content tools/prepare_merged_v1.py -Raw
+          if (-not $m.Contains('HookCore.Tick(false, f6.Checked, f7.Checked)')) { throw 'old stamina hook not disabled' }
+          if (-not $m.Contains('StaminaCore.Tick(f5.Checked)')) { throw 'new stamina core not wired' }
+          $sel = Get-Content SelectionCore.cs -Raw
+          if (-not $sel.Contains('SELECTION_LIMIT = 500')) { throw 'selection500 changed' }
+          if (-not $sel.Contains('LOGICAL_WINDOW = 160')) { throw 'headroom160 changed' }
+          if (-not $sel.Contains('PEASANT_FIXED_MS = 3000')) { throw 'peasant3s changed' }
+          $horse = Get-Content HorseCore.cs -Raw
+          if (-not $horse.Contains('RVA_HORSE_SLOT_LOOP=0x0D5482')) { throw 'horse v2 changed/missing' }
+          git diff --check
+      - name: Commit exact stamina v3 source
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add StaminaCore.cs MergedTrainer.csproj tools/prepare_merged_v1.py
+          git commit -m 'Implement Wand-derived stamina read-site port'
+          git push origin HEAD:stamina-v3-wemod-readsite-probe
+      - name: Generate merged source
+        shell: pwsh
+        run: python tools/prepare_merged_v1.py
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-stamina-v3
+      - name: Rename specimen
+        shell: pwsh
+        run: Copy-Item publish-stamina-v3/BRZE-Trainer-Merged-v1.exe publish-stamina-v3/BRZE-Trainer-Peasant3s-StaminaV3-HorseV2.exe -Force
+      - name: Upload specimen
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-Peasant3s-StaminaV3-HorseV2
+          path: publish-stamina-v3/BRZE-Trainer-Peasant3s-StaminaV3-HorseV2.exe
