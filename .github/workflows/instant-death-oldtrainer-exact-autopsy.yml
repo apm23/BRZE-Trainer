@@ -26,39 +26,64 @@ jobs:
           tar -xf /tmp/upx.tar.xz -C /tmp
           cp /tmp/upx-5.2.0-amd64_linux/upx /tmp/upx
           chmod +x /tmp/upx
-      - name: Reconstruct exact 17,920-byte specimen from repo fragments
+
+      - name: Reconstruct exact 17,920-byte specimen from fragments
         shell: python
         run: |
           from pathlib import Path
-          import base64, hashlib, itertools, re
+          import base64, hashlib, re
           root=Path('reference/old-trainer')
           expected='41571fc8cd83e296a60a04d934440b5a01d22ce45d111acdc31b13f16e8aa24d'
-          def rd(name):
-              return re.sub(r'\s+','',(root/name).read_text())
-          fixed={2:rd('sample.part02.b64'),4:rd('sample.part04.b64'),5:rd('sample.part05.b64'),6:rd('sample.part06.b64')}
-          p1=[('part01',rd('sample.part01.b64')),('fix01a',rd('sample.fix01a.b64')),('fix01b',rd('sample.fix01b.b64'))]
-          p3=[('part03',rd('sample.part03.b64')),('fix03a',rd('sample.fix03a.b64')),('fix03b',rd('sample.fix03b.b64'))]
+          def rd(name): return re.sub(r'\s+','',(root/name).read_text())
+
+          parts=[rd(f'sample.part0{i}.b64') for i in range(1,7)]
+          base=''.join(parts)
+          old=rd('sample.b64')
+          report=[f'base64 six-part len={len(base)} decoded={len(base64.b64decode(base))}',
+                  f'legacy sample.b64 len={len(old)}',
+                  'expected b64 len=23896 / decoded=17920; searching exact 56-char missing gap']
+          if len(base)!=23840:
+              raise SystemExit(f'unexpected six-part length {len(base)}')
+
+          bounds=[0]
+          n=0
+          for p in parts:
+              n+=len(p); bounds.append(n)
           found=None
-          report=[]
-          for (n1,s1),(n3,s3) in itertools.product(p1,p3):
-              s=s1+fixed[2]+s3+fixed[4]+fixed[5]+fixed[6]
-              try: raw=base64.b64decode(s,validate=True)
-              except Exception as e:
-                  report.append(f'{n1}+{n3}: b64len={len(s)} decode-error={e}')
-                  continue
-              h=hashlib.sha256(raw).hexdigest()
-              report.append(f'{n1}+{n3}: b64len={len(s)} size={len(raw)} sha={h}')
-              if h==expected and len(raw)==17920:
-                  found=(n1,n3,raw)
-                  break
+          tries=0
+          # Missing chunk was created while the specimen was split. Search every 56-char,
+          # base64-aligned window preserved by the older sample fragment at each split boundary.
+          for pos in range(0,max(0,len(old)-56)+1,4):
+              gap=old[pos:pos+56]
+              for bi,bound in enumerate(bounds):
+                  tries+=1
+                  s=base[:bound]+gap+base[bound:]
+                  try: raw=base64.b64decode(s,validate=True)
+                  except Exception: continue
+                  if len(raw)!=17920: continue
+                  h=hashlib.sha256(raw).hexdigest()
+                  if h==expected:
+                      found=(pos,bi,bound,gap,raw)
+                      break
+              if found: break
+          report.append(f'tries={tries}')
+          if not found:
+              # Diagnostic overlap map, so the next repair is evidence-driven rather than guessing.
+              import difflib
+              sm=difflib.SequenceMatcher(None,base,old,autojunk=False)
+              for m in sorted(sm.get_matching_blocks(), key=lambda x:x.size, reverse=True)[:12]:
+                  report.append(f'overlap base[{m.a}:{m.a+m.size}] old[{m.b}:{m.b+m.size}] len={m.size}')
+              Path('/tmp/reconstruct-report.txt').write_text('\n'.join(report)+'\n')
+              print(Path('/tmp/reconstruct-report.txt').read_text())
+              raise SystemExit('No exact SHA match at split boundaries')
+
+          pos,bi,bound,gap,raw=found
+          Path('/tmp/BattleRealmsTrainer.exe').write_bytes(raw)
+          report += [f'MATCH old-window={pos}:{pos+56}', f'split-boundary-index={bi} base-offset={bound}',
+                     f'gap={gap}', f'sha={expected}', f'size={len(raw)}']
           Path('/tmp/reconstruct-report.txt').write_text('\n'.join(report)+'\n')
           print(Path('/tmp/reconstruct-report.txt').read_text())
-          if not found:
-              raise SystemExit('No fragment combination matched exact trainer specimen')
-          n1,n3,raw=found
-          Path('/tmp/BattleRealmsTrainer.exe').write_bytes(raw)
-          Path('/tmp/reconstruct-choice.txt').write_text(f'exact={n1}+part02+{n3}+part04+part05+part06\nsha={expected}\nsize={len(raw)}\n')
-          print(Path('/tmp/reconstruct-choice.txt').read_text())
+
       - name: UPX unpack and focused PageDown disassembly
         shell: bash
         run: |
@@ -73,9 +98,23 @@ jobs:
           objdump -d -Mintel /tmp/page-down/BattleRealmsTrainer.unpacked.exe > /tmp/page-down/20-disassembly.txt
           strings -a -n 3 /tmp/page-down/BattleRealmsTrainer.unpacked.exe > /tmp/page-down/21-strings.txt
           cp /tmp/reconstruct-report.txt /tmp/page-down/
-          cp /tmp/reconstruct-choice.txt /tmp/page-down/
           grep -Eina 'GetAsyncKeyState|GetKeyState|RegisterHotKey|SetTimer|GetCursorPos|ScreenToClient|WindowFromPoint|ChildWindowFromPoint|ReadProcessMemory|WriteProcessMemory|OpenProcess' /tmp/page-down/10-headers-imports.txt > /tmp/page-down/30-api-hits.txt || true
           grep -Eina 'ff000000|0xff000000|PageDown|VK_NEXT|0x22|428|42c|WriteProcessMemory|GetAsyncKeyState|GetCursorPos|ScreenToClient' /tmp/page-down/20-disassembly.txt > /tmp/page-down/31-page-down-hits.txt || true
+          # Include context around every legacy death-sentinel write and VK_NEXT compare.
+          python - <<'PY'
+          from pathlib import Path
+          lines=Path('/tmp/page-down/20-disassembly.txt').read_text(errors='ignore').splitlines()
+          keys=('ff000000','0x22',' 22,','428]','42c]')
+          out=[]
+          seen=set()
+          for i,l in enumerate(lines):
+              if any(k.lower() in l.lower() for k in keys):
+                  a=max(0,i-18); b=min(len(lines),i+24)
+                  if (a,b) in seen: continue
+                  seen.add((a,b)); out.append(f'\n===== context line {i+1}: {l} =====\n'); out.extend(lines[a:b])
+          Path('/tmp/page-down/32-page-down-context.txt').write_text('\n'.join(out))
+          PY
+
       - name: Upload focused autopsy
         uses: actions/upload-artifact@v4
         with:
