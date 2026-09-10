@@ -7,21 +7,20 @@ Last updated: 2026-09-10 (Asia/Tokyo)
 - One hypothesis -> minimal patch -> runtime test -> record result.
 - Compile success is not runtime proof.
 - Preserve failed experiments; do not reintroduce disproven broad patches.
-- Use fresh BRZE/restart between invasive selection probes unless a procedure explicitly says otherwise.
 - New thread handoff: `CONTINUE BRZE TRAINER — MASTER_STATE AUTHORITATIVE`.
 
 ## Authoritative target
 `Battle_Realms_F(5).exe`
 - PE32/x86, size `4,521,984`, preferred image base `0x400000`
 - SHA-256 `d62de491b8d4d5002b6efc5b9ad492050472bc1e10ab223df1080392733ea5e5`
-- ASLR active: use moduleBase+RVA.
-- reference: `reference/current-brze/target-binary-20260909.md`
+- ASLR active: always use `moduleBase + RVA`.
+- Reference: `reference/current-brze/target-binary-20260909.md`.
 
 Legacy WOTW + old trainer are reference-only.
 
 ---
 
-# Selection architecture — proven
+# Selection architecture — LOCKED RUNTIME-PROVEN
 
 ## Local/UI list
 - RVA `0x441708`
@@ -30,13 +29,15 @@ Legacy WOTW + old trainer are reference-only.
 
 ## Local admission gate
 Function `0x5A6FD8`:
-- stock gate at `0x5A7000`, reject `0x5A70D5`, continue `0x5A700D`
-- then append UI list, set `unit+0x3A8=1`, emit type-0 selection event
+- stock gate `0x5A7000`
+- reject `0x5A70D5`
+- continue `0x5A700D`
+- accepted unit sets `unit+0x3A8=1` and emits type-0 selection event.
 
-## Sort/rebuild selection-only reset calls
-- sort A `0x5A71B2 -> 0x4ABFE6`
-- sort B `0x5A71BF -> 0x4ABFE6`
-- active rebuild `0x5A729F -> 0x4ABFE6`
+## Sort/rebuild reset call sites
+- `0x5A71B2 -> 0x4ABFE6`
+- `0x5A71BF -> 0x4ABFE6`
+- `0x5A729F -> 0x4ABFE6`
 
 ## Simulation selection
 - base pointer RVA `0x441730`
@@ -45,58 +46,47 @@ Function `0x5A6FD8`:
 - runtime reset `0x5A6E3B -> 0x4ABFE6`
 
 ## Event path
-- AddUnit type-0 event producer `0x552FFA`
+- AddUnit type-0 producer `0x552FFA`
 - type 0 -> `0x56016B` -> simulation add `0x5A736F(player,unit)`
-- SIM add checks membership, appends, sets `unit+0x3AC=1`, refreshes via `0x5A7B97`
+- SIM add sets `unit+0x3AC=1` and refreshes through `0x5A7B97`.
 
 ## Rectangle selection
-- `0x5D4356`
-- candidate list RVA `0x479748`, native first=128/growth=128
+- routine `0x5D4356`
+- candidate list RVA `0x479748`
+- native first=128/growth=128
 - accepted candidate `0x5D455A -> 0x5A6FD8`
-- clear `0x5D4573`, final sort `0x5D457D -> 0x5A719F`
+- clear `0x5D4573`
+- final sort `0x5D457D -> 0x5A719F`
 
 ## Event queue
 - used RVA `0x441C94`
 - remaining RVA `0x441C98`
 - pointer RVA `0x441C9C`
-- native physical backing 256 bytes
+- physical backing 256 bytes
 - logical init immediate RVA `0x161770`
 - logical post-flush reset RVA `0x161D77`
 - flush helper `0x561B2A`
 
-## Selection failures that must stay rejected
-- Surgical Growth: stable to 90; #91 rejected.
-- Manual120 run `34343788268`: #91 crash.
-- FirstBlock120 run `34347542420`: #91 crash; sort reset issue.
-- SortPipeline120 run `34348488434`: large drag freeze.
-- NoAddNotify120 run `34349623960`: UI reached 108 but move/attack semantics broke; event path required.
-- EventBuffer1024 run `34358214184`: failed; do not reuse.
-- NoPerAddRefresh run `34359923529`: failed.
-- Rectangle Sleep(1) run `34363669046`: failed.
-
-## Decisive bulk-drag telemetry
+## Decisive freeze telemetry
 Observer run `34365054121`:
 - ACTIVE=64
 - SIM=0
 - EVENT used=258
-- EVENT remain=`0xFFFFFFFE` (-2)
+- EVENT remain=`0xFFFFFFFE`
 
-Boundary: rectangle clear contributes 2 bytes; `2 + 63*4 = 254`; next 4-byte add reaches native flush too late -> `258/-2`.
-Reference: `reference/current-brze/bulk-telemetry-freeze-64-20260909.md`.
+Root cause: rectangle clear contributes 2 bytes; `2 + 63*4 = 254`; next 4-byte event overflows the logical native window before flush.
 
 ## Runtime-proven headroom160 fix
-Branch `selection-event-headroom-160-probe`, run `34367473165`.
-- physical backing stays 256
-- logical reset window = 160
-- type-0 event remains LIVE
+Branch `selection-event-headroom-160-probe`, run `34367473165`:
+- physical backing remains 256
+- logical reset window =160
+- type-0 stays LIVE
 - large one-shot rectangle no freeze
 - MAX ACTIVE=103, MAX SIM=103
 - healthy flushes `used=0/remain=160`
 
-Reference: `reference/current-brze/event-headroom160-runtime-success-20260909.md`.
-
-## LOCKED selection baseline — Integrated Selection120 + Headroom160
-Branch `selection-120-headroom160-integrated`.
+## Locked baseline
+Branch `selection-120-headroom160-integrated`:
 - head `b623167036bed91299f4cc8184bb2a2fd821ca34`
 - run `34368982513` SUCCESS
 - artifact `10111151679`
@@ -104,6 +94,16 @@ Branch `selection-120-headroom160-integrated`.
 
 User runtime regression passed large one-shot drag, >90 selection, move, and attack.
 Reference: `reference/current-brze/selection120-headroom160-integrated-runtime-success-20260909.md`.
+
+## Selection failures that remain rejected
+- Surgical Growth: #91 rejected.
+- Manual120 run `34343788268`: #91 crash.
+- FirstBlock120 run `34347542420`: #91 crash / sort reset issue.
+- SortPipeline120 run `34348488434`: large drag freeze.
+- NoAddNotify120 run `34349623960`: UI 108 but broken move/attack semantics.
+- EventBuffer1024 run `34358214184`: failed.
+- NoPerAddRefresh run `34359923529`: failed.
+- Rectangle Sleep(1) run `34363669046`: failed.
 
 ---
 
@@ -113,12 +113,12 @@ Selection500 candidate uses narrow wrappers only:
 - local admission rejects count >=500
 - ACTIVE first=500/growth=0
 - only five proven selection reset call sites substitute first=500
-- shared `0x4ABFE6` is NOT globally patched
-- type-0 stays LIVE
+- shared `0x4ABFE6` must NOT be globally patched
+- type-0 remains LIVE
 - headroom160 retained
 - rectangle candidate list remains native 128/128
 
-Peasant timing static mapping:
+Peasant timing mapping:
 - creation enable array RVA `0x467AF4`
 - MinTime race config `+0x6C`
 - MaxTime race config `+0x70`
@@ -126,151 +126,148 @@ Peasant timing static mapping:
 - auto update `0x57FEE9 -> 0x57FFA5`
 - pop-stop calls `0x57FF1B -> 0x582D5E` and `0x57FF71 -> 0x582D5E`
 
-Old fast-peasant runtime stopped around total unit 167. Current Selection500/peasant implementations remain separate from the locked selection fallback; do not regress the proven Selection120 + Headroom160 architecture while iterating them.
+Old fast-peasant runtime stopped around total unit 167. Keep this work separate from the locked Selection120 + Headroom160 fallback until independently proven.
 
 ---
 
-# Instant Death — LOCKED RUNTIME-PROVEN BASELINE
+# Instant Death — LOCKED RUNTIME-PROVEN
 
-## Legacy behavior
-Old PageDown trainer uses game-internal target state and writes sentinel `0xFF000000` to target HP/stamina. It does not use Win32 cursor APIs.
-Reference: `reference/current-brze/instant-death-oldtrainer-exact-pagedown-static-20260910.md`.
+## Rejected paths
+- V3/V4 call-site-only hook at RVA `0x135F27`: passive hover produced `qcalls:0`; rejected.
+- V5 direct pointer RVA `0x3DD858`: caused global/sweeping enemy damage; permanently rejected as hover target source.
 
-## Rejected V3/V4
-V3/V4 intercepted the existing call at RVA `0x135F27` inside InterfaceMouse helper RVA `0x135EFB`. Runtime V4 telemetry showed `qcalls:0` on passive hover. This action/context-specific call-site interception is rejected.
-
-## Rejected V5
-V5 directly polled Unit* global RVA `0x3DD858`.
-User runtime result was decisive:
-- enabling the cheat alone affected enemies globally;
-- no cursor aim was needed;
-- enemies became near-dead and died when movement stopped.
-
-Conclusion: RVA `0x3DD858` is simulation/spatial scratch state that sweeps through units. Sentinel death value is effective, but this RVA is permanently rejected as hover target source.
-
-## V6 — SUCCESS, LOCK THIS ARCHITECTURE
-Branch: `instant-death-v4-hover-telemetry`.
-Build pin:
-- source/build head `755a1f8f7888d496a7d43626c201df9dc56c5b80`
-- workflow `Instant Death v6 — Hover Only + Reveal Map`
-- run `34442885171` SUCCESS
-- job `102761415852` SUCCESS
-- artifact `10138596135` (`BRZE-Trainer-InstantDeathV6-HoverOnly-RevealMap`)
-- artifact ZIP SHA-256 `79b76d18e90d4bda2c5f1bf2b4fa46ea87e4dac2f5a292ea5278f34f9572a477`
-- published EXE SHA-256 `b7b2f0712213601761a2167be8587e01515987c773ed08149851ed551af07349`
-
-Architecture:
-- per-frame game-thread hook RVA `0x135C43`, reached from preferred VA `0x544086`
+## V6 targeting architecture — LOCKED
+- per-frame game-thread hook RVA `0x135C43`
 - InterfaceMouse object RVA `0x443640`
-- invoke cursor Unit* helper RVA `0x135EFB` with native common args `(1,0)` once per frame
-- require target definition `+0x74`
+- cursor Unit* helper RVA `0x135EFB`, called with native common args `(1,0)`
+- require target def `+0x74`
 - owner `+0x240`
-- same/allied filter RVA `0x1848E8`, local ID RVA `0x4416D0`
+- relation filter RVA `0x1848E8`
+- local ID RVA `0x4416D0`
 - enemy-only sentinel writes HP `+0x404`, stamina `+0x408`, value `0xFF000000`
 - no selection dependency
 - no unit-pool scan
 - no `0x3DD858`
 
-### Runtime proof — 2026-09-10
-User reports **SUCCESS BESAR**:
-- only the enemy unit directly under the mouse cursor dies;
-- no select/click is required;
-- other enemy units no longer die globally;
-- V5 global sweep behavior is gone.
-
-Screenshot while enabled showed trainer status `DEATH V6: ON ... NO SELECT / NO SWEEP`; after the cursor was no longer over a target, `hover:0x00000000`, confirming the target does not remain sticky. The old `kills` telemetry is a per-frame execution/write count, not a count of unique dead units.
-
-**LOCK:** V6 active per-frame InterfaceMouse query is now the runtime-proven Instant Death baseline. Preserve its native targeting/filter/sentinel architecture unless a later regression is demonstrated.
-
+V6 runtime proved only the enemy directly under the mouse dies, with no click/select and no global sweep.
 Reference: `reference/current-brze/instant-death-v5-runtime-rejected-v6-hover-map-20260910.md`.
 
-## V7 control-mode candidate — BURST + SINGLE
-Requested UX while preserving V6 targeting:
-- `BURST / ERASER`: persistent cursor eraser; every enemy crossed by the cursor is killed while enabled.
-- `SINGLE`: one-shot trigger; only pressing the button/PageDown arms one live cursor query, then returns to idle.
-
-V7 implementation keeps the V6 native query but adds remote mode gate:
+## V7 control split — RUNTIME-PROVEN
+The V6 targeting architecture is preserved, with remote mode gate:
 - `MODE_IDLE=0`
 - `MODE_BURST=1`
 - `MODE_SINGLE=2`
-- SINGLE self-clears after one active render frame even on ground/friendly.
-- Pressing SINGLE disables BURST in the UI.
 
-Build candidate:
+Runtime result from user on 2026-09-10:
+- **BURST / ERASER = PASS**
+- **SINGLE one-shot = PASS**
+
+SINGLE self-clears after one active render frame. Pressing SINGLE disables BURST in UI.
+
+V7 build pin:
 - head `0b51ac108f03a8a0588876b6e12512b9a00e9f0d`
-- workflow `Death V7 Modes + Unlimited Wolves`
 - run `34445622029` SUCCESS
-- job `102769659900` SUCCESS
-- artifact `10139554308` (`BRZE-Trainer-V7-DeathModes-UnlimitedWolves`)
-- artifact ZIP SHA-256 `c2231cea7e0543c6c73e61d9017045070317c800f17cf726c7f435efe54e0899`
-- published EXE SHA-256 `3114f51f5ad7741bca346a825f0533972f7391993d77948d02c0afc4ac8f9dab`
+- artifact `10139554308`
+- EXE SHA-256 `3114f51f5ad7741bca346a825f0533972f7391993d77948d02c0afc4ac8f9dab`
 
-V7 control split is compile/CI-proven only until user runtime confirms both BURST and SINGLE behavior.
+**LOCK:** preserve V6 targeting + V7 BURST/SINGLE control architecture.
 
 ---
 
 # Reveal Map — LOCKED RUNTIME-PROVEN
 
 Current BRZE FOW setter:
-- preferred VA `0x50DBD7`, RVA `0x10DBD7`
+- preferred VA `0x50DBD7`
+- RVA `0x10DBD7`
 - `EnableFogOfWar` pushes `1`
 - `DisableFogOfWar` pushes `0`
 - native setter returns `ret 4`
 
-`RevealMapCore.cs` calls the native setter only when checkbox state changes: `0` reveals/disables fog, `1` restores normal fog. Trainer shutdown restores normal FOW when Reveal Map was active.
+`RevealMapCore.cs` invokes native setter only when checkbox state changes. Shutdown restores normal FOW if Reveal Map was active.
 
-### Runtime proof — 2026-09-10
-User confirms:
-- Reveal Map ON shows the full map / removes Fog of War.
+Runtime result:
+- Reveal Map ON reveals full map.
 - Reveal Map OFF immediately restores normal Fog of War.
 
-**LOCK:** native FOW setter implementation is solved; do not reopen unless a regression appears.
-
-Reference: `reference/current-brze/v6-runtime-success-v7-death-modes-wolves-candidate-20260910.md`.
+**LOCK:** do not reopen this implementation without a regression.
 
 ---
 
-# Unlimited Wolves — CURRENT RUNTIME CANDIDATE
+# Unlimited Wolves / F10 — V8 LOCKED RUNTIME-PROVEN
 
-Old F10 selected-building `+0x250` remap is not authoritative for unlimited owned wolves and must not be treated as the final solution.
+## V7 rejected
+V7 hooked the per-unit `UnitGiveWolfToUnit` cap compare at RVA `0x0C5704`, using unit current wolves `+0x63C` vs UnitDef max `+0x1B8`.
 
-Current static path in `UnitGiveWolfToUnit`:
-- RVA `0x0C5704`: native 6-byte `cmp eax,[ecx+0x1B8]`
-- current owned-wolf count comes from master unit `+0x63C`
-- native max is `UnitDef.NumOwnedWolves` at `+0x1B8`
-- following native `JGE` rejects if current >= max
-- master unit owner is `unit+0x240`
+User runtime result: **did not work for the intended Unlimited Wolves behavior**.
 
-`WolfCore.cs` candidate hooks only that compare:
-- local player: manufacture flags so native JGE does not reject due to owned-wolf cap;
-- non-local/AI: execute the exact original compare, preserving native AI cap;
-- no global UnitDef mutation;
-- OFF restores the original compare bytes.
+**REJECT:** do not reintroduce the V7 per-unit owned-wolf cap hook as the F10 solution.
 
-V7 build pin is the same run/artifact listed above. This candidate is **not runtime-locked yet**.
+## Exact legacy F10 semantic
+Old trainer performs a direct one-byte write:
 
-Runtime acceptance test must confirm:
-- a local unit can receive more wolves than its normal cap;
-- existing wolf behavior remains normal;
-- AI/enemy units remain native-capped;
-- turning OFF restores normal cap behavior without corrupting already-owned wolves.
+`[object + 0x250] = 250`
 
-Reference: `reference/current-brze/v6-runtime-success-v7-death-modes-wolves-candidate-20260910.md`.
+Current BRZE static mapping proved that `+0x250` is Wolves Den stock:
+- building type field `+0x78`
+- Wolves Den type `0x44`
+- building owner `+0x84`
+- selected-building globals RVA `0x4417D4` and `0x4417D8`
+- wolf stock `building+0x250`
+- native stock cap around 12
+- production increments/clamps this field; releasing a wolf decrements it.
+
+## V8 implementation — LOCKED
+`WolfCore.cs`:
+- no `UnitGiveWolfToUnit` hook
+- accepts only selected building owned by local player
+- requires type exactly `0x44` (Wolves Den)
+- latches the Den while checkbox is ON
+- maintains **one byte value 250** at `den+0x250`
+- selection can safely change after latching
+- multiple local Dens can be latched by selecting each once
+- OFF stops writes and clears latch; does not forcibly reduce existing stock.
+
+## V8 build pin
+- branch `instant-death-v4-hover-telemetry`
+- source/build head `d6ab40fbe93eed598a94e12b1c18129a00a9d7d7`
+- workflow `Death V8 Wolves Den Stock`
+- run `34449027111` SUCCESS
+- job `102780200805` SUCCESS
+- artifact `10140856463` (`BRZE-Trainer-V8-WolvesDenStock`)
+- artifact ZIP SHA-256 `26a460008142794a8c915bfe1adc6a31b094e39e8f19b9c596b92d07e6ab1163`
+- EXE SHA-256 `909d599d5270caeae83c16f5f14ad2b65509d222dff0d9870fa11fa3016311f3`
+
+## Runtime proof — 2026-09-10
+User tested V8 and reported **"work total"**.
+
+**LOCK:** V8 local-owner + type `0x44` + latched Wolves Den + one-byte `+0x250 = 250` is now the authoritative Unlimited Wolves/F10 implementation.
+
+Reference: `reference/current-brze/v7-wolves-rejected-v8-wolf-den-stock-20260910.md`.
 
 ---
 
-## Do not reintroduce without new evidence
+# Do not reintroduce without new evidence
 - global/shared list constructor patching
-- blanket every-90 patching
+- blanket every-90 selection patching
 - candidate capacity patch
 - permanent type-0 suppression
-- old EventBuffer1024 implementation
+- EventBuffer1024 implementation
 - permanent `0x5A7B97` suppression
 - in-function Sleep throttle
 - heavy selected-unit polling scans
-- Instant Death RVA `0x3DD858` direct-pointer polling
+- Instant Death direct-pointer polling at RVA `0x3DD858`
 - Instant Death V3/V4 call-site-only hook at `0x135F27`
-- old F10 selected-building `+0x250` write as the Unlimited Wolves solution
+- V7 Unlimited Wolves per-unit `UnitGiveWolfToUnit` cap hook
+- blind `+0x250` writes to arbitrary selected objects; V8 must retain owner + Wolves Den type validation and latch.
 
-## Current hinge
-**Instant Death V6 targeting and Reveal Map are solved/runtime-locked.** V7 now needs runtime confirmation for the BURST/SINGLE control split and especially the local-only Unlimited Wolves cap bypass. Test Unlimited Wolves before final pack; do not mark it solved from CI alone.
+---
+
+# Current locked milestone
+As of 2026-09-10:
+- Selection120 + Headroom160: runtime-proven.
+- Instant Death targeting V6: runtime-proven.
+- Instant Death BURST + SINGLE controls: runtime-proven.
+- Reveal Map ON/OFF: runtime-proven.
+- Unlimited Wolves V8 Wolves Den stock: runtime-proven.
+
+Current trainer milestone is stable on these features. New work must preserve all locks above unless the user reports a specific regression.
