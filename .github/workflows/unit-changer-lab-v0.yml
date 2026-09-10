@@ -1,0 +1,73 @@
+name: Unit Changer Lab v0
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.unit-changer-lab-v0-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify isolation and observer-only safety
+        shell: pwsh
+        run: |
+          $p = Get-Content UnitChangerTrainer/Program.cs -Raw
+          $r = Get-Content UnitChangerTrainer/README.md -Raw
+          foreach($x in @(
+            'OUTPUT SLOTS 1–9',
+            'READ-ONLY',
+            'PROCESS_VM_READ',
+            'PROCESS_QUERY_INFORMATION',
+            'RVA_SELECTED_BUILDING_A = 0x4417D4',
+            'RVA_BUILDING_POOL = 0x4814E0',
+            'OFF_TRAIN_TYPE = 0x488',
+            'OFF_TRAIN_PROGRESS = 0x490',
+            'OFF_TRAIN_GATE = 0x4B8'
+          )) { if($p -notmatch [regex]::Escape($x)) { throw "missing lab invariant: $x" } }
+          foreach($bad in @('WriteProcessMemory','VirtualProtectEx','VirtualAllocEx','CreateRemoteThread')) {
+            if($p -match $bad) { throw "observer-only violation: $bad" }
+          }
+          if($r -notmatch 'Never clone raw unit structs') { throw 'multi-output safety rule missing' }
+
+      - name: Compile smoke
+        run: dotnet build UnitChangerTrainer/UnitChangerTrainer.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish UnitChangerTrainer/UnitChangerTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-unit-changer-v0
+          Move-Item publish-unit-changer-v0/BRZE-Unit-Changer-Lab.exe publish-unit-changer-v0/BRZE-Unit-Changer-Lab-v0-Observer.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish UnitChangerTrainer/UnitChangerTrainer.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-unit-changer-v0-small
+          Move-Item publish-unit-changer-v0-small/BRZE-Unit-Changer-Lab.exe publish-unit-changer-v0-small/BRZE-Unit-Changer-Lab-v0-Observer-Small.exe
+
+      - name: Report hashes and sizes
+        shell: pwsh
+        run: |
+          Get-Item publish-unit-changer-v0/BRZE-Unit-Changer-Lab-v0-Observer.exe | Select-Object Name,Length
+          Get-Item publish-unit-changer-v0-small/BRZE-Unit-Changer-Lab-v0-Observer-Small.exe | Select-Object Name,Length
+          Get-FileHash publish-unit-changer-v0/BRZE-Unit-Changer-Lab-v0-Observer.exe -Algorithm SHA256
+          Get-FileHash publish-unit-changer-v0-small/BRZE-Unit-Changer-Lab-v0-Observer-Small.exe -Algorithm SHA256
+
+      - name: Upload lab builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Unit-Changer-Lab-v0-Observer
+          compression-level: 0
+          path: |
+            publish-unit-changer-v0/BRZE-Unit-Changer-Lab-v0-Observer.exe
+            publish-unit-changer-v0-small/BRZE-Unit-Changer-Lab-v0-Observer-Small.exe
