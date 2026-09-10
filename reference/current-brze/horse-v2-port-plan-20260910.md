@@ -1,0 +1,1 @@
+Horse v2 will reproduce the runtime-proven six-slot Stable behavior captured from Wand: detour RVA 0x0D5482, slot0 +0x5AC, six slots stride 0x1C, local-owner guarded slot fill to 1. Old HorseRespawnTime path stays disabled in merged runtime.
