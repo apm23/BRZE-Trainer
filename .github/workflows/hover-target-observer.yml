@@ -20,6 +20,23 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Patch observer to F9 next / F10 reset
+        shell: pwsh
+        run: |
+          $p = 'HoverTargetObserver.cs'
+          $s = Get-Content $p -Raw
+          $s = $s.Replace('BRZE Hover Observer v2 — ONE KEY / READ ONLY','BRZE Hover Observer v3 — F9 ONE KEY / READ ONLY')
+          $s = $s.Replace('NUMPAD 5','F9').Replace('NUMPAD 0','F10')
+          $s = $s.Replace('Keys.NumPad5','Keys.F9').Replace('Keys.NumPad0','Keys.F10')
+          $s = $s -replace '(?m)^\s*ok &= RegisterHotKey\(Handle,1,0,\(uint\)Keys\.NumPad1\);.*\r?\n',''
+          $s = $s -replace '(?m)^\s*ok &= RegisterHotKey\(Handle,2,0,\(uint\)Keys\.NumPad2\);.*\r?\n',''
+          $s = $s -replace '(?m)^\s*ok &= RegisterHotKey\(Handle,3,0,\(uint\)Keys\.NumPad3\);.*\r?\n',''
+          $s = $s.Replace('foreach(int id in new[]{0,1,2,3,5})','foreach(int id in new[]{0,5})')
+          $s = $s.Replace('One or more NUMPAD hotkeys could not be registered. Turn NumLock ON and close apps using those keys.','F9/F10 hotkeys could not be registered. Close apps already using F9/F10 and run observer again.')
+          $s = $s.Replace('F10 = RESET ALL   |   Backup direct keys: NUMPAD 1=Empty, 2=Enemy A, 3=Enemy B','F10 = RESET ALL')
+          Set-Content $p $s -Encoding UTF8
+          if ($s -match 'NUMPAD 5|NUMPAD 0|Keys\.NumPad5|Keys\.NumPad0') { throw 'Old primary NUMPAD hotkey text remains' }
+          if ($s -notmatch 'Keys\.F9' -or $s -notmatch 'Keys\.F10') { throw 'F9/F10 patch missing' }
       - name: Compile smoke
         run: dotnet build HoverTargetObserver.csproj -c Release -r win-x86
       - name: Publish x86 single-file observer
@@ -27,5 +44,5 @@ jobs:
       - name: Upload observer
         uses: actions/upload-artifact@v4
         with:
-          name: BRZE-Hover-Target-Observer
+          name: BRZE-Hover-Target-Observer-v3-F9
           path: publish-hover/BRZE-Hover-Target-Observer.exe
