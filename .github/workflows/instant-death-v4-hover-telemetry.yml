@@ -1,0 +1,64 @@
+name: Instant Death v4 — Hover Telemetry
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.instant-death-v4-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify focused hover telemetry probe
+        shell: pwsh
+        run: |
+          $d = Get-Content InstantDeathCore.cs -Raw
+          if ($d -notmatch 'RVA_HOVER_QUERY_CALL=0x135F27') { throw 'missing native hover call RVA' }
+          if ($d -notmatch 'RVA_HOVER_QUERY=0x1D4888') { throw 'missing native hover resolver RVA' }
+          if ($d -notmatch 'T_CALLS=0x00,T_UNIT=0x04,T_OWNER=0x08,T_WRITES=0x0C') { throw 'missing telemetry layout' }
+          if ($d -match 'RVA_PLAYER_RELATION') { throw 'uncertain alliance guard must not be present in V4' }
+          if ($d -notmatch 'DEATH_SENTINEL=0xFF000000') { throw 'missing death sentinel' }
+          if ($d -notmatch 'cmp ecx,\[localId\]') { throw 'missing local-owner guard marker' }
+          if ($d -match 'UNIT_COUNT.*2000') { throw 'death core must not scan unit pool' }
+
+      - name: Generate merged source
+        run: python tools/prepare_merged_v1.py
+
+      - name: Verify V4 wiring
+        shell: pwsh
+        run: |
+          $m = Get-Content MergedProgram.cs -Raw
+          if ($m -notmatch 'Instant Death V4') { throw 'V4 label missing' }
+          if ($m -notmatch 'InstantDeathCore\.Tick\(instantDeath\.Checked\)') { throw 'death core not wired' }
+          if ($m -notmatch 'Toggle\(0x22,12,\(\)=>instantDeath\.Checked=!instantDeath\.Checked\)') { throw 'PageDown toggle missing' }
+          if ($m -match 'Toggle\(0x7A,14') { throw 'deferred demolition hotkey active' }
+
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+
+      - name: Publish x86 single-file
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+
+      - name: Rename artifact
+        shell: pwsh
+        run: |
+          Move-Item publish/BRZE-Trainer-Merged-v1.exe publish/BRZE-Trainer-InstantDeathV4-HoverTelemetry.exe
+          Get-FileHash publish/BRZE-Trainer-InstantDeathV4-HoverTelemetry.exe -Algorithm SHA256
+
+      - name: Upload trainer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-InstantDeathV4-HoverTelemetry
+          path: publish/BRZE-Trainer-InstantDeathV4-HoverTelemetry.exe
