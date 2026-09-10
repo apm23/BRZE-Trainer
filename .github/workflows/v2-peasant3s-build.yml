@@ -1,0 +1,55 @@
+name: Merged v2 — Peasant3s baseline
+
+on:
+  push:
+    branches:
+      - main-merge-v2-peasant3s-wemod-port
+    paths:
+      - '.github/workflows/v2-peasant3s-build.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main-merge-v2-peasant3s-wemod-port
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply exact 3s balance delta
+        shell: pwsh
+        run: python tools/patch_peasant_3s.py
+      - name: Verify delta is narrow
+        shell: pwsh
+        run: |
+          $s = Get-Content SelectionCore.cs -Raw
+          if (-not $s.Contains('PEASANT_FIXED_MS = 3000')) { throw '3s peasant constant missing' }
+          if (-not $s.Contains('SELECTION_LIMIT = 500')) { throw 'selection500 changed/missing' }
+          if (-not $s.Contains('LOGICAL_WINDOW = 160')) { throw 'headroom160 changed/missing' }
+          if ($s.Contains('PEASANT_FIXED_MS = 1000')) { throw 'old 1s constant still present' }
+      - name: Commit 3s source delta
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add SelectionCore.cs
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "Balance fast peasant spawn to fixed 3 seconds"
+            git push
+          }
+      - name: Generate merged source
+        shell: pwsh
+        run: python tools/prepare_merged_v1.py
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-v2
+      - name: Upload v2 baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-Merged-v2-Peasant3s-Baseline
+          path: publish-v2/BRZE-Trainer-Merged-v1.exe
