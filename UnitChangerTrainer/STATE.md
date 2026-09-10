@@ -26,13 +26,24 @@ Example target: Spearman enters Dojo again; slots 1..3 are enabled and configure
 - Prove 1->2 first before 1->9.
 - Keep all hooks reversible and stage-safe.
 
-## Phase 0
+## Phase 0 — BUILT
 Separate read-only observer trainer.
 - 9 output slot UI exists.
 - Output names are configuration placeholders until UnitDef IDs are mapped.
 - Process access is READ + QUERY only.
 - No memory writes, code patch, allocation, remote thread, or spawn.
 - Training observer reads selected-building/training context.
+
+Build pin:
+- branch `instant-death-v4-hover-telemetry`
+- trigger/build head `22567e97d02ad4e45ddf285746de4e0483193841`
+- workflow `Unit Changer Lab v0`
+- run `34535724003` SUCCESS
+- job `103066743201` SUCCESS
+- artifact `10175347109` (`BRZE-Unit-Changer-Lab-v0-Observer`)
+- artifact ZIP SHA-256 `19cefdaee6a1e7a9f62a1ebaf720218e565e7f04b5e2ffe100e593c3c33a4a77`
+- standalone size `66,001,071` bytes, SHA-256 `3449abf307d95683a5436eab5dfa2c8e317be88b6139f6f00265b0baa57e8bf9`
+- small size `144,536` bytes, SHA-256 `ea9e417e5d169293ffdec343784a7eb098b052ff2f372d17746e5e5ac68d2e88`
 
 ## Known observer mappings
 - target process: `Battle_Realms_F.exe`
@@ -47,5 +58,16 @@ Separate read-only observer trainer.
 - gate/state `+0x4B8`
 - completion threshold `0x00640000`
 
+## Static multi-output lead
+Training completion code around preferred VA `0x4D5DF1` reaches a native chain in which:
+- `0x4D69F6` receives training type / owner / completion context;
+- its return is passed into `0x4D6A88` with the training building in ECX;
+- `0x4D6A88` returns a non-null Unit* candidate used by subsequent building/unit bookkeeping;
+- building training state is reset afterward.
+
+This is only a static lead, not runtime proof. Reference: `forensics/training-completion-static-20260911.md`.
+
 ## Next forensic milestone
 Find the exact native eligibility decision for a retraining order that currently shows the red X. Instrument/observe first, then make the smallest conditional bypass restricted to Unit Changer mode and intended training context.
+
+After that, runtime-prove the output creation chain with 1 input -> 2 outputs before expanding toward slots 1..9.
