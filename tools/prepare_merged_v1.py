@@ -19,13 +19,15 @@ rep('readonly Label status = new() { AutoSize = false, Height = 54, Dock = DockS
 rep('Text = "BRZE Trainer 1.60 — Hook Test"; ClientSize = new Size(650, 520); StartPosition = FormStartPosition.CenterScreen;',
     'Text = "BRZE Trainer 1.60 — Main + Selection500 + Hard Locks"; ClientSize = new Size(860, 650); StartPosition = FormStartPosition.CenterScreen;')
 rep('panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6, f7, legacyTower, pausePeasant, demolish, horses });',
-    'panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6, f7, legacyTower, pausePeasant, demolish, horses, fastPeasant });')
+    'panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6, f7, pausePeasant, horses, fastPeasant });')
 rep('Native.Start(); timer.Tick += (_, _) => TickTrainer(); timer.Start(); FormClosed += (_, _) => Native.Stop();',
     'Native.Start(); timer.Tick += (_, _) => TickTrainer(); timer.Start(); FormClosed += (_, _) => { StaminaCore.Stop(); HorseCore.Stop(); HookCore.Stop(); SelectionCore.Stop(); Native.Stop(); };')
 rep('Native.SetHooks(f5.Checked, f6.Checked, f7.Checked);',
     'string hookStatus = HookCore.Tick(false, f6.Checked, f7.Checked);\n        string staminaStatus = StaminaCore.Tick(f5.Checked);')
+rep('Toggle(0x7A,14,()=>demolish.Checked=!demolish.Checked);',
+    '// Demolition Mode intentionally removed from active UI/hotkeys; retained dormant in legacy source.')
 rep('Native.ApplyLegacyRuntime(pausePeasant.Checked,demolish.Checked,horses.Checked,legacyTower.Checked);',
-    'Native.ApplyLegacyRuntime(pausePeasant.Checked,demolish.Checked,false,legacyTower.Checked);\n        string horseStatus = HorseCore.Tick(horses.Checked);')
+    'Native.ApplyLegacyRuntime(pausePeasant.Checked,false,false,false);\n        string horseStatus = HorseCore.Tick(horses.Checked);')
 rep('status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked);',
     'string selectionStatus = SelectionCore.Tick(fastPeasant.Checked);\n        status.Text = Native.Apply(f1.Checked,f2.Checked,f3.Checked,f4.Checked,f7.Checked) + "\\r\\n" + hookStatus + "\\r\\n" + staminaStatus + "\\r\\n" + horseStatus + "\\r\\n" + selectionStatus;')
 
