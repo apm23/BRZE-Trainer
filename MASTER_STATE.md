@@ -224,6 +224,55 @@ Status: compile/build proven; runtime not yet proven.
 
 ---
 
+# Instant Death — current state
+
+## Exact legacy behavior
+Old PageDown trainer reads game-internal target state, not Win32 cursor APIs. Primary old path dereferences `[global+0x08]` and writes sentinel `0xFF000000` to the target's HP/stamina fields. Reference: `reference/current-brze/instant-death-oldtrainer-exact-pagedown-static-20260910.md`.
+
+## V3/V4 — rejected call-site strategy
+Current BRZE InterfaceMouse helper RVA `0x135EFB` reads live cursor coordinates and returns a native Unit* through query RVA `0x1D4888`. V3/V4 intercepted only its existing call at RVA `0x135F27`. Runtime V4 telemetry showed `qcalls:0`, so passive hover does not traverse that specific action/context call site. Do not reuse that call-site-only architecture.
+
+## V5 — runtime rejected as hover source
+V5 read Unit* directly from RVA `0x3DD858`. User runtime result:
+- enabling the cheat alone affected enemies globally;
+- no cursor aim was needed;
+- enemies became near-dead and died when movement stopped.
+
+Therefore RVA `0x3DD858` is confirmed simulation/spatial scratch state that sweeps through units. The sentinel write is effective, but this RVA is **permanently rejected as hover-only target source**.
+
+## V6 — current hover-only candidate
+Branch: `instant-death-v4-hover-telemetry`.
+V6 actively invokes BRZE's own InterfaceMouse Unit* query once per render frame on the game thread instead of waiting for an action-specific call site:
+- per-frame hook RVA `0x135C43`, reached each frame from preferred VA `0x544086`
+- InterfaceMouse object RVA `0x443640`; cursor coordinates are object `+4/+8`
+- cursor Unit* helper RVA `0x135EFB`, called with native common args `(1,0)`
+- target definition guard `+0x74`
+- target owner `+0x240`
+- native same/allied filter RVA `0x1848E8` using local ID RVA `0x4416D0`
+- enemy-only sentinel writes: HP `+0x404`, stamina `+0x408`, value `0xFF000000`
+- no selection dependency
+- no unit-pool scan
+- rejected RVA `0x3DD858` removed entirely
+
+Reference: `reference/current-brze/instant-death-v5-runtime-rejected-v6-hover-map-20260910.md`.
+Status at ledger update: source committed; V6 workflow run `34442659795` started, runtime proof pending.
+
+---
+
+# Reveal Map — current state
+
+Current BRZE native fog-of-war setter is preferred VA `0x50DBD7`, RVA `0x10DBD7`:
+- native `EnableFogOfWar` wrapper pushes `1`
+- native `DisableFogOfWar` wrapper pushes `0`
+- routine returns `ret 4`
+
+`RevealMapCore.cs` invokes that native setter only on checkbox state changes: `0` for reveal/disable fog, `1` for normal/restore. Trainer shutdown restores normal FOW if Reveal Map was active.
+
+Reference: `reference/current-brze/instant-death-v5-runtime-rejected-v6-hover-map-20260910.md`.
+Status: source committed; build/runtime proof pending.
+
+---
+
 ## Do not reintroduce without new evidence
 - global/shared list constructor patching
 - blanket every-90 patching
@@ -233,6 +282,8 @@ Status: compile/build proven; runtime not yet proven.
 - permanent `0x5A7B97` suppression
 - in-function Sleep throttle
 - heavy selected-unit polling scans
+- Instant Death RVA `0x3DD858` direct-pointer polling
+- Instant Death V3/V4 call-site-only hook at `0x135F27`
 
 ## Current hinge
-Runtime-test pinned **Selection500 ALWAYS + Fixed1s Peasant** build. The locked Selection120 + Headroom160 predecessor remains the known-good fallback baseline.
+Runtime-test the pinned V6 build after CI succeeds: Instant Death must kill **only the enemy Unit* currently under the cursor with no selection**, and Reveal Map must reveal/restore FOW cleanly. Selection120 + Headroom160 remains the known-good selection fallback baseline.
