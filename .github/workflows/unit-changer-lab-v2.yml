@@ -21,6 +21,9 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Apply V2 no-clipping layout
+        run: python tools/finalize_unit_changer_v2_layout.py
+
       - name: Verify V2 narrow override architecture
         shell: pwsh
         run: |
@@ -36,7 +39,9 @@ jobs:
             'invalid inputs remain native',
             'Slots 2–9 stay hard-locked',
             'Dragon Archer',
-            'Wolf Werewolf'
+            'Wolf Werewolf',
+            'ClientSize = new Size(1080, 940)',
+            'RowStyle(SizeType.Absolute, 145)'
           )) { if($p -notmatch [regex]::Escape($x)) { throw "V2 invariant missing: $x" } }
           foreach($bad in @('RVA_CURRENT_UNIT_PTR','0x3DD858','CreateRemoteThread','clone raw')) {
             if($p -match [regex]::Escape($bad)) { throw "V2 forbidden pattern: $bad" }
