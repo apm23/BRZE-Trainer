@@ -1,0 +1,64 @@
+name: Final V12 Small Variants
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v12-small-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate exact V12 base
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v12_status_panels.py
+
+      - name: Verify V12 preserved behavior
+        shell: pwsh
+        run: |
+          $m=Get-Content MergedProgram.cs -Raw
+          foreach($x in @('GAME\r\n','ACTIVE CHEATS\r\n','CHEAT STATUS\r\n','#if RAW_STATUS','RAW DIAGNOSTICS\r\n','SelectionCore.Tick(peasant.Checked)','RevealMapCore.Stop(revealSafe)','horses.Checked=false;wolves.Checked=false;reveal.Checked=false;burst.Checked=false')){if($m -notmatch [regex]::Escape($x)){throw "V12 invariant missing: $x"}}
+
+      - name: Publish CLEAN small
+        run: |
+          dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
+          Move-Item publish-clean-small/BRZE-Trainer-Merged-v1.exe publish-clean-small/BRZE-Trainer-FINAL-V12-Clean-Small.exe
+
+      - name: Publish DIAGNOSTICS small
+        run: |
+          dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diagnostics-small
+          Move-Item publish-diagnostics-small/BRZE-Trainer-Merged-v1.exe publish-diagnostics-small/BRZE-Trainer-FINAL-V12-Diagnostics-Small.exe
+
+      - name: Report hashes and sizes
+        shell: pwsh
+        run: |
+          $c=Get-Item publish-clean-small/BRZE-Trainer-FINAL-V12-Clean-Small.exe
+          $d=Get-Item publish-diagnostics-small/BRZE-Trainer-FINAL-V12-Diagnostics-Small.exe
+          Write-Host ('CLEAN_SMALL_BYTES='+$c.Length)
+          Write-Host ('DIAGNOSTICS_SMALL_BYTES='+$d.Length)
+          Get-FileHash $c.FullName -Algorithm SHA256
+          Get-FileHash $d.FullName -Algorithm SHA256
+
+      - name: Upload V12 small pair
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V12-Small-Clean-and-Diagnostics
+          compression-level: 0
+          path: |
+            publish-clean-small/BRZE-Trainer-FINAL-V12-Clean-Small.exe
+            publish-diagnostics-small/BRZE-Trainer-FINAL-V12-Diagnostics-Small.exe
