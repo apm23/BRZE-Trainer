@@ -1,1 +1,1 @@
-trigger master v10 2026-09-10
+trigger master v10 2026-09-10 retry-2
