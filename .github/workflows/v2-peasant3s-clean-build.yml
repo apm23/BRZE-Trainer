@@ -1,0 +1,43 @@
+name: Merged v2 — Peasant3s clean build
+
+on:
+  push:
+    branches:
+      - main-merge-v2-peasant3s-wemod-port
+    paths:
+      - '.github/workflows/v2-peasant3s-clean-build.yml'
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main-merge-v2-peasant3s-wemod-port
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify pinned 3s baseline
+        shell: pwsh
+        run: |
+          $c=Get-Content SelectionCore.cs -Raw
+          if (-not $c.Contains('PEASANT_FIXED_MS = 3000')) { throw 'peasant is not fixed 3s' }
+          if (-not $c.Contains('SELECTION_LIMIT = 500')) { throw 'selection500 missing' }
+          if (-not $c.Contains('LOGICAL_WINDOW = 160')) { throw 'headroom160 missing' }
+          $g=Get-Content tools/prepare_merged_v1.py -Raw
+          if (-not $g.Contains('FIXED 3.0 seconds')) { throw '3s UI label missing' }
+      - name: Generate merged source
+        shell: pwsh
+        run: python tools/prepare_merged_v1.py
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-v2-clean
+      - name: Rename
+        shell: pwsh
+        run: Move-Item publish-v2-clean/BRZE-Trainer-Merged-v1.exe publish-v2-clean/BRZE-Trainer-Merged-v2-Peasant3s.exe
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-Merged-v2-Peasant3s
+          path: publish-v2-clean/BRZE-Trainer-Merged-v2-Peasant3s.exe
