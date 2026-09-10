@@ -1,0 +1,41 @@
+name: WeMod Observer v3 Visible Analyze
+
+on:
+  push:
+    branches:
+      - wemod-observer-v3-visible-analyze
+    paths:
+      - '.observer-v3-trigger'
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: wemod-observer-v3-visible-analyze
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply v3 UI patch
+        run: python tools/patch_observer_v3.py
+      - name: Verify visible Analyze and partial save
+        shell: pwsh
+        run: |
+          $s = Get-Content WeModHorseStaminaDiff.cs -Raw
+          if (-not $s.Contains('3) ANALYZE + SAVE FINAL TXT')) { throw 'Analyze button missing' }
+          if (-not $s.Contains('CAPTURE WEMOD ON + SAVE PARTIAL TXT')) { throw 'partial save button missing' }
+          if (-not $s.Contains('Height=255')) { throw 'top panel visibility fix missing' }
+          if (-not $s.Contains('PARTIAL TXT SAVED')) { throw 'partial TXT autosave missing' }
+      - name: Compile smoke
+        run: dotnet build WeModHorseStaminaDiff.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish WeModHorseStaminaDiff.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-observer-v3
+      - name: Rename
+        shell: pwsh
+        run: Copy-Item publish-observer-v3/BRZE-WeMod-Horse-Stamina-Diff-Observer.exe publish-observer-v3/BRZE-WeMod-Observer-v3-BIG-BUTTONS.exe -Force
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-WeMod-Observer-v3-BIG-BUTTONS
+          path: publish-observer-v3/BRZE-WeMod-Observer-v3-BIG-BUTTONS.exe
