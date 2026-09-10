@@ -1,0 +1,1 @@
+Observer final capture proves Wand Unlimited Horses detours BRZE .text RVA 0x0D5482 and changes the six selected-Stable slot dwords at +0x5AC,+0x5C8,+0x5E4,+0x600,+0x61C,+0x638 from 0 to 1. Static target disassembly confirms the patched site is the six-iteration slot-count loop with 0x1C stride.
