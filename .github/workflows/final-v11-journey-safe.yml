@@ -50,7 +50,14 @@ jobs:
         shell: pwsh
         run: |
           $m=Get-Content MergedProgram.cs -Raw
-          foreach($x in @('void AllOn()','void AllOff()','horses.Checked=false;wolves.Checked=false;burst.Checked=false','training.Checked=true;peasant.Checked=true;hp.Checked=true;stamina.Checked=true;reveal.Checked=true','ALL ON — Horses / Wolves / Death Burst stay manual','ALL OFF — every cheat disabled','if(shift)AllOff();else AllOn();','RevealMapCore.Stop(revealSafe)','RevealMapCore intentionally stays attached across Journey/menu transitions')){if($m -notmatch [regex]::Escape($x)){throw "V11 wiring missing: $x"}}
+          foreach($x in @('void AllOn()','void AllOff()','training.Checked=true;peasant.Checked=true;hp.Checked=true;stamina.Checked=true;reveal.Checked=true','ALL ON — Horses / Wolves / Death Burst unchanged (manual)','ALL OFF — every cheat disabled','if(shift)AllOff();else AllOn();','RevealMapCore.Stop(revealSafe)','RevealMapCore intentionally stays attached across Journey/menu transitions')){if($m -notmatch [regex]::Escape($x)){throw "V11 wiring missing: $x"}}
+          $allOnStart=$m.IndexOf('void AllOn()')
+          $allOffStart=$m.IndexOf('void AllOff()')
+          if($allOnStart -lt 0 -or $allOffStart -le $allOnStart){throw 'ALL ON/OFF block missing'}
+          $allOnBlock=$m.Substring($allOnStart,$allOffStart-$allOnStart)
+          foreach($bad in @('horses.Checked=','wolves.Checked=','burst.Checked=')){if($allOnBlock -match [regex]::Escape($bad)){throw "ALL ON incorrectly changes manual toggle: $bad"}}
+          $allOffBlock=$m.Substring($allOffStart,[Math]::Min(500,$m.Length-$allOffStart))
+          foreach($x in @('horses.Checked=false','wolves.Checked=false','burst.Checked=false','reveal.Checked=false')){if($allOffBlock -notmatch [regex]::Escape($x)){throw "ALL OFF missing: $x"}}
           if($m -match 'allOn\.Click\+=\(_,\)_=>SetAll\(true\)'){throw 'old ALL ON behavior still present'}
           if($m -match 'try\{RevealMapCore\.Stop\(\);\}catch\{\}try\{InstantDeathCore\.Stop'){throw 'Reveal still stopped during transition suspend'}
           # Peasant core is intentionally untouched in this iteration.
