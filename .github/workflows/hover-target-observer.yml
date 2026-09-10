@@ -1,0 +1,31 @@
+name: Hover Target Observer
+
+on:
+  push:
+    branches:
+      - instant-death-v2-hover-sentinel
+    paths:
+      - '.hover-observer-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v2-hover-sentinel
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile smoke
+        run: dotnet build HoverTargetObserver.csproj -c Release -r win-x86
+      - name: Publish x86 single-file observer
+        run: dotnet publish HoverTargetObserver.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-hover
+      - name: Upload observer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hover-Target-Observer
+          path: publish-hover/BRZE-Hover-Target-Observer.exe
