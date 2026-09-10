@@ -13,25 +13,22 @@ rep('readonly CheckBox f5 = new() { Text = "F5 No Stamina Loss (selected only) �
 rep('readonly CheckBox f6 = new() { Text = "F6 No Damage (selected only) — SAFE DELTA V62", AutoSize = true };',
     'readonly CheckBox f6 = new() { Text = "F6 Unlimited HP (selected only) — HARD LOCK", AutoSize = true };')
 rep('readonly CheckBox horses = new() { Text = "Maximum Horses / instant horse respawn", AutoSize = true };',
-    'readonly CheckBox horses = new() { Text = "Unlimited Horses — Wand 6-slot Stable port", AutoSize = true };\n    readonly CheckBox fastPeasant = new() { Text = "Fast Peasant Spawn — FIXED 3.0 seconds (local player)", AutoSize = true };\n    readonly CheckBox instantDeath = new() { Text = "Instant Death — hover enemy (PageDown)", AutoSize = true };')
+    'readonly CheckBox horses = new() { Text = "Unlimited Horses — Wand 6-slot Stable port", AutoSize = true };\n    readonly CheckBox fastPeasant = new() { Text = "Fast Peasant Spawn — FIXED 3.0 seconds (local player)", AutoSize = true };\n    readonly CheckBox instantDeath = new() { Text = "Instant Death V4 — hover telemetry (PageDown)", AutoSize = true };')
 rep('readonly Label status = new() { AutoSize = false, Height = 54, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft };',
-    'readonly Label status = new() { AutoSize = false, Height = 185, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(FontFamily.GenericMonospace, 8.5f) };')
+    'readonly Label status = new() { AutoSize = false, Height = 205, Dock = DockStyle.Bottom, TextAlign = ContentAlignment.MiddleLeft, Font = new Font(FontFamily.GenericMonospace, 8.5f) };')
 rep('Text = "BRZE Trainer 1.60 — Hook Test"; ClientSize = new Size(650, 520); StartPosition = FormStartPosition.CenterScreen;',
-    'Text = "BRZE Trainer 1.60 — Native Hover Death Probe"; ClientSize = new Size(860, 665); StartPosition = FormStartPosition.CenterScreen;')
+    'Text = "BRZE Trainer 1.60 — Instant Death V4 Hover Telemetry"; ClientSize = new Size(900, 690); StartPosition = FormStartPosition.CenterScreen;')
 
-# Watchtower + Demolition are intentionally deferred: leave dormant implementation in source,
-# but remove both from visible cheat list and remove their active hotkeys/runtime writes.
+# Watchtower + Demolition stay deferred and hidden.
 rep('panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6, f7, legacyTower, pausePeasant, demolish, horses });',
     'panel.Controls.AddRange(new Control[] { f1, f2, f3, f4, f5, f6, f7, pausePeasant, horses, fastPeasant, instantDeath });')
 rep('panel.Controls.Add(new Label { Text = "Delete = Instant Build/Repair/Research/BattleGear | PageDown = Instant Death", AutoSize = true });',
-    'panel.Controls.Add(new Label { Text = "Delete = Instant Build/Repair/Research/BattleGear | PageDown = toggle Hover Death", AutoSize = true });')
+    'panel.Controls.Add(new Label { Text = "Delete = Instant Build/Repair/Research/BattleGear | PageDown = toggle Death V4 telemetry", AutoSize = true });')
 rep('Native.Start(); timer.Tick += (_, _) => TickTrainer(); timer.Start(); FormClosed += (_, _) => Native.Stop();',
     'Native.Start(); timer.Tick += (_, _) => TickTrainer(); timer.Start(); FormClosed += (_, _) => { InstantDeathCore.Stop(); StaminaCore.Stop(); HorseCore.Stop(); HookCore.Stop(); SelectionCore.Stop(); Native.Stop(); };')
 
-# PageDown becomes an ON/OFF hover-death switch, not a one-shot selected-unit write.
 rep('Toggle(0x22,12,()=>Native.InstantDeathSelected());',
     'Toggle(0x22,12,()=>instantDeath.Checked=!instantDeath.Checked);')
-# Remove F11 Demolition hotkey completely.
 rep('        Toggle(0x7A,14,()=>demolish.Checked=!demolish.Checked);\n', '')
 
 rep('Native.SetHooks(f5.Checked, f6.Checked, f7.Checked);',
