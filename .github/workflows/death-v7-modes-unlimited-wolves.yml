@@ -1,0 +1,79 @@
+name: Death V7 Modes + Unlimited Wolves
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.death-v7-wolves-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify runtime-proven death base and V7 mode gate
+        shell: pwsh
+        run: |
+          $d = Get-Content InstantDeathCore.cs -Raw
+          if ($d -match 'RVA_CURRENT_UNIT_PTR\s*=\s*0x3DD858') { throw 'rejected V5 pointer reintroduced' }
+          foreach ($x in @('RVA_FRAME_MOUSE_DRAW=0x135C43','RVA_INTERFACE_MOUSE=0x443640','RVA_CURSOR_UNIT_QUERY=0x135EFB','RVA_RELATION=0x1848E8','OFF_DEF=0x74,OFF_OWNER=0x240,OFF_HP=0x404,OFF_STAMINA=0x408','DEATH_SENTINEL=0xFF000000u')) { if ($d -notmatch [regex]::Escape($x)) { throw "missing death invariant: $x" } }
+          if ($d -notmatch 'MODE_IDLE=0,MODE_BURST=1,MODE_SINGLE=2') { throw 'death mode gate missing' }
+          if ($d -notmatch 'TriggerSingle\(\)') { throw 'single trigger API missing' }
+          if ($d -notmatch 'writes:') { throw 'write telemetry rename missing' }
+
+      - name: Verify local-only Unlimited Wolves path
+        shell: pwsh
+        run: |
+          $w = Get-Content WolfCore.cs -Raw
+          foreach ($x in @('RVA_WOLF_CAP_CMP=0x0C5704','RVA_LOCAL_ID=0x4416D0','OFF_OWNER=0x240','OFF_CURRENT_WOLVES=0x63C','OFF_DEF_MAX_WOLVES=0x1B8')) { if ($w -notmatch [regex]::Escape($x)) { throw "missing wolf invariant: $x" } }
+          if ($w -notmatch '0x3B,0x81,0xB8,0x01,0x00,0x00') { throw 'native wolf cap CMP bytes missing' }
+          if ($w -notmatch '0x7FFFFFFF') { throw 'local cap bypass compare missing' }
+          $p = Get-Content MergedTrainer.csproj -Raw
+          if ($p -notmatch 'Compile Include="WolfCore.cs"') { throw 'WolfCore not compiled' }
+
+      - name: Verify Reveal Map stays locked
+        shell: pwsh
+        run: |
+          $r = Get-Content RevealMapCore.cs -Raw
+          if ($r -notmatch 'RVA_SET_FOG_OF_WAR=0x10DBD7') { throw 'Reveal Map native FOW setter missing' }
+
+      - name: Generate V7 merged source
+        run: python tools/prepare_merged_v2_death_wolves.py
+
+      - name: Verify V7 UI wiring
+        shell: pwsh
+        run: |
+          $m = Get-Content MergedProgram.cs -Raw
+          foreach ($x in @('Instant Death BURST / ERASER','Instant Death SINGLE','Unlimited Wolves — LOCAL owned-wolf cap bypass','Reveal Map — disable Fog of War','InstantDeathCore.TriggerSingle()','InstantDeathCore.Tick(deathBurstEnabled)','WolfCore.Tick(unlimitedWolves.Checked)','WolfCore.Stop()')) { if ($m -notmatch [regex]::Escape($x)) { throw "missing UI/wiring: $x" } }
+          if ($m -notmatch 'Toggle\(0x22,12,\(\)=>FireSingleDeath\(\)\)') { throw 'PageDown SINGLE trigger missing' }
+          if ($m -notmatch 'Toggle\(0x79,10,\(\)=>unlimitedWolves.Checked=!unlimitedWolves.Checked\)') { throw 'F10 wolf toggle missing' }
+          if ($m -match 'Toggle\(0x79,10,\(\)=>Native.MaxWolves\(\)\)') { throw 'obsolete F10 direct write still active' }
+          if ($m -notmatch 'ApplyLegacyRuntime\(pausePeasant\.Checked,false,false,false\)') { throw 'deferred legacy writes changed' }
+
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+
+      - name: Publish x86 single-file
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+
+      - name: Rename artifact
+        shell: pwsh
+        run: |
+          Move-Item publish/BRZE-Trainer-Merged-v1.exe publish/BRZE-Trainer-V7-DeathModes-UnlimitedWolves.exe
+          Get-FileHash publish/BRZE-Trainer-V7-DeathModes-UnlimitedWolves.exe -Algorithm SHA256
+
+      - name: Upload trainer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-V7-DeathModes-UnlimitedWolves
+          path: publish/BRZE-Trainer-V7-DeathModes-UnlimitedWolves.exe
