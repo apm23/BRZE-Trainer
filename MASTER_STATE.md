@@ -271,3 +271,21 @@ As of 2026-09-10:
 - Unlimited Wolves V8 Wolves Den stock: runtime-proven.
 
 Current trainer milestone is stable on these features. New work must preserve all locks above unless the user reports a specific regression.
+
+
+---
+
+# FINAL V9 UI / PACK — BUILD COMPLETE
+
+- UI-only/package milestone built from runtime-proven V8 cores.
+- Two rows of six custom switches: Rice, Water, Yin/Yang, Population, Training, Peasant 3s / Health, Stamina, Horses, Wolves, Reveal, Death Burst.
+- Actions: SINGLE KILL, BUILD NOW, ALL ON, ALL OFF.
+- All runtime telemetry is shown in the central SYSTEM STATUS box.
+- Procedural dark Battle-Realm-style background; high-contrast opaque control/status cards prevent obscured text.
+- Death V6 targeting + V7 Burst/Single remain locked. Reveal Map remains locked. Wolves V8 +0x250 byte=250 remains locked.
+- Final build run `34451899885` SUCCESS, job `102789297707` SUCCESS, artifact `10141910073`.
+- Standalone: 66,020,277 bytes, SHA-256 `496599acbe5a09c4db38721ba621ad59db6a670cfe4885574c5bb0f57cba5f79`.
+- Small: 193,182 bytes, SHA-256 `61917877a1c8df26669b97de9e3b4b8e2c57ee39b54e3b66995981f20dd6113d`; requires .NET 8 Windows Desktop Runtime x86.
+- Default recommendation: Standalone for no-hassle use; Small is optional ultra-compact build.
+- Reference: `reference/current-brze/final-v9-ui-pack-20260910.md`.
+- V9 compilation/package is complete; only final user visual/runtime smoke remains before calling the UI itself runtime-locked.
