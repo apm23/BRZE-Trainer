@@ -1,4 +1,4 @@
-name: WeMod Horse Stamina Diff Observer
+name: WeMod Horse Stamina Diff Observer v2
 
 on:
   push:
@@ -19,21 +19,24 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Verify observer read-only contract
+      - name: Verify observer v2 read-only forensic contract
         shell: pwsh
         run: |
           $s=Get-Content WeModHorseStaminaDiff.cs -Raw
           if ($s.Contains('WriteProcessMemory')) { throw 'observer must not write target memory' }
           if (-not $s.Contains('ReadProcessMemory')) { throw 'RPM missing' }
-          if (-not $s.Contains('[.TEXT CODE DIFF]')) { throw 'text diff missing' }
+          if (-not $s.Contains('IMAGE_SCN_MEM_WRITE')) { throw 'writable-section snapshot missing' }
+          if (-not $s.Contains('REVERSIBLE A==C, B DIFFERENT')) { throw 'tri-snapshot reversible filter missing' }
           if (-not $s.Contains('SELECTED BUILDING')) { throw 'building diff missing' }
           if (-not $s.Contains('SELECTED UNIT')) { throw 'unit diff missing' }
+          if (-not $s.Contains('PLAYER HORSE BLOCK')) { throw 'horse player block missing' }
+          if (-not $s.Contains('DesktopDirectory')) { throw 'desktop report output missing' }
       - name: Compile smoke
         run: dotnet build WeModHorseStaminaDiff.csproj -c Release -r win-x86
       - name: Publish x86 single-file EXE
         run: dotnet publish WeModHorseStaminaDiff.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-wemod-diff
-      - name: Upload observer
+      - name: Upload observer v2
         uses: actions/upload-artifact@v4
         with:
-          name: BRZE-WeMod-Horse-Stamina-Diff-Observer
+          name: BRZE-WeMod-Horse-Stamina-Forensic-Observer-v2
           path: publish-wemod-diff/BRZE-WeMod-Horse-Stamina-Diff-Observer.exe
