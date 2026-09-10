@@ -1,0 +1,69 @@
+name: Unit Changer Lab v1 Eligibility Trace
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.unit-changer-lab-v1-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify v1 narrow passive trace
+        shell: pwsh
+        run: |
+          $p=Get-Content UnitChangerTrainerV1/Program.cs -Raw
+          foreach($x in @(
+            'RVA_TRAIN_MAP = 0x0D69F6',
+            'RVA_CALLER_A = 0x131A55',
+            'RVA_CALLER_B = 0x15545E',
+            'OFF_BUILD_DEF = 0x258',
+            '0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8',
+            'TrainMapOriginal',
+            'TRACE HOOK ACTIVE — behavior unchanged',
+            'WriteCode(target, TrainMapOriginal)',
+            'RESET TRACE'
+          )){if($p -notmatch [regex]::Escape($x)){throw "missing v1 invariant: $x"}}
+          if($p -match 'UnitOutOverride|BypassEligibility|return true;.*red') { throw 'v1 must not override eligibility/output' }
+
+      - name: Compile smoke
+        run: dotnet build UnitChangerTrainerV1/UnitChangerTrainerV1.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish UnitChangerTrainerV1/UnitChangerTrainerV1.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-unit-changer-v1
+          Move-Item publish-unit-changer-v1/BRZE-Unit-Changer-Lab-v1.exe publish-unit-changer-v1/BRZE-Unit-Changer-Lab-v1-EligibilityTrace.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish UnitChangerTrainerV1/UnitChangerTrainerV1.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-unit-changer-v1-small
+          Move-Item publish-unit-changer-v1-small/BRZE-Unit-Changer-Lab-v1.exe publish-unit-changer-v1-small/BRZE-Unit-Changer-Lab-v1-EligibilityTrace-Small.exe
+
+      - name: Report hashes and sizes
+        shell: pwsh
+        run: |
+          Get-Item publish-unit-changer-v1/BRZE-Unit-Changer-Lab-v1-EligibilityTrace.exe | Select-Object Name,Length
+          Get-Item publish-unit-changer-v1-small/BRZE-Unit-Changer-Lab-v1-EligibilityTrace-Small.exe | Select-Object Name,Length
+          Get-FileHash publish-unit-changer-v1/BRZE-Unit-Changer-Lab-v1-EligibilityTrace.exe -Algorithm SHA256
+          Get-FileHash publish-unit-changer-v1-small/BRZE-Unit-Changer-Lab-v1-EligibilityTrace-Small.exe -Algorithm SHA256
+
+      - name: Upload v1 builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Unit-Changer-Lab-v1-EligibilityTrace
+          compression-level: 0
+          path: |
+            publish-unit-changer-v1/BRZE-Unit-Changer-Lab-v1-EligibilityTrace.exe
+            publish-unit-changer-v1-small/BRZE-Unit-Changer-Lab-v1-EligibilityTrace-Small.exe
