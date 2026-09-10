@@ -19,25 +19,29 @@ internal static class InstantDeathCore
     const uint ACCESS=0x10|0x20|0x8|0x400;
     const uint MEM_COMMIT=0x1000,MEM_RESERVE=0x2000,MEM_RELEASE=0x8000,PAGE_EXECUTE_READWRITE=0x40;
 
-    // InterfaceMouse::unit-under-cursor path, BRZE 1.60 target binary.
-    // 0x535EFB converts current cursor coordinates then calls 0x5D4888 at 0x535F27.
-    // We wrap only that call: native hit testing still decides the hovered Unit*.
+    // BRZE 1.60 InterfaceMouse helper: call at 0x535F27 -> 0x5D4888.
+    // V4 keeps the same single call-site probe but exposes live telemetry so runtime can
+    // tell us exactly whether the call fires, what Unit* it returns, and whether our write fires.
     const int RVA_HOVER_QUERY_CALL=0x135F27;
     const int RVA_HOVER_QUERY=0x1D4888;
-    const int RVA_PLAYER_RELATION=0x1848E8;
     const int RVA_LOCAL_ID=0x4416D0;
     const int OFF_DEF=0x74,OFF_OWNER=0x240,OFF_HP=0x404,OFF_STAMINA=0x408;
     const uint DEATH_SENTINEL=0xFF000000u;
-    static readonly byte[] OriginalCall={0xE8,0x5C,0xE9,0x09,0x00}; // call 0x5D4888 from preferred VA 0x535F27
+    static readonly byte[] OriginalCall={0xE8,0x5C,0xE9,0x09,0x00};
+
+    // Cave layout: wrapper at +0, telemetry at +0x300.
+    const int TELE_OFF=0x300;
+    const int T_CALLS=0x00,T_UNIT=0x04,T_OWNER=0x08,T_WRITES=0x0C;
 
     static IntPtr h=IntPtr.Zero,cave=IntPtr.Zero;
     static Process? p;
-    static long moduleBase;
+    static long moduleBase,telemetry;
     static bool installed,lastEnabled;
     static string error="";
 
     static IntPtr A(long x)=>new(unchecked((int)(uint)x));
     static bool ReadExact(long a,byte[] b)=>h!=IntPtr.Zero&&ReadProcessMemory(h,A(a),b,b.Length,out var n)&&n.ToInt64()==b.Length;
+    static uint R32(long a){var b=new byte[4];return ReadExact(a,b)?BitConverter.ToUInt32(b,0):0;}
     static bool WriteRaw(long a,byte[] b)=>h!=IntPtr.Zero&&WriteProcessMemory(h,A(a),b,b.Length,out var n)&&n.ToInt64()==b.Length;
     static bool WriteCode(long a,byte[] b)
     {
@@ -69,46 +73,53 @@ internal static class InstantDeathCore
         return h!=IntPtr.Zero;
     }
 
-    static byte[] BuildWrapper(long stub)
+    static byte[] BuildWrapper(long stub,long tele)
     {
-        // Wrapper is called in place of the native stdcall 0x5D4888 call.
-        // Forward the original three stack arguments exactly, let BRZE resolve the hovered
-        // unit, then kill only a valid non-allied player unit. Preserve the Unit* return.
         var b=new List<byte>();
         b.Add(0x55);                              // push ebp
         b.AddRange(new byte[]{0x8B,0xEC});        // mov ebp,esp
-        b.AddRange(new byte[]{0x83,0xEC,0x04});   // sub esp,4 (saved Unit*)
-        b.AddRange(new byte[]{0xFF,0x75,0x10});   // push [ebp+10] arg3
-        b.AddRange(new byte[]{0xFF,0x75,0x0C});   // push [ebp+0C] arg2
-        b.AddRange(new byte[]{0xFF,0x75,0x08});   // push [ebp+08] arg1
+        b.AddRange(new byte[]{0x83,0xEC,0x04});   // local saved Unit*
+        b.AddRange(new byte[]{0xFF,0x75,0x10});   // arg3
+        b.AddRange(new byte[]{0xFF,0x75,0x0C});   // arg2
+        b.AddRange(new byte[]{0xFF,0x75,0x08});   // arg1
         b.Add(0xE8);int callQuery=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x89,0x45,0xFC});   // mov [ebp-4],eax
-        b.AddRange(new byte[]{0x85,0xC0});        // test eax,eax
+        b.AddRange(new byte[]{0x89,0x45,0xFC});   // save eax Unit*
+
+        // Telemetry is intentionally simple/atomic enough for diagnostic reads.
+        b.AddRange(new byte[]{0xFF,0x05});U32(b,(uint)(tele+T_CALLS)); // inc calls
+        b.Add(0xA3);U32(b,(uint)(tele+T_UNIT));                       // last Unit*=eax
+        b.AddRange(new byte[]{0xC7,0x05});U32(b,(uint)(tele+T_OWNER));U32(b,0xFFFFFFFFu);
+
+        b.AddRange(new byte[]{0x85,0xC0});
         b.AddRange(new byte[]{0x0F,0x84});int jFinish0=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x83,0xB8,0x74,0x00,0x00,0x00,0x00}); // cmp [eax+74],0
+        b.AddRange(new byte[]{0x83,0xB8,0x74,0x00,0x00,0x00,0x00});
         b.AddRange(new byte[]{0x0F,0x84});int jFinishDef=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x8B,0x88,0x40,0x02,0x00,0x00}); // ecx=[eax+240] owner
-        b.AddRange(new byte[]{0x83,0xF9,0x0A});   // cmp ecx,10
+        b.AddRange(new byte[]{0x8B,0x88,0x40,0x02,0x00,0x00});        // ecx=owner
+        b.AddRange(new byte[]{0x89,0x0D});U32(b,(uint)(tele+T_OWNER)); // expose owner
+        b.AddRange(new byte[]{0x83,0xF9,0x0A});
         b.AddRange(new byte[]{0x0F,0x87});int jFinishOwner=b.Count;I32(b,0);
-        b.Add(0x51);                              // push target owner (arg2)
-        b.AddRange(new byte[]{0xFF,0x35});U32(b,(uint)(moduleBase+RVA_LOCAL_ID)); // push localId (arg1)
-        b.Add(0xE8);int callRelation=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x85,0xC0});        // relation!=0 => same/allied
-        b.AddRange(new byte[]{0x0F,0x85});int jFinishFriendly=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x8B,0x45,0xFC});   // eax=saved Unit*
+
+        // V3's native relation helper was not runtime-proven. V4 removes that uncertain
+        // filter and uses only the hard local-owner guard. This deliberately tests one
+        // hypothesis: if native query returns a non-local unit, the write must fire.
+        b.AddRange(new byte[]{0x3B,0x0D});U32(b,(uint)(moduleBase+RVA_LOCAL_ID)); // cmp ecx,[localId]
+        b.AddRange(new byte[]{0x0F,0x84});int jFinishLocal=b.Count;I32(b,0);
+
+        b.AddRange(new byte[]{0x8B,0x45,0xFC});
         b.AddRange(new byte[]{0xC7,0x80,0x04,0x04,0x00,0x00});U32(b,DEATH_SENTINEL);
         b.AddRange(new byte[]{0xC7,0x80,0x08,0x04,0x00,0x00});U32(b,DEATH_SENTINEL);
+        b.AddRange(new byte[]{0xFF,0x05});U32(b,(uint)(tele+T_WRITES));
+
         int finish=b.Count;
-        b.AddRange(new byte[]{0x8B,0x45,0xFC});   // preserve native Unit* return
-        b.AddRange(new byte[]{0x8B,0xE5,0x5D});   // mov esp,ebp / pop ebp
-        b.AddRange(new byte[]{0xC2,0x0C,0x00});   // ret 0x0C, same as native query
+        b.AddRange(new byte[]{0x8B,0x45,0xFC});
+        b.AddRange(new byte[]{0x8B,0xE5,0x5D});
+        b.AddRange(new byte[]{0xC2,0x0C,0x00});
 
         Rel(b,callQuery,stub+callQuery+4,moduleBase+RVA_HOVER_QUERY);
-        Rel(b,callRelation,stub+callRelation+4,moduleBase+RVA_PLAYER_RELATION);
         Rel(b,jFinish0,stub+jFinish0+4,stub+finish);
         Rel(b,jFinishDef,stub+jFinishDef+4,stub+finish);
         Rel(b,jFinishOwner,stub+jFinishOwner+4,stub+finish);
-        Rel(b,jFinishFriendly,stub+jFinishFriendly+4,stub+finish);
+        Rel(b,jFinishLocal,stub+jFinishLocal+4,stub+finish);
         return b.ToArray();
     }
 
@@ -123,10 +134,13 @@ internal static class InstantDeathCore
             error="hover query call mismatch (restart BRZE / close other trainers)";
             return false;
         }
-        cave=VirtualAllocEx(h,IntPtr.Zero,(UIntPtr)256,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);
+        cave=VirtualAllocEx(h,IntPtr.Zero,(UIntPtr)1024,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);
         if(cave==IntPtr.Zero){error="death cave allocation failed";return false;}
-        long stub=cave.ToInt64();
-        var body=BuildWrapper(stub);
+        long stub=cave.ToInt64();telemetry=stub+TELE_OFF;
+        var init=new byte[16];Array.Copy(BitConverter.GetBytes(0xFFFFFFFFu),0,init,T_OWNER,4);
+        if(!WriteRaw(telemetry,init)){error="death telemetry init failed";return false;}
+        var body=BuildWrapper(stub,telemetry);
+        if(body.Length>=TELE_OFF){error="death wrapper exceeded telemetry boundary";return false;}
         if(!WriteRaw(stub,body)){error="death cave write failed";return false;}
         var patch=new byte[5];patch[0]=0xE8;
         Array.Copy(BitConverter.GetBytes(unchecked((int)(stub-(target+5)))),0,patch,1,4);
@@ -136,21 +150,25 @@ internal static class InstantDeathCore
 
     public static string Tick(bool enabled)
     {
-        if(!Attach())return "DEATH: waiting for Battle_Realms_F.exe...";
+        if(!Attach())return "DEATH V4: waiting for Battle_Realms_F.exe...";
         if(enabled)
         {
-            if(!EnsureInstalled())return "DEATH NOT ARMED | "+error;
+            if(!EnsureInstalled())return "DEATH V4 NOT ARMED | "+error;
             lastEnabled=true;
-            return "DEATH: native hover query ARMED | enemy-only | sentinel FF000000";
+            uint calls=R32(telemetry+T_CALLS),unit=R32(telemetry+T_UNIT),owner=R32(telemetry+T_OWNER),writes=R32(telemetry+T_WRITES);
+            uint hpNow=unit!=0?R32((long)unit+OFF_HP):0;
+            string own=owner==0xFFFFFFFFu?"-":owner.ToString();
+            return $"DEATH V4: ARMED | qcalls:{calls} last:0x{unit:X8} owner:{own} writes:{writes} hpNow:0x{hpNow:X8}";
         }
         if(lastEnabled&&installed)
         {
             WriteCode(moduleBase+RVA_HOVER_QUERY_CALL,OriginalCall);
             installed=false;
             if(cave!=IntPtr.Zero){VirtualFreeEx(h,cave,UIntPtr.Zero,MEM_RELEASE);cave=IntPtr.Zero;}
+            telemetry=0;
         }
         lastEnabled=false;
-        return "DEATH: OFF";
+        return "DEATH V4: OFF";
     }
 
     public static void Stop()=>Detach(true);
@@ -162,6 +180,6 @@ internal static class InstantDeathCore
             if(cave!=IntPtr.Zero)VirtualFreeEx(h,cave,UIntPtr.Zero,MEM_RELEASE);
             CloseHandle(h);
         }
-        h=IntPtr.Zero;cave=IntPtr.Zero;p=null;moduleBase=0;installed=false;lastEnabled=false;error="";
+        h=IntPtr.Zero;cave=IntPtr.Zero;p=null;moduleBase=0;telemetry=0;installed=false;lastEnabled=false;error="";
     }
 }
