@@ -96,7 +96,7 @@ internal static class Observer
 
     static void DirectByteDiff(StringBuilder sb,string label,byte[] a,byte[] b,uint rvaBase,int max=300)
     {
-        sb.AppendLine($"[{label} A->B CHANGES]"); int n=0; foreach(var (s,e) in Changed(a,b)) { sb.AppendLine($"RVA/+0x{rvaBase+(uint)s:X}..0x{rvaBase+(uint)(e-1):X} len:{e-s} old[{HexContext(a,s,e)}] new[{HexContext(b,s,e)}]"); if(++n>=max){sb.AppendLine("...truncated...");break;} } if(n==0)sb.AppendLine("no changes");
+        sb.AppendLine($"[{label} A->B CHANGES]"); int n=0; foreach(var (s,e) in Changed(a,b)){sb.AppendLine($"RVA/+0x{rvaBase+(uint)s:X}..0x{rvaBase+(uint)(e-1):X} len:{e-s} old[{HexContext(a,s,e)}] new[{HexContext(b,s,e)}]");if(++n>=max){sb.AppendLine("...truncated...");break;}}if(n==0)sb.AppendLine("no changes");
     }
 
     static void ReversibleByteDiff(StringBuilder sb,string label,byte[] a,byte[] b,byte[] c,uint rvaBase,int max=300)
@@ -109,36 +109,27 @@ internal static class Observer
     static void DwordTriplet(StringBuilder sb,string label,byte[] a,byte[] b,byte[] c,int max=250)
     {
         sb.AppendLine($"[{label} DWORD A/OFF -> B/ON -> C/OFF]"); int n=0,lim=Math.Min(a.Length,Math.Min(b.Length,c.Length));
-        for(int i=0;i+4<=lim;i+=4){uint x=BitConverter.ToUInt32(a,i),y=BitConverter.ToUInt32(b,i),z=BitConverter.ToUInt32(c,i);if(x!=y||y!=z){string tag=(x==z&&x!=y)?" REVERSIBLE":"";sb.AppendLine($"+0x{i:X3}: 0x{x:X8} ({x}) -> 0x{y:X8} ({y}) -> 0x{z:X8} ({z}){tag}");if(++n>=max){sb.AppendLine("...truncated...");break;}}} if(n==0)sb.AppendLine("no DWORD changes");
+        for(int i=0;i+4<=lim;i+=4){uint x=BitConverter.ToUInt32(a,i),y=BitConverter.ToUInt32(b,i),z=BitConverter.ToUInt32(c,i);if(x!=y||y!=z){string tag=(x==z&&x!=y)?" REVERSIBLE":"";sb.AppendLine($"+0x{i:X3}: 0x{x:X8} ({x}) -> 0x{y:X8} ({y}) -> 0x{z:X8} ({z}){tag}");if(++n>=max){sb.AppendLine("...truncated...");break;}}}if(n==0)sb.AppendLine("no DWORD changes");
     }
 
     static string Summary(Snap s)=>$"pid:{s.Pid} base:0x{s.Base:X8} sections:{string.Join(",",s.Sections.Select(x=>$"{x.Name}@RVA0x{x.Rva:X}/0x{x.Data.Length:X}"))} selectedBuilding:0x{s.BuildingPtr:X8} selectedUnit:0x{s.UnitPtr:X8} horseBase:0x{s.HorseBase:X8} localId:{s.LocalId}";
 
     public static string Step1(string mode)
     {
-        var s=Capture(out var e);if(s==null)return"STEP1 FAILED: "+e; var q=sessions[mode];q.A=s;q.B=null;return $"{mode} STEP1 OFF captured\r\n{Summary(s)}\r\nNow enable ONLY WeMod Unlimited {mode}, keep the same selected object/unit, then click Step 2.";
+        var s=Capture(out var e);if(s==null)return"STEP1 FAILED: "+e;var q=sessions[mode];q.A=s;q.B=null;return $"{mode} STEP1 OFF captured\r\n{Summary(s)}\r\nNow enable ONLY WeMod Unlimited {mode}, keep the same selected object/unit, then click Step 2.";
     }
     public static string Step2(string mode)
     {
         var q=sessions[mode];if(q.A==null)return"Do Step 1 first.";var s=Capture(out var e);if(s==null)return"STEP2 FAILED: "+e;if(!Compatible(q.A,s))return"Process/base changed. Redo Step 1.";q.B=s;
-        var sb=new StringBuilder();sb.AppendLine($"{mode} STEP2 ON captured");sb.AppendLine(Summary(s));
-        var at=q.A.Sections.First(x=>x.Name==".text");var bt=s.Sections.FirstOrDefault(x=>x.Name==".text");if(bt!=null)DirectByteDiff(sb,".TEXT",at.Data,bt.Data,at.Rva,120);
-        sb.AppendLine("Now disable the SAME WeMod cheat, wait ~1 second, then click Step 3. Step 3 filters reversible cheat patches.");return sb.ToString();
+        var sb=new StringBuilder();sb.AppendLine($"{mode} STEP2 ON captured");sb.AppendLine(Summary(s));var at=q.A.Sections.First(x=>x.Name==".text");var bt=s.Sections.FirstOrDefault(x=>x.Name==".text");if(bt!=null)DirectByteDiff(sb,".TEXT",at.Data,bt.Data,at.Rva,120);sb.AppendLine("Now disable the SAME WeMod cheat, wait ~1 second, then click Step 3. Step 3 filters reversible cheat patches.");return sb.ToString();
     }
     public static string Step3(string mode)
     {
         var q=sessions[mode];if(q.A==null||q.B==null)return"Do Steps 1 and 2 first.";var c=Capture(out var e);if(c==null)return"STEP3 FAILED: "+e;if(!Compatible(q.A,c))return"Process/base changed. Redo test.";
-        var a=q.A;bail: ;var b=q.B;var sb=new StringBuilder();sb.AppendLine($"BRZE WeMod forensic tri-diff — {mode}");sb.AppendLine($"A/OFF {Summary(a)}");sb.AppendLine($"B/ON  {Summary(b)}");sb.AppendLine($"C/OFF {Summary(c)}");sb.AppendLine();
-        foreach(var sa in a.Sections)
-        {
-            var sb1=b.Sections.FirstOrDefault(x=>x.Name==sa.Name&&x.Rva==sa.Rva);var sc=c.Sections.FirstOrDefault(x=>x.Name==sa.Name&&x.Rva==sa.Rva);if(sb1==null||sc==null)continue;
-            if(sa.Name==".text"){DirectByteDiff(sb,".TEXT",sa.Data,sb1.Data,sa.Rva,180);ReversibleByteDiff(sb,".TEXT",sa.Data,sb1.Data,sc.Data,sa.Rva,180);}
-            else {ReversibleByteDiff(sb,$"SECTION {sa.Name}",sa.Data,sb1.Data,sc.Data,sa.Rva,220);}
-        }
-        if(a.BuildingPtr==b.BuildingPtr&&b.BuildingPtr==c.BuildingPtr&&a.Building.Length>0&&b.Building.Length>0&&c.Building.Length>0)DwordTriplet(sb,$"SELECTED BUILDING 0x{a.BuildingPtr:X8}",a.Building,b.Building,c.Building);
-        else sb.AppendLine("[BUILDING] pointer changed/unavailable — keep same Stable selected for all 3 captures.");
-        if(a.UnitPtr==b.UnitPtr&&b.UnitPtr==c.UnitPtr&&a.Unit.Length>0&&b.Unit.Length>0&&c.Unit.Length>0)DwordTriplet(sb,$"SELECTED UNIT 0x{a.UnitPtr:X8}",a.Unit,b.Unit,c.Unit);
-        else sb.AppendLine("[UNIT] pointer changed/unavailable — keep same unit selected for all 3 captures.");
+        var a=q.A;var b=q.B;var sb=new StringBuilder();sb.AppendLine($"BRZE WeMod forensic tri-diff — {mode}");sb.AppendLine($"A/OFF {Summary(a)}");sb.AppendLine($"B/ON  {Summary(b)}");sb.AppendLine($"C/OFF {Summary(c)}");sb.AppendLine();
+        foreach(var sa in a.Sections){var sb1=b.Sections.FirstOrDefault(x=>x.Name==sa.Name&&x.Rva==sa.Rva);var sc=c.Sections.FirstOrDefault(x=>x.Name==sa.Name&&x.Rva==sa.Rva);if(sb1==null||sc==null)continue;if(sa.Name==".text"){DirectByteDiff(sb,".TEXT",sa.Data,sb1.Data,sa.Rva,180);ReversibleByteDiff(sb,".TEXT",sa.Data,sb1.Data,sc.Data,sa.Rva,180);}else ReversibleByteDiff(sb,$"SECTION {sa.Name}",sa.Data,sb1.Data,sc.Data,sa.Rva,220);}
+        if(a.BuildingPtr==b.BuildingPtr&&b.BuildingPtr==c.BuildingPtr&&a.Building.Length>0&&b.Building.Length>0&&c.Building.Length>0)DwordTriplet(sb,$"SELECTED BUILDING 0x{a.BuildingPtr:X8}",a.Building,b.Building,c.Building);else sb.AppendLine("[BUILDING] pointer changed/unavailable — keep same Stable selected for all 3 captures.");
+        if(a.UnitPtr==b.UnitPtr&&b.UnitPtr==c.UnitPtr&&a.Unit.Length>0&&b.Unit.Length>0&&c.Unit.Length>0)DwordTriplet(sb,$"SELECTED UNIT 0x{a.UnitPtr:X8}",a.Unit,b.Unit,c.Unit);else sb.AppendLine("[UNIT] pointer changed/unavailable — keep same unit selected for all 3 captures.");
         if(a.HorseBase==b.HorseBase&&b.HorseBase==c.HorseBase&&a.HorsePlayer.Length>0&&b.HorsePlayer.Length>0&&c.HorsePlayer.Length>0)DwordTriplet(sb,$"PLAYER HORSE BLOCK localId:{a.LocalId}",a.HorsePlayer,b.HorsePlayer,c.HorsePlayer);
         string text=sb.ToString();string path=Save(mode,text);return text+"\r\nSAVED: "+path;
     }
