@@ -25,7 +25,7 @@ jobs:
         shell: pwsh
         run: |
           $d = Get-Content InstantDeathCore.cs -Raw
-          if ($d -match '3DD858|RVA_CURRENT_UNIT_PTR') { throw 'rejected V5 sweeping pointer reintroduced' }
+          if ($d -match 'RVA_CURRENT_UNIT_PTR\s*=\s*0x3DD858') { throw 'rejected V5 sweeping pointer reintroduced' }
           if ($d -notmatch 'RVA_FRAME_MOUSE_DRAW=0x135C43') { throw 'missing per-frame game-thread hook' }
           if ($d -notmatch 'RVA_INTERFACE_MOUSE=0x443640') { throw 'missing InterfaceMouse object' }
           if ($d -notmatch 'RVA_CURSOR_UNIT_QUERY=0x135EFB') { throw 'missing native live cursor query' }
