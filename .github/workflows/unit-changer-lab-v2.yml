@@ -1,0 +1,75 @@
+name: Unit Changer Lab v2 Single Output Proof
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.unit-changer-lab-v2-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify V2 narrow override architecture
+        shell: pwsh
+        run: |
+          $p = Get-Content UnitChangerTrainerV2/Program.cs -Raw
+          foreach($x in @(
+            'RVA_TRAIN_MAP = 0x0D69F6',
+            'TrainMapOriginal = { 0x55, 0x8B, 0xEC, 0x8B, 0x81, 0x58, 0x02, 0x00, 0x00 }',
+            'UnitInOffsets = { 0x68, 0x78, 0x88, 0x98, 0xA8, 0xB8 }',
+            'UnitOutOffsets = { 0x6C, 0x7C, 0x8C, 0x9C, 0xAC, 0xBC }',
+            'OFF_BUILD_OWNER = 0x84',
+            'RVA_LOCAL_ID = 0x4416D0',
+            'C2, 0x04, 0x00',
+            'invalid inputs remain native',
+            'Slots 2–9 stay hard-locked',
+            'Dragon Archer',
+            'Wolf Werewolf'
+          )) { if($p -notmatch [regex]::Escape($x)) { throw "V2 invariant missing: $x" } }
+          foreach($bad in @('RVA_CURRENT_UNIT_PTR','0x3DD858','CreateRemoteThread','clone raw')) {
+            if($p -match [regex]::Escape($bad)) { throw "V2 forbidden pattern: $bad" }
+          }
+
+      - name: Compile smoke
+        run: dotnet build UnitChangerTrainerV2/UnitChangerTrainerV2.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish UnitChangerTrainerV2/UnitChangerTrainerV2.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-v2
+          Move-Item publish-v2/BRZE-Unit-Changer-Lab-v2.exe publish-v2/BRZE-Unit-Changer-Lab-v2-SingleOutputProof.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish UnitChangerTrainerV2/UnitChangerTrainerV2.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-v2-small
+          Move-Item publish-v2-small/BRZE-Unit-Changer-Lab-v2.exe publish-v2-small/BRZE-Unit-Changer-Lab-v2-SingleOutputProof-Small.exe
+
+      - name: Report hashes and sizes
+        shell: pwsh
+        run: |
+          $a = Get-Item publish-v2/BRZE-Unit-Changer-Lab-v2-SingleOutputProof.exe
+          $b = Get-Item publish-v2-small/BRZE-Unit-Changer-Lab-v2-SingleOutputProof-Small.exe
+          Write-Host ('STANDALONE_BYTES='+$a.Length)
+          Write-Host ('SMALL_BYTES='+$b.Length)
+          Get-FileHash $a.FullName -Algorithm SHA256
+          Get-FileHash $b.FullName -Algorithm SHA256
+
+      - name: Upload V2 proof builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Unit-Changer-Lab-v2-SingleOutputProof
+          compression-level: 0
+          path: |
+            publish-v2/BRZE-Unit-Changer-Lab-v2-SingleOutputProof.exe
+            publish-v2-small/BRZE-Unit-Changer-Lab-v2-SingleOutputProof-Small.exe
