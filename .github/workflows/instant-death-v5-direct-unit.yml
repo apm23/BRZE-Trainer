@@ -1,0 +1,67 @@
+name: Instant Death v5 — Direct Unit Pointer
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.instant-death-v5-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify V5 one-pointer hypothesis
+        shell: pwsh
+        run: |
+          $d = Get-Content InstantDeathCore.cs -Raw
+          if ($d -notmatch 'RVA_CURRENT_UNIT_PTR=0x3DD858') { throw 'missing current Unit* global' }
+          if ($d -notmatch 'RVA_UNIT_POOL_PTR=0x4796A0') { throw 'missing unit-pool validation source' }
+          if ($d -notmatch 'UNIT_STRIDE=0x818,UNIT_COUNT=2000') { throw 'missing exact pool geometry guard' }
+          if ($d -notmatch 'OFF_OWNER=0x240,OFF_HP=0x404,OFF_STAMINA=0x408') { throw 'missing current unit fields' }
+          if ($d -notmatch 'DEATH_SENTINEL=0xFF000000') { throw 'missing exact legacy sentinel' }
+          if ($d -match 'RVA_HOVER_QUERY_CALL|VirtualAllocEx|VirtualProtectEx') { throw 'failed V3/V4 detour architecture reintroduced' }
+          if ($d -match 'for\s*\([^\)]*UNIT_COUNT') { throw 'V5 must not scan the unit pool' }
+
+      - name: Generate merged source
+        run: python tools/prepare_merged_v1.py
+
+      - name: Verify V5 UI wiring and deferred cheats
+        shell: pwsh
+        run: |
+          $m = Get-Content MergedProgram.cs -Raw
+          if ($m -notmatch 'Instant Death V5') { throw 'V5 UI label missing' }
+          if ($m -notmatch 'InstantDeathCore\.Tick\(instantDeath\.Checked\)') { throw 'V5 core not wired' }
+          if ($m -notmatch 'Toggle\(0x22,12,\(\)=>instantDeath\.Checked=!instantDeath\.Checked\)') { throw 'PageDown toggle missing' }
+          if ($m -match 'panel\.Controls\.AddRange[^\r\n]*legacyTower') { throw 'watchtower visible again' }
+          if ($m -match 'panel\.Controls\.AddRange[^\r\n]*demolish') { throw 'demolition visible again' }
+          if ($m -match 'Toggle\(0x7A,14') { throw 'demolition F11 active again' }
+          if ($m -notmatch 'ApplyLegacyRuntime\(pausePeasant\.Checked,false,false,false\)') { throw 'deferred legacy writes not forced off' }
+
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+
+      - name: Publish x86 single-file
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+
+      - name: Rename artifact
+        shell: pwsh
+        run: |
+          Move-Item publish/BRZE-Trainer-Merged-v1.exe publish/BRZE-Trainer-InstantDeathV5-DirectUnit.exe
+          Get-FileHash publish/BRZE-Trainer-InstantDeathV5-DirectUnit.exe -Algorithm SHA256
+
+      - name: Upload trainer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-InstantDeathV5-DirectUnit
+          path: publish/BRZE-Trainer-InstantDeathV5-DirectUnit.exe
