@@ -1,0 +1,66 @@
+name: Horse v2 Wand six-slot Stable port
+
+on:
+  push:
+    branches:
+      - horse-v2-wemod-slotfill-probe
+    paths:
+      - '.horse-v2-trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: horse-v2-wemod-slotfill-probe
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Generate HorseCore
+        shell: pwsh
+        run: python tools/patch_horse_wemod_v2.py
+      - name: Wire merged trainer horse v2
+        shell: pwsh
+        run: python tools/patch_merged_horse_v2.py
+      - name: Verify exact horse evidence and locked baselines
+        shell: pwsh
+        run: |
+          $h = Get-Content HorseCore.cs -Raw
+          if (-not $h.Contains('RVA_HORSE_SLOT_LOOP=0x0D5482')) { throw 'horse RVA missing' }
+          if (-not $h.Contains('Original={0x83,0x3E,0x00,0x8D,0x41,0x01}')) { throw 'horse stock bytes missing' }
+          if (-not $h.Contains('OWNER_FROM_SLOT0=0x528')) { throw 'local owner guard missing' }
+          $s = Get-Content SelectionCore.cs -Raw
+          if (-not $s.Contains('SELECTION_LIMIT = 500')) { throw 'selection500 changed' }
+          if (-not $s.Contains('LOGICAL_WINDOW = 160')) { throw 'headroom160 changed' }
+          if (-not $s.Contains('PEASANT_FIXED_MS = 3000')) { throw 'peasant3s changed' }
+          $k = Get-Content HookCore.cs -Raw
+          if (-not $k.Contains('RVA_SET_STAMINA = 0x1CCE79')) { throw 'stamina v2 missing' }
+          git diff --check
+      - name: Commit exact horse v2 source
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add HorseCore.cs MergedTrainer.csproj tools/prepare_merged_v1.py
+          git commit -m 'Implement Wand-derived six-slot Stable horse port'
+          git push origin HEAD:horse-v2-wemod-slotfill-probe
+      - name: Generate merged source
+        shell: pwsh
+        run: python tools/prepare_merged_v1.py
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86
+      - name: Publish x86 single-file EXE
+        run: dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish-horse-v2
+      - name: Rename specimen
+        shell: pwsh
+        run: Copy-Item publish-horse-v2/BRZE-Trainer-Merged-v1.exe publish-horse-v2/BRZE-Trainer-Peasant3s-StaminaV2-HorseV2.exe -Force
+      - name: Upload specimen
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-Peasant3s-StaminaV2-HorseV2
+          path: publish-horse-v2/BRZE-Trainer-Peasant3s-StaminaV2-HorseV2.exe
