@@ -1,0 +1,84 @@
+name: Instant Death — Exact Legacy PageDown Autopsy
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.instant-death-old-autopsy-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  autopsy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y binutils file curl xz-utils
+          curl -L --fail -o /tmp/upx.tar.xz https://github.com/upx/upx/releases/download/v5.2.0/upx-5.2.0-amd64_linux.tar.xz
+          echo '3db5d3294707439db97866feab8d75d800f028f48481a40547411824da4288a1  /tmp/upx.tar.xz' | sha256sum -c -
+          tar -xf /tmp/upx.tar.xz -C /tmp
+          cp /tmp/upx-5.2.0-amd64_linux/upx /tmp/upx
+          chmod +x /tmp/upx
+      - name: Reconstruct exact 17,920-byte specimen from repo fragments
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64, hashlib, itertools, re
+          root=Path('reference/old-trainer')
+          expected='41571fc8cd83e296a60a04d934440b5a01d22ce45d111acdc31b13f16e8aa24d'
+          def rd(name):
+              return re.sub(r'\s+','',(root/name).read_text())
+          fixed={2:rd('sample.part02.b64'),4:rd('sample.part04.b64'),5:rd('sample.part05.b64'),6:rd('sample.part06.b64')}
+          p1=[('part01',rd('sample.part01.b64')),('fix01a',rd('sample.fix01a.b64')),('fix01b',rd('sample.fix01b.b64'))]
+          p3=[('part03',rd('sample.part03.b64')),('fix03a',rd('sample.fix03a.b64')),('fix03b',rd('sample.fix03b.b64'))]
+          found=None
+          report=[]
+          for (n1,s1),(n3,s3) in itertools.product(p1,p3):
+              s=s1+fixed[2]+s3+fixed[4]+fixed[5]+fixed[6]
+              try: raw=base64.b64decode(s,validate=True)
+              except Exception as e:
+                  report.append(f'{n1}+{n3}: b64len={len(s)} decode-error={e}')
+                  continue
+              h=hashlib.sha256(raw).hexdigest()
+              report.append(f'{n1}+{n3}: b64len={len(s)} size={len(raw)} sha={h}')
+              if h==expected and len(raw)==17920:
+                  found=(n1,n3,raw)
+                  break
+          Path('/tmp/reconstruct-report.txt').write_text('\n'.join(report)+'\n')
+          print(Path('/tmp/reconstruct-report.txt').read_text())
+          if not found:
+              raise SystemExit('No fragment combination matched exact trainer specimen')
+          n1,n3,raw=found
+          Path('/tmp/BattleRealmsTrainer.exe').write_bytes(raw)
+          Path('/tmp/reconstruct-choice.txt').write_text(f'exact={n1}+part02+{n3}+part04+part05+part06\nsha={expected}\nsize={len(raw)}\n')
+          print(Path('/tmp/reconstruct-choice.txt').read_text())
+      - name: UPX unpack and focused PageDown disassembly
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p /tmp/page-down
+          cp /tmp/BattleRealmsTrainer.exe /tmp/page-down/BattleRealmsTrainer.unpacked.exe
+          /tmp/upx -t /tmp/BattleRealmsTrainer.exe |& tee /tmp/page-down/00-upx-test.txt
+          /tmp/upx -d -f /tmp/page-down/BattleRealmsTrainer.unpacked.exe |& tee /tmp/page-down/01-upx-unpack.txt
+          sha256sum /tmp/BattleRealmsTrainer.exe /tmp/page-down/BattleRealmsTrainer.unpacked.exe | tee /tmp/page-down/02-sha.txt
+          file /tmp/page-down/BattleRealmsTrainer.unpacked.exe | tee /tmp/page-down/03-file.txt
+          objdump -x /tmp/page-down/BattleRealmsTrainer.unpacked.exe > /tmp/page-down/10-headers-imports.txt
+          objdump -d -Mintel /tmp/page-down/BattleRealmsTrainer.unpacked.exe > /tmp/page-down/20-disassembly.txt
+          strings -a -n 3 /tmp/page-down/BattleRealmsTrainer.unpacked.exe > /tmp/page-down/21-strings.txt
+          cp /tmp/reconstruct-report.txt /tmp/page-down/
+          cp /tmp/reconstruct-choice.txt /tmp/page-down/
+          grep -Eina 'GetAsyncKeyState|GetKeyState|RegisterHotKey|SetTimer|GetCursorPos|ScreenToClient|WindowFromPoint|ChildWindowFromPoint|ReadProcessMemory|WriteProcessMemory|OpenProcess' /tmp/page-down/10-headers-imports.txt > /tmp/page-down/30-api-hits.txt || true
+          grep -Eina 'ff000000|0xff000000|PageDown|VK_NEXT|0x22|428|42c|WriteProcessMemory|GetAsyncKeyState|GetCursorPos|ScreenToClient' /tmp/page-down/20-disassembly.txt > /tmp/page-down/31-page-down-hits.txt || true
+      - name: Upload focused autopsy
+        uses: actions/upload-artifact@v4
+        with:
+          name: instant-death-exact-oldtrainer-autopsy
+          path: /tmp/page-down/
+          if-no-files-found: error
