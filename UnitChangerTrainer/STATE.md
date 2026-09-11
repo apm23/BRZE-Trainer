@@ -103,7 +103,7 @@ Build pin:
 - standalone SHA-256 `f317f78955e7ecd3394f32cfc5158e87f20bcb3b2de4bdb7e3a8e3774ee0f6eb`
 - small SHA-256 `0c8062954844758c7d5b5302f02346857dbe8954f13fa9ea20c2649204611567`
 
-## V5 full Slots 1..9 — BUILT / RUNTIME STRESS TEST PENDING
+## V5 full Slots 1..9 — RUNTIME PROVEN / LOCKED FULL BASE
 Project: `UnitChangerTrainerV5/`.
 
 Architecture:
@@ -131,16 +131,22 @@ Build pin:
 - small size `158,378` bytes, SHA-256 `308110aaf7abe6d634838736bdd345d8863d168c3a77450af8bb60942a1c534e`
 - CI: architecture guard PASS, compile PASS, publish PASS.
 
-Status: compile/static candidate only. **Do not call 1->9 runtime-proven until user tests it.**
+### V5 runtime verdict — 2026-09-11
+User reported **SUKSES BESAR** and confirmed all of the following in live gameplay:
+- all 9 active slots produced **exactly 9 units** from one native-valid training completion;
+- no crash/freeze reported during the 1->9 stress test;
+- multi-building use also works correctly;
+- sparse-slot configurations also work correctly;
+- therefore output count follows active slot count, not fixed slot position/count.
 
-## V5 first full stress test
-1. Fully close V1/V2/V3/V4 and restart BRZE fresh.
-2. Enter a normal controllable match.
-3. Start V5.
-4. Turn ON all Slots 1..9 and choose desired regular outputs.
-5. Enable `MULTI OUTPUT`.
-6. Send one native-valid unit into its normal training building (e.g. Dragon Peasant -> Dragon Dojo).
-7. Let training complete normally.
-8. Target: exactly 9 configured units emerge, no crash/freeze.
-9. Monitor target for all 9 active: `valid completions +1`, `extra attempts +8`, `extra success +8`, `extra fail 0`; per-slot counters should show one success for every extra slot while the primary slot is represented by the completion itself.
-10. Also test sparse configuration afterward (e.g. only Slots 2,5,9 ON) and target exactly 3 outputs.
+V5 is therefore the current **runtime-proven full 1->9 base** and must be preserved as the authoritative Unit Changer implementation for further polish/finalization.
+
+## Remaining hardening before optional final merge
+Core functionality is considered proven. Further work is polish/hardening only unless the user reports a regression:
+- repeated long-session training cycles;
+- population-cap/accounting edge behavior;
+- save/load behavior with trainer active;
+- Journey/map transition behavior;
+- optional heroes/unique-unit output policy;
+- optional UI cleanup/preset recipes;
+- merge into main trainer only if the user explicitly requests it.
