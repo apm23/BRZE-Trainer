@@ -30,7 +30,7 @@ jobs:
             'RVA_COMPLETION_CALL = 0x0D5E08',
             'CompletionCallOriginal={0xE8,0xE9,0x0B,0x00,0x00}',
             'V3 intentionally does NOT patch RVA_TRAIN_MAP',
-            'global mapper is not stock',
+            'native mapper is not stock',
             'completed intercepts',
             'only completion call 0x4D5E08 is redirected',
             'C2,0x04,0x00'
