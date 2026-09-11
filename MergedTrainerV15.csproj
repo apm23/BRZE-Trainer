@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x86</PlatformTarget>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <AssemblyName>BRZE-Trainer-FINAL-V15</AssemblyName>
+    <RootNamespace>BRZETrainer</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="MergedProgram.cs" />
+    <Compile Include="FinalV15MainForm.cs" />
+    <Compile Include="UnitChangerCore.cs" />
+    <Compile Include="PausePeasantCore.cs" />
+    <Compile Include="SelectionCore.cs" />
+    <Compile Include="HookCore.cs" />
+    <Compile Include="HorseCore.cs" />
+    <Compile Include="StaminaCore.cs" />
+    <Compile Include="InstantDeathCore.cs" />
+    <Compile Include="RevealMapCore.cs" />
+    <Compile Include="WolfCore.cs" />
+  </ItemGroup>
+</Project>
