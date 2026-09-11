@@ -3,14 +3,15 @@
 Last updated: 2026-09-11 (Asia/Tokyo)
 
 ## Isolation / target
-Unit Changer remains a separate trainer and is NOT merged into the main BRZE trainer.
+Unit Changer began as a separate trainer and its runtime-proven core is now also integrated into the main BRZE trainer.
 
-Current architecture chosen by user:
-- no red-X/retraining bypass for the initial feature;
+Current architecture:
+- no red-X/retraining bypass for the current production base;
 - use only BRZE-native-valid training input;
 - override output only at the real training-completion path;
-- final target: Slots 1..9 independently ON/OFF; emitted unit count equals active slots;
-- cross-clan regular-unit output is allowed and already runtime-proven.
+- Slots 1..9 independently ON/OFF; emitted unit count equals active slots;
+- cross-clan output is runtime-proven;
+- 12 basic training-building profiles keep independent output configurations.
 
 ## Permanent safety rules
 - Never reintroduce V2 global mapper override.
@@ -108,16 +109,14 @@ Project: `UnitChangerTrainerV5/`.
 
 Architecture:
 - all 9 slots are independently configurable ON/OFF;
-- master `MULTI OUTPUT` switch arms the feature;
 - at each valid local training completion, the **first active slot** becomes the primary output through the V3-proven completion-only path;
 - every other active slot is processed sequentially as an extra output through the V4-proven native create/finalize + per-unit bookkeeping path;
-- primary slot can be any of Slot 1..9; Slot 1 is not mandatory;
+- primary slot can be any of Slot 1..9;
 - inactive slots are skipped;
-- if an extra `0x4D6A88` create returns null, that slot records failure and later slots continue instead of aborting the whole sequence;
+- if an extra create returns null, that slot records failure and later slots continue;
 - pending token is bound to the exact training Building* and consumed once at the stock post-register site;
 - caller GPR + XMM0..3 are preserved while extra outputs run;
-- mapper/eligibility remain stock;
-- telemetry reports active slot count, primary slot, total extra attempts/success/fail, last extra Unit*, and per-slot success counters S1..S9.
+- mapper/eligibility remain stock.
 
 Build pin:
 - branch `instant-death-v4-hover-telemetry`
@@ -125,28 +124,53 @@ Build pin:
 - workflow `Unit Changer Lab v5 Full Nine Output`
 - run `34550087750` SUCCESS
 - job `103110964921` SUCCESS
-- artifact `10180487723` (`BRZE-Unit-Changer-Lab-v5-FullNine`)
-- artifact ZIP SHA-256 `0d367fe942fd38a19527b932d6e8a06c37dfbd24e9e911456da0b9eea99a97dd`
-- standalone size `66,007,332` bytes, SHA-256 `ab8e14e9dbfe7297dd28eb6fc053a91b61f1c157979f97c0fddf8c75af63e50b`
-- small size `158,378` bytes, SHA-256 `308110aaf7abe6d634838736bdd345d8863d168c3a77450af8bb60942a1c534e`
-- CI: architecture guard PASS, compile PASS, publish PASS.
+- artifact `10180487723`
+- standalone SHA-256 `ab8e14e9dbfe7297dd28eb6fc053a91b61f1c157979f97c0fddf8c75af63e50b`
+- small SHA-256 `308110aaf7abe6d634838736bdd345d8863d168c3a77450af8bb60942a1c534e`
 
 ### V5 runtime verdict — 2026-09-11
-User reported **SUKSES BESAR** and confirmed all of the following in live gameplay:
-- all 9 active slots produced **exactly 9 units** from one native-valid training completion;
-- no crash/freeze reported during the 1->9 stress test;
-- multi-building use also works correctly;
-- sparse-slot configurations also work correctly;
-- therefore output count follows active slot count, not fixed slot position/count.
+User confirmed:
+- all 9 active slots produced exactly 9 units from one valid completion;
+- no crash/freeze during 1->9 stress test;
+- multi-building use works;
+- sparse slots work.
 
-V5 is therefore the current **runtime-proven full 1->9 base** and must be preserved as the authoritative Unit Changer implementation for further polish/finalization.
+V5 remains the authoritative game-side 1->9 implementation.
 
-## Remaining hardening before optional final merge
-Core functionality is considered proven. Further work is polish/hardening only unless the user reports a regression:
-- repeated long-session training cycles;
-- population-cap/accounting edge behavior;
-- save/load behavior with trainer active;
-- Journey/map transition behavior;
-- optional heroes/unique-unit output policy;
-- optional UI cleanup/preset recipes;
-- merge into main trainer only if the user explicitly requests it.
+## V14 building profiles — RUNTIME PROVEN / LOCKED CORE
+Twelve independent basic-training-building profiles use the stock mapper as a fingerprint rather than guessed building type IDs:
+- Dragon Dojo `5 -> 8`, Target Range `5 -> 0`, Alchemist Hut `5 -> 1`
+- Serpent Tavern `24 -> 29`, Sharpshooter's Guild `24 -> 21`, Alchemist Hut `24 -> 23`
+- Lotus Forge `40 -> 30`, Blade Garden `40 -> 38`, Training Yard `40 -> 41`
+- Wolf Combat Pit `51 -> 46`, Ballistics Grounds `51 -> 48`, Quarry `51 -> 49`
+
+User runtime verdict on 2026-09-11:
+- Dragon Dojo configured for 9 outputs and Dragon Target Range configured for 9 different outputs simultaneously;
+- both buildings produced their own configured outputs correctly;
+- no cross-profile leakage or crash was reported.
+
+Therefore the per-building profile architecture is runtime-proven at least for simultaneous Dragon Dojo + Target Range under full 9-output load. Preserve this core unchanged while expanding UI/catalog.
+
+## V15 compact UI — BUILD PROVEN
+- UI-only layer over V14 core.
+- Building selection uses one compact dropdown rather than 12 large buttons.
+- Main cheats and Unit Changer occupy equal-height top panels.
+- System Status spans full width below.
+- Unit slot `Use` text removed; compact checkbox only.
+- Clean + Diagnostics build succeeded in run `34563835023`, artifact `10185305510`.
+- V14 game-side core unchanged.
+
+## V16 catalog expansion — CURRENT WORK
+Scope is UI/catalog/safety only; V14 game-side core must remain unchanged.
+- Add previously excluded classic heroes/story variants.
+- Add WotW units including Chakram Maiden, Guardian, Serpent Enforcer/Witch forms, Lotus Overseer/Reaper, Wolf Digger/Dryad.
+- Add WotW story heroes/variants including Grayback forms, Longtooth Slave, Taro, Teppo, Wildeye, Yvaine forms.
+- Add previously excluded special/unique base units in a separate risk category.
+- Dropdown is categorized with non-selectable headers.
+- Hero/story, special/unique, and WotW entries are visibly red/risk-marked.
+- Selecting a risky item while its slot is ON must automatically disable that slot.
+- Re-enabling a risky slot requires explicit confirmation.
+- Reserve placeholder IDs 145..154 must NOT be exposed.
+
+## Deferred phase
+- Arbitrary-building training such as Peasant Hut/tree and red-X bypass remains deferred until eligibility/retraining logic is proven safely.
