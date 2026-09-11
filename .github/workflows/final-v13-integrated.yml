@@ -1,0 +1,116 @@
+name: Final V13 Integrated Unit Changer
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v13-integrated-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate locked main base + integrated V13
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v13_integrated.py
+
+      - name: Verify V13 architecture and pending fixes
+        shell: pwsh
+        run: |
+          $m = Get-Content MergedProgram.cs -Raw
+          $ui = Get-Content FinalIntegratedMainForm.cs -Raw
+          $uc = Get-Content UnitChangerCore.cs -Raw
+          $pp = Get-Content PausePeasantCore.cs -Raw
+
+          foreach($x in @(
+            'internal sealed class LegacyMainForm : Form',
+            'RevealMapCore intentionally stays attached across Journey/menu transitions',
+            'RVA_PLAYER_PTR=0x4416A0',
+            'RVA_LOCAL_ID=0x4416D0'
+          )) { if($m -notmatch [regex]::Escape($x)) { throw "V13 merged-base invariant missing: $x" } }
+
+          foreach($x in @(
+            'ClientSize=new Size(1380,1000)',
+            'Pause Peasant',
+            'Peasant 3s',
+            'REFRESH TRAINER',
+            'ToggleKey(0x13,18',
+            'ToggleKey(0x24,19',
+            'SelectionCore.Tick(peasant.Checked)',
+            'PausePeasantCore.Tick(pausePeasant.Checked)',
+            'UnitChangerCore.Configure(true,en,outs)',
+            'MULTI OUTPUT · {n} SLOTS · AUTO',
+            'SINGLE OUTPUT · AUTO',
+            'ALL ON — Horses / Wolves / Death Burst / Pause / Unit Changer unchanged',
+            'foreach(var x in unitOn)x.Checked=false',
+            'RevealMapCore.Stop(false)',
+            'toggle states preserved'
+          )) { if($ui -notmatch [regex]::Escape($x)) { throw "V13 UI/fix invariant missing: $x" } }
+
+          if($ui -match 'readonly CheckBox master') { throw 'Manual Unit Changer master checkbox must not return in V13' }
+
+          foreach($x in @(
+            'internal static class UnitChangerCore',
+            'V5 FULL 1→9 HOOK ACTIVE — V3/V4 proven paths generalized',
+            'RVA_COMPLETION_CALL=0x0D5E08',
+            'RVA_POST_REGISTER_CALL=0x0D5EA4',
+            'RVA_CREATE_UNIT=0x0D6A88',
+            'MapperStock={0x55,0x8B,0xEC,0x8B,0x81,0x58,0x02,0x00,0x00}',
+            'failed extra create is skipped and later slots continue'
+          )) { if($uc -notmatch [regex]::Escape($x)) { throw "V5 core extraction invariant missing: $x" } }
+
+          foreach($x in @(
+            'RVA_PEASANT_CREATION=0x467AF4',
+            'RVA_LOCAL_ID=0x4416D0',
+            '0=pause, 1=enabled',
+            'W32(address,0)',
+            'RestoreUnlocked()'
+          )) { if($pp -notmatch [regex]::Escape($x)) { throw "Pause Peasant invariant missing: $x" } }
+
+          if($ui -match 'Native.ApplyLegacyRuntime\(pausePeasant.Checked') { throw 'Pause Peasant must use its separate reversible core, not legacy tick writes' }
+
+      - name: Compile smoke
+        run: dotnet build MergedTrainer.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-v13
+          Move-Item publish-v13/BRZE-Trainer-Merged-v1.exe publish-v13/BRZE-Trainer-FINAL-V13-Integrated.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish MergedTrainer.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-v13-small
+          Move-Item publish-v13-small/BRZE-Trainer-Merged-v1.exe publish-v13-small/BRZE-Trainer-FINAL-V13-Integrated-Small.exe
+
+      - name: Report hashes and sizes
+        shell: pwsh
+        run: |
+          $a=Get-Item publish-v13/BRZE-Trainer-FINAL-V13-Integrated.exe
+          $b=Get-Item publish-v13-small/BRZE-Trainer-FINAL-V13-Integrated-Small.exe
+          Write-Host ('STANDALONE_BYTES='+$a.Length)
+          Write-Host ('SMALL_BYTES='+$b.Length)
+          Get-FileHash $a.FullName -Algorithm SHA256
+          Get-FileHash $b.FullName -Algorithm SHA256
+
+      - name: Upload V13 integrated pair
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V13-Integrated
+          compression-level: 0
+          path: |
+            publish-v13/BRZE-Trainer-FINAL-V13-Integrated.exe
+            publish-v13-small/BRZE-Trainer-FINAL-V13-Integrated-Small.exe
