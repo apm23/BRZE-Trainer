@@ -41,7 +41,6 @@ new_layout='''        var content=new TableLayoutPanel{Dock=DockStyle.Fill,Colum
         shell.Controls.Add(content,0,1);'''
 rep(old_layout,new_layout)
 
-# Replace old left stacked column with two independent panels. Status now spans full width below top row.
 left_block=r'''    Control BuildCheats()
     {
         var cheats=new StatusBox{Dock=DockStyle.Fill,Margin=new Padding(0,0,8,8),Padding=new Padding(12)};
@@ -114,7 +113,6 @@ right_block=r'''    Control BuildRight()
 '''
 between('    Control BuildRight()','    Control BuildActions()',right_block)
 
-# Profile selector replaces the 12 oversized buttons. Preserve all per-building settings.
 select_block=r'''    void SelectProfile(int p)
     {
         editProfile=Math.Clamp(p,0,Profiles.Length-1);loadingProfile=true;
@@ -145,10 +143,8 @@ rep('        var p=Profiles[editProfile];int n=ProfileSlots(editProfile);editTit
         unitMode.ForeColor=n==0?Color.FromArgb(145,154,166):Color.FromArgb(97,224,179);
         profileSummary.Text=$"{ActiveProfiles()} buildings active  ·  {TotalSlots()} total outputs";''')
 
-# Slightly shorter chrome; top panels remain exactly same height.
 rep('        shell.RowStyles.Add(new RowStyle(SizeType.Absolute,66));shell.RowStyles.Add(new RowStyle(SizeType.Percent,100));shell.RowStyles.Add(new RowStyle(SizeType.Absolute,64));root.Controls.Add(shell);',
     '        shell.RowStyles.Add(new RowStyle(SizeType.Absolute,58));shell.RowStyles.Add(new RowStyle(SizeType.Percent,100));shell.RowStyles.Add(new RowStyle(SizeType.Absolute,58));root.Controls.Add(shell);')
 
-# editTitle is no longer a visible control; harmless field retained for behavior/status text.
 Path('FinalV15MainForm.cs').write_text(s,encoding='utf-8')
 print('V15 compact UI generated: equal-height cheat/unit panels, dropdown building selector, compact 3x3 slots, full-width status')
