@@ -3,13 +3,13 @@
 Last updated: 2026-09-11 (Asia/Tokyo)
 
 ## Isolation rule
-Unit Changer remains a separate experimental trainer. Current implementations live under `UnitChangerTrainer/`, `UnitChangerTrainerV1/`, and `UnitChangerTrainerV2/`. Do not merge into the main BRZE trainer until the user explicitly asks and the runtime architecture is proven.
+Unit Changer remains a separate experimental trainer. Current implementations live under `UnitChangerTrainer/`, `UnitChangerTrainerV1/`, `UnitChangerTrainerV2/`, and `UnitChangerTrainerV3/`. Do not merge into the main BRZE trainer until the user explicitly asks and the runtime architecture is proven.
 
 ## CURRENT TARGET — architecture pivot
 The original idea allowed already-trained units to retrain in normally-invalid buildings, but the user chose the safer architecture on 2026-09-11:
 
 - **Do not bypass red-X/retraining eligibility for the initial Unit Changer.**
-- Use only a training input that BRZE already considers valid, e.g. Dragon Peasant -> Dragon Dojo.
+- Use only a training input BRZE already considers valid, e.g. Dragon Peasant -> Dragon Dojo.
 - Intercept the native valid training result and replace its UnitOut with the configured Unit Changer output.
 - First prove **1 valid input -> 1 different output**.
 - Then prove **1 -> 2**, and only after that expand toward slots 1..9.
@@ -65,7 +65,7 @@ The Data_Buildings parser independently exposes `UnitIn1..6`, `UnitOut1..6`, `Un
 
 Reference: `forensics/retraining-map-function-20260911.md`.
 
-## Phase 1 — ELIGIBILITY TRACE BUILT, now superseded for current target
+## Phase 1 — ELIGIBILITY TRACE BUILT, superseded for current target
 V1 passive trace exists under `UnitChangerTrainerV1/` and can still be used if red-X work returns later.
 
 Build pin:
@@ -73,68 +73,78 @@ Build pin:
 - run `34538748743`, job `103076306342` SUCCESS
 - artifact `10176457794`
 
-V1 does not change mapper results. Current project direction no longer requires this blocker for the first implementation.
+## Training completion — STATIC LEAD NOW CONFIRMED IN DISASSEMBLY
+Completion path around preferred VA `0x4D5DF1` does:
+- `0x4D5E02`: pushes training input `[building+0x488]`
+- `0x4D5E08`: calls native mapper `0x4D69F6`
+- `0x4D5E0D`: pushes mapper EAX result
+- `0x4D5E10`: calls native creation/finalization entry `0x4D6A88`
 
-## Training completion — STATIC LEAD
-Completion around preferred `0x4D5DF1` calls the native input->output mapper and passes the mapped type into the creation chain around `0x4D6A88`, which returns a Unit* candidate used by subsequent building/unit bookkeeping. This is a lead for the later 1->N phase; it is not runtime-proven yet.
+Therefore `0x4D5E08` is a much narrower interception point than globally patching the mapper itself.
 
 Reference: `forensics/training-completion-static-20260911.md`.
 
-## Phase 2 — V2 SINGLE OUTPUT PROOF BUILT / RUNTIME PENDING
-Separate trainer under `UnitChangerTrainerV2/`.
+## Phase 2 — V2 GLOBAL-MAPPER OUTPUT OVERRIDE — RUNTIME FAIL / REJECTED
+V2 under `UnitChangerTrainerV2/` patched the native mapper entry at RVA `0x0D69F6` and returned the configured output for local valid UnitIn matches.
 
-### V2 architecture
-V2 hooks only the native mapper entry at RVA `0x0D69F6`.
+Build pin:
+- head `05624020919ff10ef7d49098fe1946f8a04068d7`
+- run `34544162156`, job `103093060639` SUCCESS
+- artifact `10178411232`
+- standalone SHA-256 `a3e0af00d757c055173dc09ea560b9497b0286bdb200f87426a76624bfee8bae`
+- small SHA-256 `4db2b2faedf3d353c23954bd76c0e125a2fab38ff897e5df93dc929ce966e5cd`
 
-When override is OFF:
-- executes the displaced stock 9-byte prologue and returns to stock mapper.
+Runtime verdict from user on 2026-09-11: **GAME CRASH** during V2 test. Exact crash phase was not specified.
 
-When override is ON, fast override is allowed only when ALL guards pass:
-1. training building owner `[building+0x84]` equals local player ID at RVA `0x4416D0`;
-2. `BuildingDef*` at `[building+0x258]` is non-null;
-3. input unit type matches one of the building's existing native `UnitIn1..6` entries.
+Decision:
+- V2 is **rejected as an active base**.
+- Do not scale V2 to 1->2.
+- Do not globally alter every caller of `0x4D69F6` for output replacement.
 
-If any guard fails, execution falls back to the stock mapper unchanged. Therefore invalid/red-X input combinations are **not made valid**.
+Static review after the crash showed `0x4D69F6` itself is a pure six-slot lookup, so the main V2 risk is scope: changing mapper results for every caller can affect eligibility/UI/setup and other consumers before actual completion.
 
-If all guards pass:
-- records last building/input/BuildingDef + intercept count;
-- returns configured Unit Type in EAX;
-- uses the native mapper calling convention `ret 4`.
+## Phase 3 — V3 COMPLETION-ONLY OUTPUT OVERRIDE BUILT / RUNTIME PENDING
+Separate trainer under `UnitChangerTrainerV3/`.
 
-This deliberately overrides the mapping consistently anywhere BRZE asks for a valid training result, including completion. It does not mutate BuildingDef recipe data.
+### V3 architecture
+- The global mapper at RVA `0x0D69F6` is left **100% stock** and V3 verifies its stock 9-byte entry before installing anything.
+- V3 patches only the exact completion CALL at RVA `0x0D5E08` (`E8 E9 0B 00 00`).
+- Replacement stub calls the untouched native mapper first with the original training input.
+- If mapper returns `0xFFFFFFFF`, result stays native.
+- If training building owner is not local player, result stays native.
+- Only after a valid local completion mapping does V3 replace EAX with configured Unit Type.
+- Stack convention remains equivalent to original call: original mapper copy is cleaned by mapper `ret 4`, then V3 stub itself `ret 4` cleans the caller's original input.
+- EDX is preserved; ECX is restored to the mapper-equivalent final input value before returning.
+- Native creation/finalization at `0x4D6A88` then receives the replacement type through the original stock completion flow.
+- V3 does **not** change eligibility, red-X, training setup, training time, UI mapper calls, or AI-owned buildings.
 
-### V2 UI
-- master `OUTPUT OVERRIDE` switch
-- Slot 1 usable with Unit Type dropdown
-- Slots 2..9 visible but hard-locked until V2 1->1 runtime PASS
-- first dropdown contains regular Dragon/Serpent/Lotus/Wolf units only; heroes/unique units intentionally excluded
-- monitor shows hook state, configured output, intercept count, last valid input, native output, and override output
-- selected building native six recipes remain visible
-- corrected default layout uses 1080x940 and a dedicated recipe row so status is not clipped
+### V3 UI
+- Slot 1 only for 1->1 runtime proof.
+- Slots 2..9 remain conceptually locked until this path passes.
+- Regular Dragon/Serpent/Lotus/Wolf units only; hero/unique outputs still excluded.
+- Monitor counts only actual completion-call interceptions and records input/nativeOut/override.
 
-### Corrected build pin
+### Build pin
 - branch `instant-death-v4-hover-telemetry`
-- build head `05624020919ff10ef7d49098fe1946f8a04068d7`
-- workflow `Unit Changer Lab v2 Single Output Proof`
-- run `34544162156` SUCCESS
-- job `103093060639` SUCCESS
-- artifact `10178411232` (`BRZE-Unit-Changer-Lab-v2-SingleOutputProof`)
-- artifact ZIP SHA-256 `f6f0ee90868aa355b8b9d2aa00624ad105487f7fd7c91a2697a8ba992bf6ae7c`
-- standalone: 66,004,581 bytes, SHA-256 `a3e0af00d757c055173dc09ea560b9497b0286bdb200f87426a76624bfee8bae`
-- small: 152,746 bytes, SHA-256 `4db2b2faedf3d353c23954bd76c0e125a2fab38ff897e5df93dc929ce966e5cd`
+- build head `ac324b493a0dc771bb7623f6fcc9bfa6abd1cd8e`
+- workflow `Unit Changer Lab v3 Completion Only`
+- run `34545809935` SUCCESS
+- job `103098037229` SUCCESS
+- artifact `10178983173` (`BRZE-Unit-Changer-Lab-v3-CompletionOnly`)
+- artifact ZIP SHA-256 `429eccdfa3f23e4224e0b266b37e395a3fca7496dd7a65004ed73db2680df115`
+- standalone: 66,003,755 bytes, SHA-256 `1e220754a33b54a50afc739f99eb29602a9995fdb535664a3c29319b190fe309`
+- small: 150,698 bytes, SHA-256 `bcfc4b172021722d6ce1c2a5809c1adaa6d3dcf64f074aa350a69670d0329fb6`
 
 Status: **compile/static candidate only; runtime output behavior pending user test.**
 
-## V2 first runtime proof
-Preferred safest test:
-1. close V0/V1 or any other Unit Changer build;
-2. start BRZE and enter a normal controllable match;
-3. start V2;
-4. in Slot 1 choose `Dragon Archer (type 0)`;
-5. enable Slot 1 and master `OUTPUT OVERRIDE`;
-6. use a normal Dragon Peasant (type 5) and send it into a Dragon Dojo through the normal valid training interaction;
-7. let training complete normally;
-8. PASS target: the unit exiting is Dragon Archer instead of native Dragon Spearman;
-9. monitor should show an intercept with input `0x5`, native output `0x8`, override `0x0`.
+## V3 runtime test
+1. Fully close V2/V1/V0 and BRZE.
+2. Start BRZE fresh and enter a normal match.
+3. Start V3.
+4. Slot 1: choose `Dragon Archer (type 0)`.
+5. Enable Slot 1 + `OUTPUT OVERRIDE`.
+6. Send a normal Dragon Peasant into Dragon Dojo using the normal valid training action.
+7. Let training complete.
+8. PASS target: unit exits as Dragon Archer instead of native Dragon Spearman; game remains stable; completion counter increments once with input `0x5`, nativeOut `0x8`, override `0x0`.
 
-If this passes without crash, lock V2 1->1 and begin the 1->2 native creation/finalization experiment. If it crashes or output remains native, do not scale to multi-output; diagnose V2 mapper timing/consumer semantics first.
+If V3 still crashes, record whether crash occurs immediately on enabling V3, when issuing the training order, during progress, or exactly at completion; next step is then to instrument the native creation/finalization consumer around `0x4D6A88` rather than broadening the hook.
