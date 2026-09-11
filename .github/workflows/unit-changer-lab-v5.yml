@@ -1,0 +1,75 @@
+name: Unit Changer Lab v5 Full Nine Output
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.unit-changer-lab-v5-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify V5 preserves proven architecture
+        shell: pwsh
+        run: |
+          $p = Get-Content UnitChangerTrainerV5/Program.cs -Raw
+          foreach($x in @(
+            'RVA_COMPLETION_CALL=0x0D5E08',
+            'RVA_POST_REGISTER_CALL=0x0D5EA4',
+            'RVA_CREATE_UNIT=0x0D6A88',
+            'RVA_ATTACH_UNIT=0x0D231C',
+            'RVA_REGISTER_UNIT=0x0AD6B2',
+            'CompletionCallOriginal={0xE8,0xE9,0x0B,0x00,0x00}',
+            'PostRegisterCallOriginal={0xE8,0x09,0x78,0xFD,0xFF}',
+            'Enumerable.Range(0, 9)',
+            'First active slot uses the V3-proven completion path',
+            'failed extra create is skipped and later slots continue',
+            'V5 FULL 1→9 HOOK ACTIVE'
+          )) { if($p -notmatch [regex]::Escape($x)) { throw "V5 invariant missing: $x" } }
+          foreach($bad in @('WriteCode(moduleBase+RVA_TRAIN_MAP','CreateRemoteThread','clone raw','RVA_CURRENT_UNIT_PTR')) {
+            if($p -match [regex]::Escape($bad)) { throw "V5 forbidden pattern: $bad" }
+          }
+
+      - name: Compile smoke
+        run: dotnet build UnitChangerTrainerV5/UnitChangerTrainerV5.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish UnitChangerTrainerV5/UnitChangerTrainerV5.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-v5
+          Move-Item publish-v5/BRZE-Unit-Changer-Lab-v5.exe publish-v5/BRZE-Unit-Changer-Lab-v5-FullNine.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish UnitChangerTrainerV5/UnitChangerTrainerV5.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-v5-small
+          Move-Item publish-v5-small/BRZE-Unit-Changer-Lab-v5.exe publish-v5-small/BRZE-Unit-Changer-Lab-v5-FullNine-Small.exe
+
+      - name: Report hashes and sizes
+        shell: pwsh
+        run: |
+          $a = Get-Item publish-v5/BRZE-Unit-Changer-Lab-v5-FullNine.exe
+          $b = Get-Item publish-v5-small/BRZE-Unit-Changer-Lab-v5-FullNine-Small.exe
+          Write-Host ('STANDALONE_BYTES='+$a.Length)
+          Write-Host ('SMALL_BYTES='+$b.Length)
+          Get-FileHash $a.FullName -Algorithm SHA256
+          Get-FileHash $b.FullName -Algorithm SHA256
+
+      - name: Upload V5 builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Unit-Changer-Lab-v5-FullNine
+          compression-level: 0
+          path: |
+            publish-v5/BRZE-Unit-Changer-Lab-v5-FullNine.exe
+            publish-v5-small/BRZE-Unit-Changer-Lab-v5-FullNine-Small.exe
