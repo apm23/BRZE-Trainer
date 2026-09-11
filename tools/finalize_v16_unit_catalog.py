@@ -68,7 +68,7 @@ units=r'''    static readonly UnitOption[] Units=
     };
 
 '''
-between('    static readonly UnitOption[] Units=','    readonly ToggleSwitch rice=',units+'    readonly ToggleSwitch rice=')
+between('    static readonly UnitOption[] Units=','    readonly ToggleSwitch rice=',units)
 
 rep('        Text="BRZE Trainer — V15 Diagnostics";','        Text="BRZE Trainer — V16 Diagnostics";')
 rep('        Text="BRZE Trainer — V15 Clean";','        Text="BRZE Trainer — V16 Clean";')
@@ -177,7 +177,6 @@ select=r'''    int FindUnitIndex(uint type)
 '''
 between('    void SelectProfile(int p)','    void UpdateUnitLabels()',select)
 
-# A compact legend explains the red catalog without making the panel taller.
 rep('        head.Controls.Add(new Label{Text="UNIT CHANGER  //  BUILDING",AutoSize=false,Location=new Point(0,0),Size=new Size(360,23),ForeColor=Color.FromArgb(109,214,167),Font=new Font("Segoe UI Semibold",10.2f),TextAlign=ContentAlignment.MiddleLeft});',
 '''        head.Controls.Add(new Label{Text="UNIT CHANGER  //  BUILDING",AutoSize=false,Location=new Point(0,0),Size=new Size(360,23),ForeColor=Color.FromArgb(109,214,167),Font=new Font("Segoe UI Semibold",10.2f),TextAlign=ContentAlignment.MiddleLeft});
         head.Controls.Add(new Label{Text="RED = HERO / STORY / WOTW RISK",AutoSize=false,Location=new Point(350,0),Size=new Size(235,23),ForeColor=Color.FromArgb(255,145,145),Font=new Font("Segoe UI Semibold",8.0f),TextAlign=ContentAlignment.MiddleRight});''')
