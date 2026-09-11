@@ -29,6 +29,7 @@ jobs:
           python tools/finalize_v13_integrated.py
           python tools/finalize_v14_building_profiles.py
           python tools/v14_generator_repair.py
+          python tools/v14_ui_compile_repair.py
 
       - name: Verify V14 architecture
         shell: pwsh
