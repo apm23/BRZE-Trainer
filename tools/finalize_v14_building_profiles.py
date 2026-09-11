@@ -160,66 +160,33 @@ completion=r'''    static byte[] BuildCompletionStub(long stub,long cfg)
 '''
 between('    static byte[] BuildCompletionStub(long stub,long cfg)','    static byte[] BuildExtrasStub(long stub,long cfg)',completion)
 
-extras=r'''    static byte[] BuildExtrasStub(long stub,long cfg)
-    {
-        long original=moduleBase+RVA_REGISTER_UNIT,create=moduleBase+RVA_CREATE_UNIT,attach=moduleBase+RVA_ATTACH_UNIT,notify=moduleBase+RVA_LOCAL_UNIT_NOTIFY;
-        long pending=cfg+T_PENDING,expectedBuilding=cfg+T_BUILDING,primary=cfg+T_PRIMARY,attempts=cfg+T_EXTRA_ATTEMPTS,success=cfg+T_EXTRA_SUCCESS,fail=cfg+T_EXTRA_FAIL,lastUnit=cfg+T_LAST_UNIT,profilePtr=cfg+T_PROFILE_PTR;
-        var b=new List<byte>();
-        b.AddRange(new byte[]{0xFF,0x74,0x24,0x08});b.AddRange(new byte[]{0xFF,0x74,0x24,0x08});b.Add(0xE8);int callOriginal=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)pending);b.Add(0x01);b.AddRange(new byte[]{0x0F,0x85});int jFinish0=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0x3B,0x1D});U32(b,(uint)expectedBuilding);b.AddRange(new byte[]{0x0F,0x85});int jFinish1=b.Count;I32(b,0);
-        b.AddRange(new byte[]{0xC7,0x05});U32(b,(uint)pending);U32(b,0);
-        b.Add(0x60);b.AddRange(new byte[]{0x83,0xEC,0x40});
-        b.AddRange(new byte[]{0x0F,0x11,0x04,0x24,0x0F,0x11,0x4C,0x24,0x10,0x0F,0x11,0x54,0x24,0x20,0x0F,0x11,0x5C,0x24,0x30});
+# Patch extras to dereference the active profile pointer for per-slot enable/output.
+start=s.find('    static byte[] BuildExtrasStub(long stub,long cfg)')
+end=s.find('    static byte[] CallPatch',start)
+if start<0 or end<0: raise SystemExit('V14 extras markers missing')
+old=s[start:end]
+old=old.replace('long pending=cfg+T_PENDING,expectedBuilding=cfg+T_BUILDING,primary=cfg+T_PRIMARY,attempts=cfg+T_EXTRA_ATTEMPTS,success=cfg+T_EXTRA_SUCCESS,fail=cfg+T_EXTRA_FAIL,lastUnit=cfg+T_LAST_UNIT;',
+                'long pending=cfg+T_PENDING,expectedBuilding=cfg+T_BUILDING,primary=cfg+T_PRIMARY,attempts=cfg+T_EXTRA_ATTEMPTS,success=cfg+T_EXTRA_SUCCESS,fail=cfg+T_EXTRA_FAIL,lastUnit=cfg+T_LAST_UNIT,profilePtr=cfg+T_PROFILE_PTR;')
+old=old.replace('b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)SlotEn(cfg,i));b.Add(0x00);',
+                'b.Add(0xA1);U32(b,(uint)profilePtr);b.AddRange(new byte[]{0x83,0xB8});I32(b,ProfileSlotOffset(i));b.Add(0x00);')
+old=old.replace('b.Add(0xFF);b.Add(0x35);U32(b,(uint)SlotOut(cfg,i));',
+                'b.Add(0xA1);U32(b,(uint)profilePtr);b.AddRange(new byte[]{0xFF,0xB0});I32(b,ProfileOutOffset(i));')
+s=s[:start]+old+s[end:]
 
-        var toBlockEnd=new List<(int at,int endId)>();var blockEnds=new List<int>();
-        for(int i=0;i<SLOT_COUNT;i++)
-        {
-            int id=i;
-            b.Add(0xA1);U32(b,(uint)profilePtr);b.AddRange(new byte[]{0x83,0xB8});I32(b,ProfileSlotOffset(i));b.Add(0x00);b.AddRange(new byte[]{0x0F,0x84});int jDisabled=b.Count;I32(b,0);
-            b.AddRange(new byte[]{0x83,0x3D});U32(b,(uint)primary);b.Add((byte)i);b.AddRange(new byte[]{0x0F,0x84});int jPrimary=b.Count;I32(b,0);
-            b.AddRange(new byte[]{0xFF,0x05});U32(b,(uint)attempts);
-            b.Add(0x6A);b.Add(0x01);b.AddRange(new byte[]{0xFF,0xB3,0x84,0x00,0x00,0x00});
-            b.Add(0xA1);U32(b,(uint)profilePtr);b.AddRange(new byte[]{0xFF,0xB0});I32(b,ProfileOutOffset(i));
-            b.AddRange(new byte[]{0x8B,0xCB});b.Add(0xE8);int callCreate=b.Count;I32(b,0);
-            b.AddRange(new byte[]{0x85,0xC0});b.AddRange(new byte[]{0x0F,0x85});int jCreated=b.Count;I32(b,0);
-            b.AddRange(new byte[]{0xFF,0x05});U32(b,(uint)fail);b.Add(0xE9);int jFailEnd=b.Count;I32(b,0);
-            int created=b.Count;b.AddRange(new byte[]{0x89,0xC6});b.Add(0xA3);U32(b,(uint)lastUnit);b.AddRange(new byte[]{0xFF,0x05});U32(b,(uint)success);b.AddRange(new byte[]{0xFF,0x05});U32(b,(uint)SlotSuccess(cfg,i));
-            b.Add(0x56);b.AddRange(new byte[]{0x8B,0xCB});b.Add(0xE8);int callAttach=b.Count;I32(b,0);
-            b.AddRange(new byte[]{0x8B,0x83,0xA8,0x04,0x00,0x00,0x89,0x86,0x6C,0x03,0x00,0x00,0x8B,0x83,0xAC,0x04,0x00,0x00,0x89,0x86,0x70,0x03,0x00,0x00});
-            b.AddRange(new byte[]{0x69,0x8B,0x84,0x00,0x00,0x00,0xA0,0x00,0x00,0x00});b.Add(0xA1);U32(b,(uint)(moduleBase+RVA_PLAYER_BASE));b.AddRange(new byte[]{0xFF,0x44,0x01,0x28});
-            b.AddRange(new byte[]{0x8B,0x83,0x84,0x00,0x00,0x00});b.Add(0x3B);b.Add(0x05);U32(b,(uint)(moduleBase+RVA_LOCAL_ID));b.AddRange(new byte[]{0x0F,0x85});int jSkipNotify=b.Count;I32(b,0);
-            b.AddRange(new byte[]{0x8B,0x46,0x74,0xFF,0x30});b.Add(0xE8);int callNotify=b.Count;I32(b,0);int afterNotify=b.Count;
-            b.AddRange(new byte[]{0x8B,0x83,0xA0,0x04,0x00,0x00,0x89,0x86,0x98,0x07,0x00,0x00,0x69,0x83,0x84,0x00,0x00,0x00,0xA0,0x00,0x00,0x00});b.Add(0x56);b.Add(0x50);b.Add(0xE8);int callReg=b.Count;I32(b,0);
-            int blockEnd=b.Count;blockEnds.Add(blockEnd);
-            PatchRel(b,jCreated,stub+jCreated+4,stub+created);PatchRel(b,jSkipNotify,stub+jSkipNotify+4,stub+afterNotify);PatchRel(b,callCreate,stub+callCreate+4,create);PatchRel(b,callAttach,stub+callAttach+4,attach);PatchRel(b,callNotify,stub+callNotify+4,notify);PatchRel(b,callReg,stub+callReg+4,original);
-            toBlockEnd.Add((jDisabled,id));toBlockEnd.Add((jPrimary,id));toBlockEnd.Add((jFailEnd,id));
-        }
-        int restore=b.Count;b.AddRange(new byte[]{0x0F,0x10,0x04,0x24,0x0F,0x10,0x4C,0x24,0x10,0x0F,0x10,0x54,0x24,0x20,0x0F,0x10,0x5C,0x24,0x30,0x83,0xC4,0x40});b.Add(0x61);
-        int finish=b.Count;b.AddRange(new byte[]{0xC2,0x08,0x00});
-        PatchRel(b,callOriginal,stub+callOriginal+4,original);PatchRel(b,jFinish0,stub+jFinish0+4,stub+finish);PatchRel(b,jFinish1,stub+jFinish1+4,stub+finish);
-        foreach(var x in toBlockEnd)PatchRel(b,x.at,stub+x.at+4,stub+blockEnds[x.endId]);return b.ToArray();
-    }
+# Install needs more cave room because config has 12x9 slots and completion fingerprint logic is larger.
+s=s.replace('VirtualAllocEx(h,IntPtr.Zero,(UIntPtr)8192,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE)',
+            'VirtualAllocEx(h,IntPtr.Zero,(UIntPtr)16384,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE)')
+s=s.replace('if(code2.Length>5500)', 'if(code2.Length>7000)')
+s=s.replace('V5 FULL 1→9 HOOK ACTIVE — V3/V4 proven paths generalized',
+            'V14 BUILDING PROFILES ACTIVE — 12 native training-building fingerprints')
 
-'''
-between('    static byte[] BuildExtrasStub(long stub,long cfg)','    static byte[] CallPatch(long target,long stub)',extras)
-
-s=s.replace('VirtualAllocEx(h,IntPtr.Zero,(UIntPtr)8192,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE)','VirtualAllocEx(h,IntPtr.Zero,(UIntPtr)32768,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE)')
-s=s.replace('WriteBytes(c,new byte[512]);PushConfig();','WriteBytes(c,new byte[4096]);PushConfig();')
-s=s.replace('if(code2.Length>5500)','if(code2.Length>12000)')
-s=s.replace('status="V5 FULL 1→9 HOOK ACTIVE — V3/V4 proven paths generalized";','status="V14 PROFILED 1→9 HOOK ACTIVE — 12 native training-building fingerprints";')
-
-monitor=r'''    static string Monitor()
-    {
-        if(!installed||cave==IntPtr.Zero)return status+"\r\nNo profiled multi-output override active.";
-        long c=cave.ToInt64();uint n=R32(c+T_COMPLETIONS),a=R32(c+T_EXTRA_ATTEMPTS),ok=R32(c+T_EXTRA_SUCCESS),f=R32(c+T_EXTRA_FAIL),b=R32(c+T_BUILDING),i=R32(c+T_INPUT),nat=R32(c+T_NATIVE),pend=R32(c+T_PENDING),primary=R32(c+T_PRIMARY),last=R32(c+T_LAST_UNIT),profile=R32(c+T_PROFILE);
-        var slots=new StringBuilder();for(int x=0;x<SLOT_COUNT;x++){if(x>0)slots.Append(' ');slots.Append($"S{x+1}:{R32(SlotSuccess(c,x))}");}
-        int activeProfiles=0,activeSlots=0;for(int p=0;p<PROFILE_COUNT;p++){if(R32(ProfileBase(c,p))!=0)activeProfiles++;for(int x=0;x<SLOT_COUNT;x++)if(R32(SlotEn(c,p,x))!=0)activeSlots++;}
-        var hits=new StringBuilder();for(int p=0;p<PROFILE_COUNT;p++){if(p>0)hits.Append(' ');hits.Append($"P{p+1}:{R32(ProfileHit(c,p))}");}
-        return $"{status}\r\nprofiles:{activeProfiles} active slots:{activeSlots} | last profile:P{profile+1} primary:S{primary+1} | valid completions:{n}\r\nextra attempts:{a} success:{ok} fail:{f} | pending:{pend} | last extra unit:0x{last:X8}\r\nslot successes: {slots}\r\nprofile hits: {hits}\r\nlast completion: building:0x{b:X8} input:0x{i:X8} nativeOut:0x{nat:X8}\r\nGuard: vanilla mapper fingerprint + local owner; unmatched buildings remain native.";
-    }
-'''
-between('    static string Monitor()','    public static CoreSnapshot Snapshot()',monitor)
+# Monitoring text now reports the matched profile too.
+s=s.replace('uint n=R32(c+T_COMPLETIONS),a=R32(c+T_EXTRA_ATTEMPTS),s=R32(c+T_EXTRA_SUCCESS),f=R32(c+T_EXTRA_FAIL),b=R32(c+T_BUILDING),i=R32(c+T_INPUT),nat=R32(c+T_NATIVE),p=R32(c+T_PENDING),primary=R32(c+T_PRIMARY),last=R32(c+T_LAST_UNIT);',
+            'uint n=R32(c+T_COMPLETIONS),a=R32(c+T_EXTRA_ATTEMPTS),s=R32(c+T_EXTRA_SUCCESS),f=R32(c+T_EXTRA_FAIL),b=R32(c+T_BUILDING),i=R32(c+T_INPUT),nat=R32(c+T_NATIVE),p=R32(c+T_PENDING),primary=R32(c+T_PRIMARY),last=R32(c+T_LAST_UNIT),prof=R32(c+T_PROFILE);')
+s=s.replace('return $"{status}\\r\\nactive slots:{Enumerable.Range(0,9).Count(x=>R32(SlotEn(c,x))!=0)} | primary last:S{primary+1} | valid completions:{n}',
+            'return $"{status}\\r\\nprofile:{prof} | primary last:S{primary+1} | valid completions:{n}')
+s=s.replace('Guard: eligibility/mapper stock; failed extra create is skipped and later slots continue.',
+            'Guard: eligibility/mapper stock; 12 native training-building fingerprints; unmatched buildings remain native.')
 
 p.write_text(s,encoding='utf-8')
 print('V14 UnitChangerCore: 12 independent native-building profiles generated')
