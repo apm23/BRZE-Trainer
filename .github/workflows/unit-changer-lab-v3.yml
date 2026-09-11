@@ -1,0 +1,72 @@
+name: Unit Changer Lab v3 Completion Only
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.unit-changer-lab-v3-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify V3 completion-only architecture
+        shell: pwsh
+        run: |
+          $p = Get-Content UnitChangerTrainerV3/Program.cs -Raw
+          foreach($x in @(
+            'RVA_TRAIN_MAP = 0x0D69F6',
+            'RVA_COMPLETION_CALL = 0x0D5E08',
+            'CompletionCallOriginal={0xE8,0xE9,0x0B,0x00,0x00}',
+            'V3 intentionally does NOT patch RVA_TRAIN_MAP',
+            'global mapper is not stock',
+            'completed intercepts',
+            'only completion call 0x4D5E08 is redirected',
+            'C2,0x04,0x00'
+          )) { if($p -notmatch [regex]::Escape($x)) { throw "V3 invariant missing: $x" } }
+          foreach($bad in @('WriteCode(moduleBase+RVA_TRAIN_MAP','RVA_CURRENT_UNIT_PTR','CreateRemoteThread','clone raw')) {
+            if($p -match [regex]::Escape($bad)) { throw "V3 forbidden pattern: $bad" }
+          }
+
+      - name: Compile smoke
+        run: dotnet build UnitChangerTrainerV3/UnitChangerTrainerV3.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish UnitChangerTrainerV3/UnitChangerTrainerV3.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-v3
+          Move-Item publish-v3/BRZE-Unit-Changer-Lab-v3.exe publish-v3/BRZE-Unit-Changer-Lab-v3-CompletionOnly.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish UnitChangerTrainerV3/UnitChangerTrainerV3.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-v3-small
+          Move-Item publish-v3-small/BRZE-Unit-Changer-Lab-v3.exe publish-v3-small/BRZE-Unit-Changer-Lab-v3-CompletionOnly-Small.exe
+
+      - name: Report hashes and sizes
+        shell: pwsh
+        run: |
+          $a = Get-Item publish-v3/BRZE-Unit-Changer-Lab-v3-CompletionOnly.exe
+          $b = Get-Item publish-v3-small/BRZE-Unit-Changer-Lab-v3-CompletionOnly-Small.exe
+          Write-Host ('STANDALONE_BYTES='+$a.Length)
+          Write-Host ('SMALL_BYTES='+$b.Length)
+          Get-FileHash $a.FullName -Algorithm SHA256
+          Get-FileHash $b.FullName -Algorithm SHA256
+
+      - name: Upload V3 proof builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Unit-Changer-Lab-v3-CompletionOnly
+          compression-level: 0
+          path: |
+            publish-v3/BRZE-Unit-Changer-Lab-v3-CompletionOnly.exe
+            publish-v3-small/BRZE-Unit-Changer-Lab-v3-CompletionOnly-Small.exe
