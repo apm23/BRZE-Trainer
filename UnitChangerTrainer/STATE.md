@@ -160,17 +160,36 @@ Therefore the per-building profile architecture is runtime-proven at least for s
 - Clean + Diagnostics build succeeded in run `34563835023`, artifact `10185305510`.
 - V14 game-side core unchanged.
 
-## V16 catalog expansion — CURRENT WORK
-Scope is UI/catalog/safety only; V14 game-side core must remain unchanged.
-- Add previously excluded classic heroes/story variants.
-- Add WotW units including Chakram Maiden, Guardian, Serpent Enforcer/Witch forms, Lotus Overseer/Reaper, Wolf Digger/Dryad.
-- Add WotW story heroes/variants including Grayback forms, Longtooth Slave, Taro, Teppo, Wildeye, Yvaine forms.
-- Add previously excluded special/unique base units in a separate risk category.
-- Dropdown is categorized with non-selectable headers.
-- Hero/story, special/unique, and WotW entries are visibly red/risk-marked.
-- Selecting a risky item while its slot is ON must automatically disable that slot.
-- Re-enabling a risky slot requires explicit confirmation.
-- Reserve placeholder IDs 145..154 must NOT be exposed.
+## V16 catalog expansion — SUPERSEDED POLICY
+V16 added classic heroes, special/unique units, WotW units, and WotW heroes to categorized dropdowns. Its first safety policy marked all heroes/story/special/WotW content red and used auto-OFF + modal confirmation. User rejected that policy as too broad/rumbersome. Do not restore it.
+
+## V17 WotW-only warning policy — BUILD/STATIC PROVEN, RUNTIME UI TEST PENDING
+Scope remains UI/catalog only; V14 game-side core is unchanged byte-for-byte through the V16+V17 layers.
+
+Current catalog policy:
+- Regular clan units remain normal.
+- Old special/unique units such as Spirit Warrior, Lotus Brothers/Golem, and Serpent Necromancer are normal entries.
+- Classic heroes/story variants such as Arah, Grayback, Kenji, Otomo, Shinja, Zymeth, etc. are normal entries.
+- ONLY WotW-release-exclusive units/heroes are red/risk-marked:
+  - WotW units IDs `116..127`: Chakram Maiden variants, Guardian variants, Serpent Enforcer/Witch variants, Lotus Overseer/Reaper, Wolf Digger/Dryad.
+  - WotW story/hero variants IDs `136..144`: Grayback variants, Longtooth Slave, Taro, Teppo, Wildeye, Yvaine variants.
+- No Yes/No modal confirmation.
+- No automatic slot OFF when selecting a WotW entry.
+- A small red warning line appears below the Unit Changer slot grid whenever one or more WotW-only outputs are selected, advising against use in Kenji Journey/story maps.
+- Reserve placeholder IDs `145..154` remain hidden.
+
+Build pin:
+- head `2d4a644e510140c357175cd43afc39c74fac9adc`
+- workflow `Final V17 WotW Only Warning Clean Diagnostics`
+- run `34566489119` SUCCESS
+- artifact `10186231013` (`BRZE-Trainer-FINAL-V17-WotW-Only-Warning`)
+- artifact ZIP SHA-256 `174a137d4efeb70f6092401a779fa9f909eac4faa8c26afab4b06feb93c23c8c`
+- Clean standalone SHA-256 `621c37764e1e1f0c497a1b5430cebb124c8abb9ab54eb14847c9d5bcda81dd39`
+- Diagnostics standalone SHA-256 `3b16e8a136c8676f348509de2f2ee0213c2bb5e1d619847cdd72740f78afa875`
+- Clean small SHA-256 `687b31975aa178e3dce44196a737c8c86ddbec86f3eae7a5f183e6cd16255d46`
+- Diagnostics small SHA-256 `3a7d8a0e7e0df01000898fd87047cd41e8dd9f616d7bbee661c213a1e7c78a5c`
+
+Do not call V17 runtime-proven until user visually/runtime tests the revised dropdown/warning behavior.
 
 ## Deferred phase
 - Arbitrary-building training such as Peasant Hut/tree and red-X bypass remains deferred until eligibility/retraining logic is proven safely.
