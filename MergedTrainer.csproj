@@ -16,6 +16,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="MergedProgram.cs" />
+    <Compile Include="FinalIntegratedMainForm.cs" />
+    <Compile Include="UnitChangerCore.cs" />
+    <Compile Include="PausePeasantCore.cs" />
     <Compile Include="SelectionCore.cs" />
     <Compile Include="HookCore.cs" />
     <Compile Include="HorseCore.cs" />
