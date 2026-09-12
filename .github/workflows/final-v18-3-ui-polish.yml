@@ -1,0 +1,96 @@
+name: Final V18.3 UI Polish Clean Diagnostics
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v18-3-ui-polish-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate locked core + V18.3 separated bulk actions
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v13_integrated.py
+          python tools/finalize_v14_building_profiles.py
+          python tools/v14_generator_repair.py
+          python tools/v14_ui_compile_repair.py
+          python tools/finalize_v15_compact_ui.py
+          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content v14-core-before.sha
+          python tools/finalize_v16_unit_catalog.py
+          python tools/finalize_v17_wotw_warning.py
+          python tools/finalize_v18_quick_tabs.py
+          python tools/finalize_v18_2_inline_allslots.py
+          python tools/finalize_v18_3_bulk_actions.py
+
+      - name: Verify V18.3 UI-only polish and locked core
+        shell: pwsh
+        run: |
+          $ui=Get-Content FinalV18MainForm.cs -Raw
+          $before=(Get-Content v14-core-before.sha -Raw).Trim()
+          $after=(Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash
+          if($before -ne $after){throw 'V18.3 changed UnitChangerCore'}
+          foreach($x in @(
+            'Text="BRZE Trainer — V18.3 Clean"',
+            'Text="BRZE Trainer — V18.3 Diagnostics"',
+            'allSlotsOn.Text="1-9 ON"',
+            'allSlotsOff.Text="ALL OFF"',
+            'quick.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,166))',
+            'bulk.Controls.Add(allSlotsOn);bulk.Controls.Add(allSlotsOff)',
+            'void ActivateAllSlots()',
+            'void DeactivateAllSlots()',
+            'profileOn[editProfile,i]=false;slotOn[i].Checked=false'
+          )){if($ui -notmatch [regex]::Escape($x)){throw "V18.3 invariant missing: $x"}}
+          foreach($bad in @('quick.Controls.Add(allSlotsOn);','allSlotsOn.Dock=DockStyle.Fill')){if($ui -match [regex]::Escape($bad)){throw "V18.3 forbidden old bulk-action layout: $bad"}}
+
+      - name: Compile CLEAN smoke
+        run: dotnet build MergedTrainerV18_3.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Compile DIAGNOSTICS smoke
+        run: dotnet build MergedTrainerV18_3.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish CLEAN standalone
+        run: |
+          dotnet publish MergedTrainerV18_3.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
+          Move-Item publish-clean/BRZE-Trainer-FINAL-V18.3.exe publish-clean/BRZE-Trainer-FINAL-V18.3-Clean.exe
+
+      - name: Publish DIAGNOSTICS standalone
+        run: |
+          dotnet publish MergedTrainerV18_3.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag
+          Move-Item publish-diag/BRZE-Trainer-FINAL-V18.3.exe publish-diag/BRZE-Trainer-FINAL-V18.3-Diagnostics.exe
+
+      - name: Publish CLEAN small
+        run: |
+          dotnet publish MergedTrainerV18_3.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
+          Move-Item publish-clean-small/BRZE-Trainer-FINAL-V18.3.exe publish-clean-small/BRZE-Trainer-FINAL-V18.3-Clean-Small.exe
+
+      - name: Publish DIAGNOSTICS small
+        run: |
+          dotnet publish MergedTrainerV18_3.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag-small
+          Move-Item publish-diag-small/BRZE-Trainer-FINAL-V18.3.exe publish-diag-small/BRZE-Trainer-FINAL-V18.3-Diagnostics-Small.exe
+
+      - name: Upload V18.3 four-pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V18.3-UI-Polish
+          compression-level: 0
+          path: |
+            publish-clean/BRZE-Trainer-FINAL-V18.3-Clean.exe
+            publish-diag/BRZE-Trainer-FINAL-V18.3-Diagnostics.exe
+            publish-clean-small/BRZE-Trainer-FINAL-V18.3-Clean-Small.exe
+            publish-diag-small/BRZE-Trainer-FINAL-V18.3-Diagnostics-Small.exe
