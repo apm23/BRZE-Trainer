@@ -1,0 +1,129 @@
+name: Final V18 Quick Tabs Clean Diagnostics
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v18-quick-tabs-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate locked core + V18 quick tabs
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v13_integrated.py
+          python tools/finalize_v14_building_profiles.py
+          python tools/v14_generator_repair.py
+          python tools/v14_ui_compile_repair.py
+          python tools/finalize_v15_compact_ui.py
+          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content v14-core-before.sha
+          python tools/finalize_v16_unit_catalog.py
+          python tools/finalize_v17_wotw_warning.py
+          python tools/finalize_v18_quick_tabs.py
+
+      - name: Verify V18 UI policy core lock and full refresh
+        shell: pwsh
+        run: |
+          $ui=Get-Content FinalV18MainForm.cs -Raw
+          $uc=Get-Content UnitChangerCore.cs -Raw
+          $before=(Get-Content v14-core-before.sha -Raw).Trim()
+          $after=(Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash
+          if($before -ne $after){throw 'V18 changed UnitChangerCore; release must remain UI/catalog-only'}
+          foreach($x in @(
+            'Text="BRZE Trainer — V18 Clean"',
+            'Text="BRZE Trainer — V18 Diagnostics"',
+            'V18  ·  QUICK UNIT TABS',
+            'enum UnitGroup { Dragon, Serpent, Lotus, Wolf, Heroes }',
+            'SetupUnitTab(tabAll,"ALL",-1,54)',
+            'SetupUnitTab(tabDragon,"DRAGON",0,72)',
+            'SetupUnitTab(tabSerpent,"SERPENT",1,78)',
+            'SetupUnitTab(tabLotus,"LOTUS",2,66)',
+            'SetupUnitTab(tabWolf,"WOLF",3,58)',
+            'SetupUnitTab(tabHeroes,"HEROES",4,72)',
+            'allSlotsOn.Text="ALL 1–9 ON"',
+            'void ActivateAllSlots()',
+            'U(UnitGroup.Serpent,27,"Serpent Spirit Warrior")',
+            'U(UnitGroup.Serpent,104,"Serpent Necromancer")',
+            'U(UnitGroup.Lotus,31,"Lotus Brother One")',
+            'U(UnitGroup.Lotus,36,"Lotus Golem")',
+            'U(UnitGroup.Dragon,116,"Dragon Chakram Maiden")',
+            'U(UnitGroup.Serpent,121,"Serpent Witch")',
+            'U(UnitGroup.Lotus,125,"Lotus Reaper")',
+            'U(UnitGroup.Wolf,127,"Wolf Dryad")',
+            'U(UnitGroup.Heroes,85,"Hero Arah")',
+            'U(UnitGroup.Heroes,140,"Hero Taro")',
+            'U(UnitGroup.Heroes,141,"Hero Teppo")',
+            'U(UnitGroup.Heroes,143,"Hero Yvaine")'
+          )){if($ui -notmatch [regex]::Escape($x)){throw "V18 invariant missing: $x"}}
+          foreach($bad in @('unitRiskWarning','Risky Unit Confirmation','WotW-only:','RED = WOTW','Color.FromArgb(112,38,43)','U(145,','U(146,','U(147,','U(148,','U(149,','U(150,','U(151,','U(152,','U(153,','U(154,')){if($ui -match [regex]::Escape($bad)){throw "V18 forbidden fragment present: $bad"}}
+          foreach($x in @(
+            'PROFILE_COUNT=12',
+            'ProfileInput={5,5,5,24,24,24,40,40,40,51,51,51}',
+            'ProfileNativeOut={8,0,1,29,21,23,30,38,41,46,48,49}',
+            'RVA_COMPLETION_CALL=0x0D5E08',
+            'RVA_POST_REGISTER_CALL=0x0D5EA4',
+            'RVA_CREATE_UNIT=0x0D6A88',
+            'MapperStock={0x55,0x8B,0xEC,0x8B,0x81,0x58,0x02,0x00,0x00}'
+          )){if($uc -notmatch [regex]::Escape($x)){throw "V14 proven core invariant missing in V18: $x"}}
+          $m=[regex]::Match($ui,'void RefreshTrainer\(\)\s*\{(?s:.*?)\r?\n    \}\r?\n\r?\n    string ActiveList')
+          if(-not $m.Success){throw 'RefreshTrainer block not found'}
+          $r=$m.Value
+          foreach($x in @('UnitChangerCore.Reset()','PausePeasantCore.Stop()','WolfCore.Stop()','InstantDeathCore.Stop()','StaminaCore.Stop()','HorseCore.Stop()','HookCore.Stop()','SelectionCore.Stop()','RevealMapCore.Stop(false)','Native.Detach()','GameGate.Probe(true)')){if($r -notmatch [regex]::Escape($x)){throw "Refresh invariant missing: $x"}}
+          if($r -match [regex]::Escape('TickTrainer();')){throw 'Refresh must rebind on next timer tick, not recursively'}
+
+      - name: Compile CLEAN smoke
+        run: dotnet build MergedTrainerV18.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Compile DIAGNOSTICS smoke
+        run: dotnet build MergedTrainerV18.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish CLEAN standalone
+        run: |
+          dotnet publish MergedTrainerV18.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
+          Move-Item publish-clean/BRZE-Trainer-FINAL-V18.exe publish-clean/BRZE-Trainer-FINAL-V18-Clean.exe
+
+      - name: Publish DIAGNOSTICS standalone
+        run: |
+          dotnet publish MergedTrainerV18.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag
+          Move-Item publish-diag/BRZE-Trainer-FINAL-V18.exe publish-diag/BRZE-Trainer-FINAL-V18-Diagnostics.exe
+
+      - name: Publish CLEAN small
+        run: |
+          dotnet publish MergedTrainerV18.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
+          Move-Item publish-clean-small/BRZE-Trainer-FINAL-V18.exe publish-clean-small/BRZE-Trainer-FINAL-V18-Clean-Small.exe
+
+      - name: Publish DIAGNOSTICS small
+        run: |
+          dotnet publish MergedTrainerV18.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag-small
+          Move-Item publish-diag-small/BRZE-Trainer-FINAL-V18.exe publish-diag-small/BRZE-Trainer-FINAL-V18-Diagnostics-Small.exe
+
+      - name: Report hashes and sizes
+        shell: pwsh
+        run: |
+          foreach($f in @('publish-clean/BRZE-Trainer-FINAL-V18-Clean.exe','publish-diag/BRZE-Trainer-FINAL-V18-Diagnostics.exe','publish-clean-small/BRZE-Trainer-FINAL-V18-Clean-Small.exe','publish-diag-small/BRZE-Trainer-FINAL-V18-Diagnostics-Small.exe')){$x=Get-Item $f;Write-Host ($x.Name+' BYTES='+$x.Length);Get-FileHash $x.FullName -Algorithm SHA256}
+
+      - name: Upload V18 four-pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V18-Quick-Tabs
+          compression-level: 0
+          path: |
+            publish-clean/BRZE-Trainer-FINAL-V18-Clean.exe
+            publish-diag/BRZE-Trainer-FINAL-V18-Diagnostics.exe
+            publish-clean-small/BRZE-Trainer-FINAL-V18-Clean-Small.exe
+            publish-diag-small/BRZE-Trainer-FINAL-V18-Diagnostics-Small.exe
