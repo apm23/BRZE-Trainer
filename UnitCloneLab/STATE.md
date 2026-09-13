@@ -1,12 +1,24 @@
 # BRZE Unit Clone Lab — STATE
 
-Status: **BUILD-PROVEN / RUNTIME PENDING**
+Status: **RUNTIME-PROVEN / HERO-CAPABLE NATIVE COPY-PASTE LOCKED**
 Date: 2026-09-14 JST
+
+## Runtime verdict
+The user directly runtime-tested the first hero-capable build and reported immediate success.
+
+Locked conclusions:
+- selected-unit COPY works at runtime;
+- PASTE BESIDE works at runtime;
+- the native position-spawn path is accepted by BRZE;
+- hero/unique/story unit types are allowed by this clone architecture and were not blocked by trainer-side filtering;
+- group duplication through native spawn is now the authoritative base for future clone integration.
+
+Exact hero identities from the successful mixed test were not separately enumerated in chat, so do not invent a per-hero whitelist. Treat the architecture as hero-capable, and investigate only if a specific hero later shows a unique restriction.
 
 ## Goal
 Copy the currently selected units and paste native-created duplicates beside the original formation.
 
-Hero/unique/story unit types are intentionally allowed from the first runtime proof. There is no regular-unit-only gate.
+Hero/unique/story unit types are intentionally allowed. There is no regular-unit-only gate.
 
 ## Architecture
 - Read current selection from selection-list RVA `0x441708`.
@@ -25,7 +37,7 @@ Hero/unique/story unit types are intentionally allowed from the first runtime pr
 - Hook uninstall restores stock bytes only if current bytes still exactly match this lab's own patch.
 
 ## Coexistence rule
-This lab currently uses the same frame-hook site as Instant Death. For first runtime tests, close the main trainer before arming Paste. Integration into the main trainer is deferred until runtime proof.
+This lab currently uses the same frame-hook site as Instant Death. Standalone lab tests should still close the main trainer before arming Paste. When integrating into the main trainer, merge clone dispatch into the existing frame-hook architecture instead of installing a competing hook.
 
 ## Build pin
 Repository: `apm23/BRZE-Trainer`
@@ -41,14 +53,12 @@ Binaries:
 - Standalone SHA-256 `059a47fd7d6b98daea82ec202d573fe6730d836bf76972170bee0bfbbf5f5b43`
 - Small SHA-256 `34c85b1d5e18335b7a254b08b696ff1a6e3362c5a299288f7ad6304b4396f51f`
 
-## Runtime proof requested
-One test can cover normal + hero immediately:
-1. close main trainer;
-2. select any mixed local group, including at least one hero/unique if desired;
-3. press COPY SELECTED;
-4. confirm copied count/types;
-5. press PASTE BESIDE;
-6. expected monitor: index reaches count, success equals count, fail 0;
-7. expected game: duplicated group appears beside originals with same unit types/owners.
+## Next phase
+Use this runtime-proven clone architecture as-is. Do not redo the normal-unit-vs-hero proof split.
 
-If hero duplication is accepted by BRZE, record exact hero types and mark hero-capable native copy runtime-proven. If a specific hero is rejected, keep normal/accepted types proven and investigate only that native uniqueness restriction.
+Next research target requested by the user:
+1. identify Grayback's real native buff/effect application path;
+2. identify Issyl's real native speed-effect application path;
+3. apply those effects to all currently selected units;
+4. prefer native effect/status application over permanent raw stat edits;
+5. once proven, integrate clone + selected-unit hero effects into the main trainer while preserving the existing V18.3/V19 rollback bases.
