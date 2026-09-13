@@ -1,0 +1,2 @@
+trigger: 2026-09-14T01:30:00+09:00
+purpose: build read-only effect-instance duration/timer probe after V3 stacking rejection
