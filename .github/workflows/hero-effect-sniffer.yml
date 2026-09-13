@@ -1,0 +1,65 @@
+name: Hero Effect Runtime Sniffer
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.hero-effect-sniffer-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify sniffer architecture
+        shell: pwsh
+        run: |
+          $s=Get-Content HeroEffectSniffer/SnifferCore.cs -Raw
+          foreach($x in @(
+            'RVA_TARGET_HELPER = 0x1F0C32',
+            'RVA_MAGIC_CREATE  = 0x13FFD1',
+            'TargetOriginal={0x55,0x8B,0xEC,0x56,0x8B,0xF1}',
+            'MagicOriginal ={0x55,0x8B,0xEC,0x83,0xEC,0x44}',
+            'original ECX target from pushad save',
+            'arg1 ability',
+            'hookPatch'
+          )){if($s -notmatch [regex]::Escape($x)){throw "sniffer invariant missing: $x"}}
+          if($s -match 'OFF_HP|OFF_STAMINA|CreateRemoteThread'){throw 'sniffer must remain observation-only'}
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectSniffer/HeroEffectSniffer.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish HeroEffectSniffer/HeroEffectSniffer.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-standalone
+          Move-Item publish-standalone/BRZE-Hero-Effect-Sniffer.exe publish-standalone/BRZE-Hero-Effect-Sniffer-Grayback-Issyl.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish HeroEffectSniffer/HeroEffectSniffer.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+          Move-Item publish-small/BRZE-Hero-Effect-Sniffer.exe publish-small/BRZE-Hero-Effect-Sniffer-Grayback-Issyl-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-standalone/BRZE-Hero-Effect-Sniffer-Grayback-Issyl.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Hero-Effect-Sniffer-Grayback-Issyl-Small.exe -Algorithm SHA256
+
+      - name: Upload sniffer
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Sniffer-Grayback-Issyl
+          compression-level: 0
+          path: |
+            publish-standalone/BRZE-Hero-Effect-Sniffer-Grayback-Issyl.exe
+            publish-small/BRZE-Hero-Effect-Sniffer-Grayback-Issyl-Small.exe
