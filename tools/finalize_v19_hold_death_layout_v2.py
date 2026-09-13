@@ -41,3 +41,10 @@ if n3!=1:
     raise SystemExit('V19 v2 wrapper could not patch death Tick block')
 
 exec(compile(patched,'finalize_v19_hold_death_layout_v2.generated.py','exec'),{'__name__':'__main__'})
+
+# Final textual sanitation: V19 has no persistent Death Burst UI concept anymore.
+# Any residual literal is stale status/help wording from the layered V18.x UI.
+ui_path=Path('FinalV18MainForm.cs')
+ui=ui_path.read_text(encoding='utf-8')
+ui=ui.replace('Death Burst','Kill All')
+ui_path.write_text(ui,encoding='utf-8')
