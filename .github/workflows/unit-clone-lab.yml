@@ -1,0 +1,73 @@
+name: Unit Clone Lab Native Copy Paste
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.unit-clone-lab-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Apply clone-lab safety layer
+        run: python tools/finalize_unit_clone_lab_safety.py
+
+      - name: Verify clone architecture
+        shell: pwsh
+        run: |
+          $s=Get-Content UnitCloneLab/Program.cs -Raw
+          foreach($x in @(
+            'RVA_SELECTION_LIST = 0x441708',
+            'RVA_FRAME_MOUSE_DRAW = 0x135C43',
+            'RVA_SPAWN_AT_XY = 0x0C4A1C',
+            'MAX_COPY = 120',
+            'Hero/unique types are allowed',
+            'OFF_X = 0x28, OFF_Y = 0x2C',
+            'push [eax+0xC] y',
+            'push [eax+0x8] x',
+            'hookPatch != null && ReadExact(site, now) && Same(now, hookPatch)',
+            'fxsave [abs]',
+            'fxrstor [abs]'
+          )){if($s -notmatch [regex]::Escape($x)){throw "clone invariant missing: $x"}}
+          if($s -match 'CreateRemoteThread'){throw 'CreateRemoteThread must not be used'}
+          if($s -match 'Marshal\.Copy\([^\r\n]*UnitSnap'){throw 'raw Unit struct copy must not be used'}
+
+      - name: Compile smoke
+        run: dotnet build UnitCloneLab/UnitCloneLab.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish UnitCloneLab/UnitCloneLab.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-standalone
+          Move-Item publish-standalone/BRZE-Unit-Clone-Lab.exe publish-standalone/BRZE-Unit-Clone-Lab-Native-HeroCopy.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish UnitCloneLab/UnitCloneLab.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+          Move-Item publish-small/BRZE-Unit-Clone-Lab.exe publish-small/BRZE-Unit-Clone-Lab-Native-HeroCopy-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-standalone/BRZE-Unit-Clone-Lab-Native-HeroCopy.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Unit-Clone-Lab-Native-HeroCopy-Small.exe -Algorithm SHA256
+
+      - name: Upload clone lab
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Unit-Clone-Lab-Native-HeroCopy
+          compression-level: 0
+          path: |
+            publish-standalone/BRZE-Unit-Clone-Lab-Native-HeroCopy.exe
+            publish-small/BRZE-Unit-Clone-Lab-Native-HeroCopy-Small.exe
