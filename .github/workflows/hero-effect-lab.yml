@@ -1,0 +1,77 @@
+name: Hero Effect Lab Native Grayback Issyl
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.hero-effect-lab-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify native effect architecture
+        shell: pwsh
+        run: |
+          $c=Get-Content HeroEffectLab/EffectCore.cs -Raw
+          $u=Get-Content HeroEffectLab/Program.cs -Raw
+          foreach($x in @(
+            'RVA_SELECTION_LIST = 0x441708',
+            'RVA_APPLY_TARGET_ABILITY = 0x1F0C32',
+            'RVA_BG_BASE_PTR = 0x43FE34',
+            'RVA_BG_MAP_PTR = 0x43FF3C',
+            'RVA_ABILITY_BASE_PTR = 0x43FE28',
+            'RVA_ABILITY_MAP_PTR = 0x43FF30',
+            'BG_ABILITY_TYPE = 0x0C',
+            'ABILITY_STRIDE = 0x2E4',
+            'ABILITY_CREATE_MAGIC_AT_TARGET = 0x288',
+            'OFF_BG1 = 0x14C',
+            'OFF_BG2 = 0x150',
+            'OFF_BG3 = 0x154',
+            'MAX_SELECTED = 120',
+            'ApplyPrologue',
+            'FXSCRATCH',
+            'hookPatch'
+          )){if($c -notmatch [regex]::Escape($x)){throw "effect invariant missing: $x"}}
+          foreach($x in @('GRAYBACK // WOLF''S HOWL','ISSYL // HASTE','APPLY BOTH TO SELECTED')){if($u -notmatch [regex]::Escape($x)){throw "UI invariant missing: $x"}}
+          if($c -match 'CreateRemoteThread'){throw 'CreateRemoteThread is forbidden'}
+          if($c -match 'OFF_HP|OFF_STAMINA|MoveSpeed|AttackSpeed'){throw 'raw stat shortcut detected'}
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectLab/HeroEffectLab.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish HeroEffectLab/HeroEffectLab.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-standalone
+          Move-Item publish-standalone/BRZE-Hero-Effect-Lab.exe publish-standalone/BRZE-Hero-Effect-Lab-Grayback-Issyl.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish HeroEffectLab/HeroEffectLab.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+          Move-Item publish-small/BRZE-Hero-Effect-Lab.exe publish-small/BRZE-Hero-Effect-Lab-Grayback-Issyl-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-standalone/BRZE-Hero-Effect-Lab-Grayback-Issyl.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Hero-Effect-Lab-Grayback-Issyl-Small.exe -Algorithm SHA256
+
+      - name: Upload Hero Effect Lab
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Lab-Grayback-Issyl
+          compression-level: 0
+          path: |
+            publish-standalone/BRZE-Hero-Effect-Lab-Grayback-Issyl.exe
+            publish-small/BRZE-Hero-Effect-Lab-Grayback-Issyl-Small.exe
