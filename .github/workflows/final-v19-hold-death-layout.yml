@@ -35,6 +35,7 @@ jobs:
           python tools/finalize_v16_unit_catalog.py
           python tools/finalize_v17_wotw_warning.py
           python tools/finalize_v18_quick_tabs.py
+          python tools/finalize_v18_2_inline_allslots.py
           python tools/finalize_v18_3_bulk_actions.py
           (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content unit-core.before
           (Get-FileHash RevealMapCore.cs -Algorithm SHA256).Hash | Set-Content reveal-core.before
