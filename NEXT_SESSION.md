@@ -25,38 +25,44 @@ Branch: `instant-death-v4-hover-telemetry`
 `HeroEffectReplayV2/STATE.md`
 - **RUNTIME-PROVEN**.
 - Grayback `0xC0` and Issyl `0xA5` successfully replay through native target helper RVA `0x1F0C32` on the BRZE game/render thread.
-- V2 is the locked rollback/reference implementation for hero effects.
-- One native application is proven-good; do not mutate this baseline.
+- V2 is the locked rollback/reference implementation for one-shot hero effects.
 
 `HeroEffectReplayV3/STATE.md`
 - **RUNTIME-REJECTED — DO NOT REUSE REFRESH/STACK APPROACH.**
 - Repeated native re-application stacked/compounded effect state and corrupted combat behavior.
 - User-observed failure included effectively zero damage to units, approximately one-hit building damage, extreme movement speed, and slower-feeling attack cadence.
-- STOP HOLD cannot reliably undo already-created stacks; recover with a clean save/restart.
+- Recover contaminated runtime with clean save/restart.
 
 `HeroEffectDurationProbe/STATE.md`
-- **BUILD/STATIC PROVEN — READ-ONLY RUNTIME PROBE PENDING.**
-- Observation-only probe: `PROCESS_VM_READ | PROCESS_QUERY_INFORMATION` + `ReadProcessMemory` only.
-- No `WriteProcessMemory`, no allocation/protection patch APIs, no hooks, no native ability calls.
-- Captures direct Unit memory and readable first-level pointer regions before/after ONE V2 effect, then ranks smoothly changing dwords as timer candidates.
-- Run `34789742039` SUCCESS; job `103811637139` SUCCESS.
-- Artifact `10328450262`, digest `sha256:17ed088b97c58bdd74d881cab07da420cef718662d77b3852b88b67c294417e7`.
-- Standalone SHA-256 `28a83ed1fa601e9c1406b207bbdaceec80620e33a5a7078fb48c5fc293686b1f`.
-- Small SHA-256 `1a17d8ed2c6bb018f2f02cd99675019cebbe09c231684a9bb64a3fbfa40a2122`.
+- V1 read-only runtime probe completed.
+- Direct Unit* and one-level pointer scan did NOT isolate a trustworthy duration field.
+- High-scoring direct Unit fields were dominated by movement/transform noise.
+- Pointer structures around Unit+0x1E4 / +0x1F4 / +0x20C / +0x21C remain interesting; V1 showed repeated node-like chains under Unit+0x1E4.
+
+`HeroEffectDurationProbeV2/STATE.md`
+- **BUILD/STATIC PROVEN — RUNTIME PENDING.**
+- Strictly read-only recursive pointer graph observer, depth <= 3.
+- Root Unit scan 0x500, child node scan 0x200, max 700 nodes, max 3000 candidates.
+- Adds `MARK EFFECT EXPIRED` ranking to boost fields/objects that return to baseline, hit zero, or disappear exactly when the visible buff ends.
+- Run `34790442232` SUCCESS; job `103813532429` SUCCESS.
+- Artifact `10327766605`, digest `sha256:83bcfda67467a3d0b2c85f0e13b9644a02a399f7c5fd38cacea5dcd9617a0901`.
+- Standalone SHA-256 `acb1b4f87266eab44d760ab0d6ac18257ff60ffd5696f3bdc9d08eebed1ea825`.
+- Small SHA-256 `2ef44674881ebf6b0d2d5f0aa9c0b9250ab405f9c2d02cc6eecb4270c5633991`.
 
 ## Exact next action
-Runtime-test the read-only duration probe:
-1. fully close V3 and restart/reload BRZE to clear stacked contamination;
-2. start the read-only Duration Probe;
-3. select exactly ONE clean normal unit;
+Runtime-test Hero Effect Duration Probe V2 using the ORIGINAL Grayback hero skill, not V2 replay:
+1. restart/reload BRZE clean if needed;
+2. launch the V2 recursive read-only probe;
+3. select exactly ONE clean normal target unit;
 4. press `1 CAPTURE BASELINE`;
-5. use proven V2 to apply exactly ONE effect to that same unit: Grayback `0xC0` OR Issyl `0xA5`;
-6. immediately return to the probe and press `2 CAPTURE EFFECT DIFF`;
-7. press `3 START WATCH` and leave the effect/unit alone until the visible buff expires naturally;
-8. press `COPY REPORT` near/just after expiry and return the report for candidate analysis;
-9. do not use V3 and do not re-apply the ability during this test.
+5. cast Grayback's original hero buff exactly once on that same target;
+6. immediately press `2 CAPTURE EFFECT DIFF`;
+7. press `3 START WATCH` and leave the unit/effect alone;
+8. the instant the visible buff disappears naturally, press `4 MARK EFFECT EXPIRED`;
+9. press `COPY REPORT` and return the report for analysis;
+10. do not use HeroEffectReplayV3 and do not recast during the observation window.
 
 Only after a timer/expiry candidate is correlated with natural visible expiry should a separate isolated timer-write experiment be built. Do not integrate duration into the main trainer before that proof.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5). V3 duration refresh is runtime-rejected because native re-apply stacks/corrupts combat. Read-only HeroEffectDurationProbe build is ready; continue from its runtime timer-candidate test. Copy/Paste Hero is already runtime-proven.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5). V3 duration refresh is runtime-rejected because native re-apply stacks/corrupts combat. Duration Probe V1 did not isolate the timer; continue from HeroEffectDurationProbeV2 recursive read-only runtime test using original Grayback skill. Copy/Paste Hero is already runtime-proven.`
