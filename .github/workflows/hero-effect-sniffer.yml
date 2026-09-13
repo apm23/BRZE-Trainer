@@ -32,7 +32,8 @@ jobs:
             'MagicOriginal ={0x55,0x8B,0xEC,0x83,0xEC,0x44}',
             'original ECX target from pushad save',
             'arg1 ability',
-            'hookPatch'
+            'targetPatch',
+            'magicPatch'
           )){if($s -notmatch [regex]::Escape($x)){throw "sniffer invariant missing: $x"}}
           if($s -match 'OFF_HP|OFF_STAMINA|CreateRemoteThread'){throw 'sniffer must remain observation-only'}
 
