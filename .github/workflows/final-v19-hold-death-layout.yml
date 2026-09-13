@@ -1,0 +1,135 @@
+name: Final V19 Hold Death Layout Clean Diagnostics
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v19-hold-death-layout-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate locked V18.3 base
+        shell: pwsh
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v13_integrated.py
+          python tools/finalize_v14_building_profiles.py
+          python tools/v14_generator_repair.py
+          python tools/v14_ui_compile_repair.py
+          python tools/finalize_v15_compact_ui.py
+          python tools/finalize_v16_unit_catalog.py
+          python tools/finalize_v17_wotw_warning.py
+          python tools/finalize_v18_quick_tabs.py
+          python tools/finalize_v18_3_bulk_actions.py
+          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content unit-core.before
+          (Get-FileHash RevealMapCore.cs -Algorithm SHA256).Hash | Set-Content reveal-core.before
+          (Get-FileHash WolfCore.cs -Algorithm SHA256).Hash | Set-Content wolf-core.before
+          (Get-FileHash SelectionCore.cs -Algorithm SHA256).Hash | Set-Content selection-core.before
+          (Get-FileHash HookCore.cs -Algorithm SHA256).Hash | Set-Content hook-core.before
+          (Get-FileHash StaminaCore.cs -Algorithm SHA256).Hash | Set-Content stamina-core.before
+          (Get-FileHash HorseCore.cs -Algorithm SHA256).Hash | Set-Content horse-core.before
+          (Get-FileHash PausePeasantCore.cs -Algorithm SHA256).Hash | Set-Content pause-core.before
+
+      - name: Apply V19 layer
+        run: python tools/finalize_v19_hold_death_layout.py
+
+      - name: Verify V19 architecture
+        shell: pwsh
+        run: |
+          function Assert-Same($before,$file,$label){
+            $a=(Get-Content $before -Raw).Trim();$b=(Get-FileHash $file -Algorithm SHA256).Hash
+            if($a -ne $b){throw "V19 changed locked core: $label"}
+          }
+          Assert-Same unit-core.before UnitChangerCore.cs UnitChanger
+          Assert-Same reveal-core.before RevealMapCore.cs Reveal
+          Assert-Same wolf-core.before WolfCore.cs Wolves
+          Assert-Same selection-core.before SelectionCore.cs Selection
+          Assert-Same hook-core.before HookCore.cs Hook
+          Assert-Same stamina-core.before StaminaCore.cs Stamina
+          Assert-Same horse-core.before HorseCore.cs Horses
+          Assert-Same pause-core.before PausePeasantCore.cs PausePeasant
+
+          $ui=Get-Content FinalV18MainForm.cs -Raw
+          $death=Get-Content InstantDeathCore.cs -Raw
+          $merged=Get-Content MergedProgram.cs -Raw
+          foreach($x in @(
+            'Text="BRZE Trainer — V19 Clean"',
+            'Text="BRZE Trainer — V19 Diagnostics"',
+            'new("Kill All","End")',
+            'new ActionButton("INSTANT DEATH","PgDn")',
+            'DeathHoldMs=260',
+            'BeginDeathPress()',
+            'UpdateDeathHold()',
+            'InstantDeathCore.TriggerSingle(killAll.Checked)',
+            'InstantDeathCore.Tick(deathHoldBurst,killAll.Checked)',
+            'selectRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,82))',
+            'profileSummary.Text=$"{ActiveProfiles()} ACTIVE  ·  {TotalSlots()} OUT"'
+          )){if($ui -notmatch [regex]::Escape($x)){throw "V19 UI invariant missing: $x"}}
+          if($ui -match 'Death Burst'){throw 'V19 old Death Burst UI remains'}
+          if($ui -match 'single.Click'){throw 'V19 old click-only death action remains'}
+          foreach($x in @('targetModeAddr','int jKillAll','int killTarget','TriggerSingle(bool killAll)','Tick(bool burstEnabled,bool killAll)','ALL-UNITS','ENEMY-ONLY')){
+            if($death -notmatch [regex]::Escape($x)){throw "V19 death invariant missing: $x"}
+          }
+          foreach($x in @('AutoSize=false;Width=190;Height=40','new Rectangle(14,20,112,14)','new Rectangle(132,8,46,24)')){
+            if($merged -notmatch [regex]::Escape($x)){throw "V19 compact-toggle invariant missing: $x"}
+          }
+
+      - name: Compile CLEAN smoke
+        run: dotnet build MergedTrainerV19.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Compile DIAGNOSTICS smoke
+        run: dotnet build MergedTrainerV19.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish CLEAN standalone
+        run: |
+          dotnet publish MergedTrainerV19.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
+          Move-Item publish-clean/BRZE-Trainer-FINAL-V19.exe publish-clean/BRZE-Trainer-FINAL-V19-Clean.exe
+
+      - name: Publish DIAGNOSTICS standalone
+        run: |
+          dotnet publish MergedTrainerV19.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag
+          Move-Item publish-diag/BRZE-Trainer-FINAL-V19.exe publish-diag/BRZE-Trainer-FINAL-V19-Diagnostics.exe
+
+      - name: Publish CLEAN small
+        run: |
+          dotnet publish MergedTrainerV19.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
+          Move-Item publish-clean-small/BRZE-Trainer-FINAL-V19.exe publish-clean-small/BRZE-Trainer-FINAL-V19-Clean-Small.exe
+
+      - name: Publish DIAGNOSTICS small
+        run: |
+          dotnet publish MergedTrainerV19.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag-small
+          Move-Item publish-diag-small/BRZE-Trainer-FINAL-V19.exe publish-diag-small/BRZE-Trainer-FINAL-V19-Diagnostics-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-clean/BRZE-Trainer-FINAL-V19-Clean.exe -Algorithm SHA256
+          Get-FileHash publish-diag/BRZE-Trainer-FINAL-V19-Diagnostics.exe -Algorithm SHA256
+          Get-FileHash publish-clean-small/BRZE-Trainer-FINAL-V19-Clean-Small.exe -Algorithm SHA256
+          Get-FileHash publish-diag-small/BRZE-Trainer-FINAL-V19-Diagnostics-Small.exe -Algorithm SHA256
+
+      - name: Upload V19 four-pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V19-HoldDeath-Layout
+          compression-level: 0
+          path: |
+            publish-clean/BRZE-Trainer-FINAL-V19-Clean.exe
+            publish-diag/BRZE-Trainer-FINAL-V19-Diagnostics.exe
+            publish-clean-small/BRZE-Trainer-FINAL-V19-Clean-Small.exe
+            publish-diag-small/BRZE-Trainer-FINAL-V19-Diagnostics-Small.exe
