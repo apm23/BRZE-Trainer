@@ -1,6 +1,6 @@
 # BRZE Hero Effect Duration Probe V2 — STATE
 
-Status: **BUILD PENDING — READ-ONLY RECURSIVE PROBE**
+Status: **BUILD/STATIC PROVEN — RUNTIME PENDING**
 Date: 2026-09-14 JST
 
 ## Why V2 exists
@@ -44,6 +44,20 @@ Expiry ranking boosts candidates that:
 - hit zero at expiry;
 - become unreadable / object freed at expiry;
 - changed smoothly with few direction flips during the active effect.
+
+## Build pin
+Repository: `apm23/BRZE-Trainer`
+Branch: `instant-death-v4-hover-telemetry`
+Trigger head: `7cfaa4e4e410f24c5812ea055496309f3525a3f6`
+Workflow: `Hero Effect Duration Probe V2 Recursive Read Only`
+Run: `34790442232` — SUCCESS
+Job: `103813532429` — SUCCESS
+Artifact: `10327766605`
+Artifact digest: `sha256:83bcfda67467a3d0b2c85f0e13b9644a02a399f7c5fd38cacea5dcd9617a0901`
+
+Binaries:
+- Standalone SHA-256 `acb1b4f87266eab44d760ab0d6ac18257ff60ffd5696f3bdc9d08eebed1ea825`
+- Small SHA-256 `2ef44674881ebf6b0d2d5f0aa9c0b9250ab405f9c2d02cc6eecb4270c5633991`
 
 ## Locked safety rules
 - HeroEffectReplayV2 remains runtime-proven for one-shot native application.
