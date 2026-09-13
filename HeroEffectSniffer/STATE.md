@@ -1,10 +1,10 @@
 # BRZE Hero Effect Runtime Sniffer — STATE
 
-Status: **BUILD/STATIC PROVEN — RUNTIME CAPTURE PENDING**
+Status: **RUNTIME-PROVEN CAPTURE — IDs RESOLVED**
 Date: 2026-09-14 JST
 
 ## Why this exists
-Hero Effect Lab V1 executed without crashes but produced no visible Grayback or Issyl effect. V1 is runtime-rejected. This sniffer replaces static guessing with live observation of BRZE's real effect path.
+Hero Effect Lab V1 executed without crashes but produced no visible Grayback or Issyl effect. V1 is runtime-rejected. This sniffer replaced static guessing with live observation of BRZE's real effect path.
 
 ## Observation hooks
 - Target-side ability helper: preferred VA `0x5F0C32`, RVA `0x1F0C32`.
@@ -16,19 +16,29 @@ Hero Effect Lab V1 executed without crashes but produced no visible Grayback or 
 - Observation-only: no HP/stamina/stat writes and no CreateRemoteThread.
 - Hook teardown is ownership-checked before restoring original bytes.
 
-## Runtime procedure
-1. Close the old Hero Effect Lab; preferably close the main trainer too for a clean trace.
-2. Open the sniffer and press `ARM SNIFFER`.
-3. Press `CLEAR LOG`.
-4. Use Grayback's original buff skill normally in BRZE.
-5. Record/screenshot the `TARGET` and `MAGIC` lines.
-6. Press `CLEAR LOG` again.
-7. Use Issyl's original Haste skill normally.
-8. Record/screenshot the two lines again.
+## Runtime result — 2026-09-14
+User executed the original skills in the requested order: Grayback first, then Issyl after clearing the log.
 
-Interpretation:
-- if a call count increases, the displayed ability ID/path is direct runtime evidence for that skill;
-- if both counts remain zero for a skill, that skill is on a special-case path and the next lab must hook that special path instead of guessing generic AbilityDef fields.
+Captured Grayback trace:
+- TARGET calls: 8
+- MAGIC calls: 8
+- runtime ability ID: `0xC0`
+- observed target UnitType in trace: `0x59`, owner 0
+
+Captured Issyl trace:
+- TARGET calls: 8
+- MAGIC calls: 8
+- runtime ability ID: `0xA5`
+- observed target UnitType in trace: `0x59`, owner 0
+
+Therefore the current runtime mapping is locked for this executable/build:
+- **Grayback buff = ability `0xC0`**
+- **Issyl Haste = ability `0xA5`**
+
+Both abilities traverse the observed MAGIC CREATE + TARGET HELPER chain. The old V1 BattleGear-derived IDs must not be reused.
+
+## Next phase
+`HeroEffectReplayV2` replays these exact runtime IDs directly through native target helper RVA `0x1F0C32` onto all currently selected units (up to 120). Runtime proof must test Grayback, Issyl, and BOTH separately.
 
 ## Build pin
 Repository: `apm23/BRZE-Trainer`
