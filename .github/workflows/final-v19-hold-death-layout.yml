@@ -47,7 +47,7 @@ jobs:
           (Get-FileHash PausePeasantCore.cs -Algorithm SHA256).Hash | Set-Content pause-core.before
 
       - name: Apply V19 layer
-        run: python tools/finalize_v19_hold_death_layout.py
+        run: python tools/finalize_v19_hold_death_layout_v2.py
 
       - name: Verify V19 architecture
         shell: pwsh
