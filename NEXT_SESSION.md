@@ -28,35 +28,34 @@ Branch: `instant-death-v4-hover-telemetry`
 `HeroEffectReplayV2/STATE.md`
 - **RUNTIME-PROVEN** from user report on 2026-09-14 JST.
 - Runtime-sniffed IDs successfully replay through native target helper RVA `0x1F0C32` on BRZE game/render thread.
-- V2 remains the locked rollback/reference implementation for hero effects.
-- Do not mutate V2 while duration work is being tested.
+- V2 is the locked rollback/reference implementation for hero effects.
+- One native application is proven-good; do not mutate this baseline.
 
 `HeroEffectReplayV3/STATE.md`
-- New duration experiment layered above proven V2.
-- BUILD/STATIC PROVEN — RUNTIME PENDING.
-- Captures selected Unit* targets once and validates UnitDef `+0x74` + owner `+0x240` before each refresh.
-- Re-applies the same proven native ability IDs on the game thread rather than raw-writing speed/stat values.
-- Presets: 30s / 60s / 5m / INFINITE; refresh: 2s / 5s / 10s.
-- Workflow run `34788874055` SUCCESS.
-- Artifact `10327388613`.
-- Artifact digest `sha256:604312730b0de8bad8fbc7cced242d93fc4a2589ec7332f195cc8cce75e054e4`.
-- Standalone SHA-256 `d82e642ac9287ca39f17690832d5c1022e91954d337a8c81828b90d8058271d9`.
-- Small SHA-256 `36dccb03b0041d300201dab20142e860002e4e212b3ea5580a4c47cfc3e6c7a0`.
+- **RUNTIME-REJECTED — DO NOT REUSE REFRESH/STACK APPROACH.**
+- Scheduled native re-application did not safely refresh an existing timer; runtime behavior became strongly consistent with stacked/compounded effect state.
+- User-observed failure:
+  - damage against units became effectively zero / units stopped losing HP;
+  - buildings became approximately one-hit;
+  - movement speed became extremely fast;
+  - attack cadence felt slower than V2.
+- Do not tune the refresh interval or retry INFINITE via periodic re-application.
+- STOP HOLD cannot reliably undo already-created stacks; safest recovery is reload a clean save / restart BRZE.
+- Rejected build pin only: run `34788874055`, artifact `10327388613`.
 
 ## Exact next action
-Runtime-test Hero Effect Replay V3 duration hold:
-1. close V2, main trainer, Clone Lab, Sniffer, and other frame-hook labs;
-2. select 10–30 visible normal units;
-3. choose `60 seconds` + `5 seconds` refresh;
-4. test Grayback and verify the effect stays active beyond its normal expiry;
-5. test Issyl and verify Haste stays active beyond its normal expiry;
-6. test APPLY BOTH and verify both remain active while HOLD is active;
-7. after starting, deselect the units and confirm V3 keeps refreshing the captured group;
-8. press STOP HOLD and confirm the effects eventually expire naturally.
+Build a dedicated **effect-instance duration/timer probe**, observation-first.
 
-If native re-application resets/extends the active effect timer, mark V3 duration RUNTIME-PROVEN and integrate Copy/Paste + Hero Effects + duration hold into a new main-trainer layer above locked V18.3/V19 cores.
+Requirements:
+1. start from a clean BRZE runtime;
+2. apply Grayback `0xC0` or Issyl `0xA5` only ONCE using the V2-proven path;
+3. identify the effect instance/container created for the target Unit*;
+4. observe candidate timer/expiry values over time without writing them;
+5. prove a candidate by showing it changes monotonically / expires with the visible buff;
+6. only then build a separate isolated timer-write experiment;
+7. never extend duration by repeated ability application and never substitute raw movement/attack/damage stat writes.
 
-If re-application does not extend an already-active effect, mark V3 refresh approach RUNTIME-REJECTED and build a dedicated effect-instance duration/timer probe. Do not guess timer offsets and do not fall back to raw speed/stat writes.
+Do not integrate duration into the main trainer until the timer path is runtime-proven.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. HeroEffectReplayV2 is runtime-proven (Grayback=0xC0, Issyl=0xA5); continue from HeroEffectReplayV3 duration-hold runtime test. Copy/Paste Hero is already runtime-proven.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5). V3 duration refresh is runtime-rejected because native re-apply stacks/corrupts combat. Continue with an observation-only effect-instance duration/timer probe. Copy/Paste Hero is already runtime-proven.`
