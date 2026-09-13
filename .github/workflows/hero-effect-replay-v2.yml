@@ -1,0 +1,65 @@
+name: Hero Effect Replay V2 Runtime IDs
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.hero-effect-replay-v2-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify replay architecture
+        shell: pwsh
+        run: |
+          $s=Get-Content HeroEffectReplayV2/ReplayCore.cs -Raw
+          foreach($x in @(
+            'GRAYBACK_RUNTIME_ABILITY=0xC0',
+            'ISSYL_RUNTIME_ABILITY=0xA5',
+            'RVA_APPLY_TARGET_ABILITY=0x1F0C32',
+            'RVA_SELECTION_LIST=0x441708',
+            'MAX_SELECTED=120',
+            'FXSCRATCH=0x2000',
+            'hookPatch'
+          )){if($s -notmatch [regex]::Escape($x)){throw "replay invariant missing: $x"}}
+          if($s -match 'CreateRemoteThread|OFF_HP|OFF_STAMINA'){throw 'replay must use native ability path only'}
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectReplayV2/HeroEffectReplayV2.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish HeroEffectReplayV2/HeroEffectReplayV2.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-standalone
+          Move-Item publish-standalone/BRZE-Hero-Effect-Replay-V2.exe publish-standalone/BRZE-Hero-Effect-Replay-V2-Grayback-C0-Issyl-A5.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish HeroEffectReplayV2/HeroEffectReplayV2.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+          Move-Item publish-small/BRZE-Hero-Effect-Replay-V2.exe publish-small/BRZE-Hero-Effect-Replay-V2-Grayback-C0-Issyl-A5-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-standalone/BRZE-Hero-Effect-Replay-V2-Grayback-C0-Issyl-A5.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Hero-Effect-Replay-V2-Grayback-C0-Issyl-A5-Small.exe -Algorithm SHA256
+
+      - name: Upload replay V2
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Replay-V2-Grayback-C0-Issyl-A5
+          compression-level: 0
+          path: |
+            publish-standalone/BRZE-Hero-Effect-Replay-V2-Grayback-C0-Issyl-A5.exe
+            publish-small/BRZE-Hero-Effect-Replay-V2-Grayback-C0-Issyl-A5-Small.exe
