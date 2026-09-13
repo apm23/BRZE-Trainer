@@ -1,0 +1,71 @@
+name: Hero Effect Duration Probe V3 Control Diff Read Only
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.hero-effect-duration-probe-v3-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify control-diff read-only architecture
+        shell: pwsh
+        run: |
+          $s=Get-Content HeroEffectDurationProbeV3/ProbeCore.cs -Raw
+          foreach($x in @(
+            'RVA_SELECTION_LIST=0x441708',
+            'PROCESS_VM_READ',
+            'ReadProcessMemory',
+            'UNIT_SCAN_SIZE=0x500',
+            'OFF_DEF=0x74',
+            'OFF_OWNER=0x240',
+            'Offset==0x460',
+            'StartControl',
+            'CapturePreEffect',
+            'StartEffect',
+            'MarkExpired'
+          )){if($s -notmatch [regex]::Escape($x)){throw "probe invariant missing: $x"}}
+          foreach($bad in @('WriteProcessMemory','VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','RVA_APPLY_TARGET_ABILITY','RVA_TARGET_HELPER','RVA_MAGIC_CREATE')){
+            if($s -match [regex]::Escape($bad)){throw "read-only probe contains forbidden token: $bad"}
+          }
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectDurationProbeV3/HeroEffectDurationProbeV3.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: |
+          dotnet publish HeroEffectDurationProbeV3/HeroEffectDurationProbeV3.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-standalone
+          Move-Item publish-standalone/BRZE-Hero-Effect-Duration-Probe-V3-ControlDiff.exe publish-standalone/BRZE-Hero-Effect-Duration-Probe-V3-ControlDiff-ReadOnly.exe
+
+      - name: Publish small
+        run: |
+          dotnet publish HeroEffectDurationProbeV3/HeroEffectDurationProbeV3.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+          Move-Item publish-small/BRZE-Hero-Effect-Duration-Probe-V3-ControlDiff.exe publish-small/BRZE-Hero-Effect-Duration-Probe-V3-ControlDiff-ReadOnly-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-standalone/BRZE-Hero-Effect-Duration-Probe-V3-ControlDiff-ReadOnly.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Hero-Effect-Duration-Probe-V3-ControlDiff-ReadOnly-Small.exe -Algorithm SHA256
+
+      - name: Upload probe V3
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Duration-Probe-V3-ControlDiff-ReadOnly
+          compression-level: 0
+          path: |
+            publish-standalone/BRZE-Hero-Effect-Duration-Probe-V3-ControlDiff-ReadOnly.exe
+            publish-small/BRZE-Hero-Effect-Duration-Probe-V3-ControlDiff-ReadOnly-Small.exe
