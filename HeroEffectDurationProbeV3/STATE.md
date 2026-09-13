@@ -1,6 +1,6 @@
 # BRZE Hero Effect Duration Probe V3 Control Differential — STATE
 
-Status: **SOURCE READY — BUILD/RUNTIME PENDING**
+Status: **BUILD/STATIC PROVEN — RUNTIME PENDING**
 Date: 2026-09-14 JST
 
 ## Why V3 exists
@@ -49,6 +49,20 @@ Known runtime anchors:
 ## Interpretation rule
 - `Unit+0x460 CTRL chg > 0`: reject as Grayback-specific timer; continue toward the effect-instance/container path.
 - `Unit+0x460 CTRL chg = 0` with many smooth FX changes and low/zero FX flips: promote to high-confidence candidate, but still do not write until direction/scale is understood.
+
+## Build pin
+Repository: `apm23/BRZE-Trainer`
+Branch: `instant-death-v4-hover-telemetry`
+Trigger head: `01a2e03d74f3f8c2983d98febf4a70785703a67c`
+Workflow: `Hero Effect Duration Probe V3 Control Diff Read Only`
+Run: `34790956827` — SUCCESS
+Job: `103814953856` — SUCCESS
+Artifact: `10327249644`
+Artifact digest: `sha256:a7eeb16a1bccd51bd7f449f9ac55913989e42c46f8ef4e7536451ae650d08ac9`
+
+Binaries:
+- Standalone: 66,003,520 bytes — SHA-256 `d3902d905d7787dd85f0b11b54befb62f7081b5ee8c9fa465812ad0058bdee9f`
+- Small: 149,806 bytes — SHA-256 `a4006557ae4a98c1a0fdb7502536ea48d773535c39b6ff63efaea7b91e1b3235`
 
 ## Locked safety rules
 - `HeroEffectReplayV2` one-shot native replay remains runtime-proven and untouched.
