@@ -46,5 +46,5 @@ exec(compile(patched,'finalize_v19_hold_death_layout_v2.generated.py','exec'),{'
 # Any residual literal is stale status/help wording from the layered V18.x UI.
 ui_path=Path('FinalV18MainForm.cs')
 ui=ui_path.read_text(encoding='utf-8')
-ui=ui.replace('Death Burst','Kill All')
+ui=re.sub(r'(?i)death\s+burst','Kill All',ui)
 ui_path.write_text(ui,encoding='utf-8')
