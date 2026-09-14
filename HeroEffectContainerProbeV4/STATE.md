@@ -1,28 +1,55 @@
 # BRZE Hero Effect Container Probe V4 — STATE
 
-Status: **BUILD/STATIC PROVEN — RUNTIME PENDING**
+Status: **RUNTIME-PROVEN LIFECYCLE OBSERVER — TIMER NOT YET ISOLATED**
 Date: 2026-09-14 JST
 
 ## Why V4 exists
-Duration Probe V3 decisively rejected direct `Unit+0x460` as Grayback-duration-specific: during a movement-only no-buff control it changed `55` times with `0` flips, from `413000` to `432800`.
+Duration Probe V3 decisively rejected direct `Unit+0x460` as duration-specific: during a movement-only no-buff control it changed `55` times with `0` flips, from `413000` to `432800`.
 
 Therefore direct Unit movement/transform fields are no longer the target for duration research.
 
-## V4 goal
-Find an actual effect-instance/container field by subtracting ordinary movement-driven object activity from one original Grayback effect pass.
+## V4 runtime result — original Issyl pass
+The user intentionally used ORIGINAL ISSYL instead of Grayback because Grayback lasts about one minute. This is valid because V4 is ability-agnostic and observes target object/container lifetime only.
 
-Target root pointers:
-- `Unit+0x094`
-- `Unit+0x098`
-- `Unit+0x1E4`
-- `Unit+0x1E8`
-- `Unit+0x1F4`
-- `Unit+0x20C`
-- `Unit+0x210`
-- `Unit+0x214`
-- `Unit+0x21C`
+Root lifecycle was exceptionally clean:
+- `Unit+0x094`: PRE `0x168F5D70` -> FX `0x168F5D70` -> EXP `0x168F5D70` (stable)
+- `Unit+0x098`: PRE `0x2B435EC8` -> FX `0x2B435EC8` -> EXP `0x2B435EC8` (stable)
+- `Unit+0x1E4`: PRE `0` -> FX `0x1E01B958` -> EXP `0`
+- `Unit+0x1E8`: PRE `0` -> FX `0x1E01B964` -> EXP `0`
+- `Unit+0x1F4`: stable across PRE/FX/EXP
+- `Unit+0x20C`: PRE `0` -> FX `0x1DF8EA80` -> EXP `0`
+- `Unit+0x210`: PRE `0` -> FX `0x1DF8EA80` -> EXP `0`
+- `Unit+0x214`: PRE `0x1DF8EA80` -> FX `0` -> EXP `0x1DF8EA80`
+- `Unit+0x21C`: stable across PRE/FX/EXP
 
-V2/V3 evidence makes these regions more promising than direct transform fields. `Unit+0x1E4`-derived objects may be visual/particle state, so V4 does not assume any one root is the gameplay timer.
+This proves that `+0x1E4/+0x1E8` and `+0x20C/+0x210` are transient lifecycle roots tightly correlated with visible Issyl effect lifetime. `+0x214` is the inverse lifecycle marker and returns to its exact pre-effect pointer.
+
+Important structural detail:
+- `+0x1E4` and `+0x1E8` point 0x0C bytes apart (`0x1E01B958` vs `0x1E01B964`), suggesting two views/fields into one transient structure rather than independent unrelated allocations.
+- `+0x20C` and `+0x210` are the exact same pointer (`0x1DF8EA80`).
+
+## Why V4 did not isolate the timer
+The report ranking over-rewarded NEW effect-only fields that were static for the entire effect (`FX chg 0`) merely because their containing transient object disappeared at expiry. This flooded the top report with lifecycle/identity/visual data and could hide the truly changing timer/elapsed field.
+
+Examples from the V4 run:
+- many `Unit+0x1E4->field+...` entries: NEW, `CTRL unseen`, `FX chg 0`, `EXP UNREADABLE`;
+- many `Unit+0x20C->field+...` entries: same pattern;
+- the known deeper object under `Unit+0x1E4->+0x008` again appeared only during effect and vanished at expiry, but its top-ranked fields were mostly static.
+
+Therefore V4 proved object lifetime, not the internal duration field.
+
+## Next phase — V5 transient object timer probe
+Do NOT broaden recursive guessing again.
+
+V5 should:
+- remain strictly read-only;
+- ARM before the original skill is cast;
+- automatically detect effect start from the proven lifecycle roots;
+- pin the actual transient object addresses that appeared at `+0x1E4/+0x1E8/+0x20C/+0x210`;
+- sample those exact objects at high frequency;
+- automatically detect expiry when lifecycle roots return to baseline, removing the need for millisecond-perfect user clicks;
+- rank **changing** fields first (especially monotonic low-flip values), while listing static effect-only constants separately so they cannot bury timers;
+- support Issyl and Grayback without hardcoding an ability ID.
 
 ## Read-only architecture
 - `PROCESS_VM_READ | PROCESS_QUERY_INFORMATION` only;
@@ -30,37 +57,7 @@ V2/V3 evidence makes these regions more promising than direct transform fields. 
 - no `VirtualAllocEx` / `VirtualProtectEx`;
 - no `CreateRemoteThread`;
 - no hooks;
-- no native ability replay;
-- original Grayback is cast manually by the user.
-
-Graph:
-- targeted roots only;
-- node scan `0x180` bytes;
-- recursive depth <= 4;
-- max 260 readable nodes per sample;
-- sample interval 250 ms.
-
-## Runtime flow
-1. fresh/reloaded BRZE;
-2. select exactly ONE clean normal unit;
-3. press `1 START 15s MOVE CONTROL` and keep that unit walking continuously with NO hero buff;
-4. after auto-stop, stop the unit;
-5. press `2 CAPTURE PRE-EFFECT`;
-6. cast ORIGINAL Grayback exactly once on that unit;
-7. immediately press `3 START EFFECT WATCH`;
-8. do not recast;
-9. the instant visible Grayback ends naturally, press `4 MARK EXPIRED`;
-10. press `COPY REPORT` and return it.
-
-## Ranking logic
-Movement-only changes are strongly penalized. Candidates are boosted when they:
-- are absent/unseen during movement control;
-- appear only during Grayback;
-- change smoothly with few direction flips during Grayback;
-- return exactly to pre-effect state at natural expiry;
-- become zero or unreadable/disappear at natural expiry.
-
-V4 also retains static fields inside newly-created effect objects, because an expiry timestamp/duration constant may remain unchanged during the effect and disappear only when the object is freed.
+- no native ability replay.
 
 ## Build pin
 Repository: `apm23/BRZE-Trainer`
@@ -76,17 +73,8 @@ Binaries:
 - Standalone: 151,071,946 bytes — SHA-256 `2294592d2844c05a00a72dd06f306e22b0308d99cc7cfeb9a06b66368925a422`
 - Small: 158,956 bytes — SHA-256 `8b8b98155acce0e8690a9c09c5e56a84bae58d30e2669cb1c3ff0cd0542ea7f4`
 
-## Fallback if V4 still cannot isolate timer
-Use the already runtime-proven effect creation path from `HeroEffectSniffer`:
-- magic-create helper RVA `0x13FFD1`;
-- target helper RVA `0x1F0C32`;
-- Grayback runtime ability `0xC0`;
-- Issyl runtime ability `0xA5`.
-
-Next fallback should capture the actual created effect-object pointer or downstream container insertion, then observe that object before any write.
-
 ## Locked rules
 - `HeroEffectReplayV2` one-shot replay remains proven and untouched.
 - repeated native re-application is permanently rejected.
 - `Unit+0x460` must not be reused for duration writing.
-- no duration write until an effect-instance/container field survives movement control and correlates with natural expiry.
+- no duration write until a field inside a proven transient effect object is correlated with automatic natural expiry.
