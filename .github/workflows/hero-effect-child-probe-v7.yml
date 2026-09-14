@@ -1,0 +1,54 @@
+name: Hero Effect Child Probe V7 Read Only
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - 'HeroEffectChildProbeV7/**'
+      - '.hero-effect-child-probe-v7-trigger'
+      - '.github/workflows/hero-effect-child-probe-v7.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify strict read-only architecture
+        shell: pwsh
+        run: |
+          $src = Get-Content 'HeroEffectChildProbeV7/ProbeCore.cs' -Raw
+          $forbidden = @('WriteProcessMemory','VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','FlushInstructionCache','RVA_TARGET_HELPER','RVA_MAGIC_CREATE')
+          foreach ($token in $forbidden) {
+            if ($src.Contains($token)) { throw "Forbidden token in V7 read-only probe: $token" }
+          }
+          if (-not $src.Contains('PROCESS_VM_READ')) { throw 'PROCESS_VM_READ invariant missing' }
+          if (-not $src.Contains('PROCESS_QUERY_INFORMATION')) { throw 'PROCESS_QUERY_INFORMATION invariant missing' }
+          if (-not $src.Contains('ABILITY_OFF=0x058')) { throw 'A5 signature ability offset missing' }
+          if (-not $src.Contains('TARGET_OFF=0x17C')) { throw 'A5 signature target offset missing' }
+          Write-Host 'Read-only + signature-child invariants PASS'
+      - name: Compile smoke
+        run: dotnet build HeroEffectChildProbeV7/HeroEffectChildProbeV7.csproj -c Release -p:Platform=x86
+      - name: Publish standalone
+        run: dotnet publish HeroEffectChildProbeV7/HeroEffectChildProbeV7.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o out/standalone
+      - name: Publish small
+        run: dotnet publish HeroEffectChildProbeV7/HeroEffectChildProbeV7.csproj -c Release -r win-x86 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o out/small
+      - name: Stage outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item 'out/standalone/BRZE-Hero-Effect-Child-Probe-V7.exe' 'artifact/BRZE-Hero-Effect-Child-Probe-V7-ReadOnly.exe'
+          Copy-Item 'out/small/BRZE-Hero-Effect-Child-Probe-V7.exe' 'artifact/BRZE-Hero-Effect-Child-Probe-V7-ReadOnly-Small.exe'
+      - name: Hash outputs
+        shell: pwsh
+        run: Get-FileHash artifact/*.exe -Algorithm SHA256 | Format-Table -AutoSize
+      - name: Upload probe V7
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Child-Probe-V7-ReadOnly
+          path: artifact/*
+          if-no-files-found: error
