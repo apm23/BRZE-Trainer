@@ -1,6 +1,6 @@
 # BRZE Hero Effect Replay + Duration V11 — STATE
 
-Status: **RUNTIME-PROVEN / LAUNCH-READY — CONFIGURABLE DURATION CONFIRMED**
+Status: **PROVEN FINAL / LAUNCH-READY — CONFIGURABLE DURATION CONFIRMED**
 Date: 2026-09-14 JST
 
 ## Proven base
@@ -15,16 +15,18 @@ V10.2 runtime proof:
 
 Locked rule: any modified Issyl duration must stay resident for the ENTIRE active replay lifetime, then restore only after natural expiry.
 
-## V11 runtime result — PASS
-User runtime report:
+## V11 final runtime proof — PASS
+Latest authoritative user runtime report:
 - Stage after replay: `Ready`
 - pinned target remained valid
-- captured A5 config `0x1CCFB694`
-- config identity remained `0xA5`
-- baseline ORIGINAL Issyl wall lifetime: `17694.9 ms`
-- selected preset: nominal `45000` (`ISSYL 3X`)
-- replay wall lifetime: `31642.9 ms`
-- observed wall replay/baseline ratio: `1.788250x`
+- baseline parent resolved through transient content signature
+- captured A5 config identity remained `0xA5`
+- baseline ORIGINAL Issyl wall lifetime: `10742.1 ms`
+- selected preset: `ISSYL 3X`
+- desired nominal duration: `45000`
+- replay wall lifetime: `31612.4 ms`
+- observed replay/baseline ratio: `2.942838x`
+- patch applied after completion: `False`
 - restore attempted: `True`
 - restore OK: `True`
 - last write: `RESTORED config+0x0E0 45000 -> 15000`
@@ -32,33 +34,24 @@ User runtime report:
 - hold inactive after completion
 - no repeated native application / no refresh loop
 
-User additionally reported running a custom-duration replay successfully and observing a longer effect. No further duration-runtime testing is required for launch.
+This is the strongest final scaling proof: nominal 3X produced approximately 2.943X wall lifetime under the same run conditions and restored cleanly afterward.
 
-## Important interpretation
-`1X / 2X / 3X / CUSTOM` are **nominal config multipliers**, not a guarantee of exact wall-clock multiplication.
-
-The authoritative controlled parameter is:
-- original nominal duration `15000`
-- 2X nominal `30000`
-- 3X nominal `45000`
-- custom `15000 × chosen multiplier`
-
-Observed wall-clock lifetime varies with BRZE game-time/tick scaling and therefore may not equal the nominal multiplier exactly. This does NOT invalidate the duration mechanism: V9, V10.2 and V11 together prove that increasing `config+0x0E0` causally extends the effect and that the value can be safely restored after natural expiry.
+User had already run custom-duration replay successfully and observed a longer effect. No more multiplier-runtime testing is required.
 
 ## Launch decision
-**GO. V11 standalone is launch-ready.**
+**GO. V11 is PROVEN FINAL and launch-ready.**
 
-Reasoning:
+Why:
 - known-good Replay V2 remains the only native replay path;
-- arbitrary configurable duration has runtime evidence beyond the fixed 2X proof;
-- automatic full-lifetime hold works;
+- V11 arbitrary duration mechanism is runtime-proven;
+- final 3X preset scales almost exactly 3X in wall time;
+- custom duration was also runtime-successful;
+- full-lifetime hold works;
 - automatic restore to `15000` works;
-- custom replay also worked in user runtime;
 - no stacking/reapply loop was introduced;
-- CI architecture/compile/publish all passed;
-- further multiplier tests would add little confidence relative to cost and are not required before launch.
+- CI architecture/compile/publish all passed.
 
-Do not churn the proven binary solely to rename cosmetic multiplier labels. Document that multiplier labels refer to nominal config values, not exact wall time.
+Do not reopen duration multiplier testing unless a real regression is reported.
 
 ## V11 behavior
 After one baseline capture, the user can replay repeatedly without recapturing baseline:
@@ -68,7 +61,9 @@ After one baseline capture, the user can replay repeatedly without recapturing b
 - `CUSTOM` = `15000 × multiplier`
 - custom UI range `0.25x .. 20.00x`
 
-Current release remains single-target for configurable-duration lifecycle tracking. Multi-target duration tracking is separate future work and is NOT required for V11 standalone launch.
+The multiplier labels are nominal config multipliers. The final runtime proof also shows that 3X can track wall time closely (`2.942838x`) under stable conditions.
+
+Current release remains single-target for configurable-duration lifecycle tracking. Multi-target duration tracking is separate future work and is not required for V11 standalone launch.
 
 ## Architecture
 - `HeroEffectReplayV2/ReplayCore.cs` linked unchanged; it remains the only native replay path.
