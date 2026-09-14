@@ -22,6 +22,7 @@ internal sealed class MainForm : Form
     readonly Label queue = new();
     readonly TextBox report = new();
     readonly System.Windows.Forms.Timer timer = new() { Interval = 20 };
+    bool holdDurationTickUntilNativeCall;
 
     public MainForm()
     {
@@ -84,11 +85,28 @@ internal sealed class MainForm : Form
             string q = ReplayCore.QueueSelected(ReplayCore.ISSYL_RUNTIME_ABILITY, uint.MaxValue, "ISSYL 2X");
             queue.Text = q;
             if (!q.Contains("queued", StringComparison.OrdinalIgnoreCase))
+            {
+                holdDurationTickUntilNativeCall = false;
                 phase.Text = ReplayDurationCore.RestoreNow() + " | V2 queue failed: " + q;
+                return;
+            }
+
+            // CRITICAL V10.1 timing fix:
+            // Do not let V10 observe lifecycle / restore 30000->15000 until V2's
+            // native-call counter proves the apply helper has RETURNED.
+            // Previous merged build restored on first lifecycle visibility, which
+            // happened before the helper finished consuming the duration config.
+            holdDurationTickUntilNativeCall = true;
+            phase.Text = "ISSYL 2X QUEUED — holding duration at 30000 until V2 native call returns...";
         };
-        restore.Click += (_, _) => phase.Text = ReplayDurationCore.RestoreNow();
+        restore.Click += (_, _) =>
+        {
+            holdDurationTickUntilNativeCall = false;
+            phase.Text = ReplayDurationCore.RestoreNow();
+        };
         reset.Click += (_, _) =>
         {
+            holdDurationTickUntilNativeCall = false;
             ReplayCore.ResetRuntime();
             phase.Text = ReplayDurationCore.Reset();
             queue.Text = "QUEUE: idle";
@@ -120,7 +138,7 @@ internal sealed class MainForm : Form
 
         Controls.Add(new Label
         {
-            Text = "TEST FLOW: select ONE clean target → CAPTURE ISSYL BASELINE → cast ORIGINAL Issyl once → wait baseline complete → select same target again → REPLAY ISSYL 2X. The second button patches duration, queues V2 replay, and V10 restores automatically.",
+            Text = "TEST FLOW: select ONE clean target → CAPTURE ISSYL BASELINE → cast ORIGINAL Issyl once → wait baseline complete → select same target again → REPLAY ISSYL 2X. The second button holds 30000 through the native call, then V10 restores automatically after the call returns.",
             AutoSize = false,
             Location = new Point(24, 350),
             Size = new Size(1170, 60),
@@ -140,12 +158,37 @@ internal sealed class MainForm : Form
 
         timer.Tick += (_, _) =>
         {
-            ReplayDurationCore.Tick();
-            RefreshAll();
+            var replay = ReplayCore.Snapshot();
+
+            if (holdDurationTickUntilNativeCall)
+            {
+                if (TryNativeCalls(replay.Queue, out uint calls) && calls > 0)
+                {
+                    // V2 increments CALLS only after the native apply helper returns.
+                    // It is now safe for V10 Tick() to see the lifecycle and restore.
+                    holdDurationTickUntilNativeCall = false;
+                    ReplayDurationCore.Tick();
+                }
+                else if (replay.Queue.StartsWith("QUEUE: DONE", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Defensive fail-safe: never leave 30000 resident if V2 ends
+                    // without proving a native apply call.
+                    holdDurationTickUntilNativeCall = false;
+                    phase.Text = ReplayDurationCore.RestoreNow() + " | V2 ended with zero native calls";
+                }
+                // While native calls == 0, intentionally DO NOT Tick V10.
+            }
+            else
+            {
+                ReplayDurationCore.Tick();
+            }
+
+            RefreshAll(replay);
         };
         timer.Start();
         FormClosed += (_, _) =>
         {
+            holdDurationTickUntilNativeCall = false;
             ReplayDurationCore.Shutdown();
             ReplayCore.ResetRuntime();
         };
@@ -154,12 +197,27 @@ internal sealed class MainForm : Form
         RefreshAll();
     }
 
-    void RefreshAll()
+    static bool TryNativeCalls(string text, out uint calls)
+    {
+        calls = 0;
+        const string key = "native calls:";
+        int p = text.IndexOf(key, StringComparison.OrdinalIgnoreCase);
+        if (p < 0) return false;
+        p += key.Length;
+        while (p < text.Length && char.IsWhiteSpace(text[p])) p++;
+        int e = p;
+        while (e < text.Length && char.IsDigit(text[e])) e++;
+        return e > p && uint.TryParse(text[p..e], out calls);
+    }
+
+    void RefreshAll(RuntimeSnapshot? replaySnapshot = null)
     {
         var d = ReplayDurationCore.Snapshot();
-        var r = ReplayCore.Snapshot();
+        var r = replaySnapshot ?? ReplayCore.Snapshot();
         game.Text = d.Game + " | " + r.Game;
         phase.Text = d.Phase;
+        if (holdDurationTickUntilNativeCall)
+            phase.Text += " | HOLD 30000 until native calls > 0";
         queue.Text = r.Queue;
         report.Lines = d.Lines.ToArray();
     }
