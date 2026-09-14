@@ -1,6 +1,6 @@
 # BRZE Hero Effect Container Probe V4 — STATE
 
-Status: **SOURCE READY — BUILD/RUNTIME PENDING**
+Status: **BUILD/STATIC PROVEN — RUNTIME PENDING**
 Date: 2026-09-14 JST
 
 ## Why V4 exists
@@ -61,6 +61,20 @@ Movement-only changes are strongly penalized. Candidates are boosted when they:
 - become zero or unreadable/disappear at natural expiry.
 
 V4 also retains static fields inside newly-created effect objects, because an expiry timestamp/duration constant may remain unchanged during the effect and disappear only when the object is freed.
+
+## Build pin
+Repository: `apm23/BRZE-Trainer`
+Branch: `instant-death-v4-hover-telemetry`
+Trigger head: `e2e805a4312d1dd278bf70ce0d8aeda0a9e498d0`
+Workflow: `Hero Effect Container Probe V4 Read Only`
+Run: `34791583601` — SUCCESS
+Job: `103816698699` — SUCCESS
+Artifact: `10328387975`
+Artifact digest: `sha256:9170fbf96b3b922ab411932dc9d2f6d0f6dafef7bed2e166e9ab13a00af4133a`
+
+Binaries:
+- Standalone: 151,071,946 bytes — SHA-256 `2294592d2844c05a00a72dd06f306e22b0308d99cc7cfeb9a06b66368925a422`
+- Small: 158,956 bytes — SHA-256 `8b8b98155acce0e8690a9c09c5e56a84bae58d30e2669cb1c3ff0cd0542ea7f4`
 
 ## Fallback if V4 still cannot isolate timer
 Use the already runtime-proven effect creation path from `HeroEffectSniffer`:
