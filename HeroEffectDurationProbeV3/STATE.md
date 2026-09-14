@@ -1,60 +1,62 @@
 # BRZE Hero Effect Duration Probe V3 Control Differential — STATE
 
-Status: **RUNTIME-PROVEN OBSERVER — Unit+0x460 HIGH-CONFIDENCE CANDIDATE, MOVEMENT CONTROL REQUIRED**
+Status: **RUNTIME-PROVEN OBSERVER — Unit+0x460 REJECTED AS DURATION-SPECIFIC**
 Date: 2026-09-14 JST
 
 ## Why V3 exists
-Recursive read-only Probe V2 completed a useful runtime pass but did not yet prove a writable duration field.
+Recursive read-only Probe V2 completed a useful runtime pass but did not prove a writable duration field. V3 compared direct Unit* fields against no-buff controls before any write experiment.
 
-V2 runtime findings:
-- the new object reached through `Unit+0x1E4 -> +0x008` contains values at `+0x028/+0x02C/+0x030` that closely track target world coordinates and clears at visible expiry; treat it as likely visual/particle/transform state, not the gameplay duration timer;
-- new/container-like records beneath `Unit+0x094` remain structurally interesting but are not safe to patch yet;
-- direct `Unit+0x460` became the strongest timer/accumulator candidate seen so far.
+## Idle-control + Grayback result
+Initial same-unit idle control made `Unit+0x460` look highly promising:
+- idle no-buff 15-second control: `CTRL chg 0`, `flip 0`, value stayed `345400`;
+- pre-effect value `345400`;
+- Grayback watch: `FX chg 164`, `flip 0`;
+- first observed active value `354400`;
+- natural visible expiry value `413000`;
+- PRE -> EXP increase `+67600`.
 
-## V3 runtime result — 2026-09-14
-User completed the same-unit idle CONTROL vs ORIGINAL Grayback effect pass.
+However the same Grayback report showed movement/transform activity nearby, so a movement-only control was required before any write.
 
-Pinned `Unit+0x460` result:
-- 15-second no-buff idle control: `CTRL chg 0`, `flip 0`, value stayed `345400`;
-- pre-effect value: `345400`;
-- during Grayback watch: `FX chg 164`, `flip 0`;
-- first observed Grayback-active value: `354400`;
-- natural visible expiry value: `413000`;
-- total PRE -> EXP increase: `+67600`;
-- therefore `Unit+0x460` is strongly effect-correlated and strictly monotonic in this pass.
+## Decisive movement-only no-buff result — 2026-09-14
+User reused V3 with NO Grayback/Issyl/other buff and deliberately kept the selected unit moving during the 15-second control.
 
-Important confound discovered in the same report:
-- target position fields `Unit+0x028/+0x02C/+0x030` also changed repeatedly during the Grayback watch;
-- nearby transform/state fields in `0x45C..0x4A4` were active/noisy during the same interval;
-- because `+0x460` sits inside/adjacent to that live movement/transform cluster, it is not yet proven to be Grayback duration-specific. It may instead be a movement/animation accumulator that happened to be inactive during the stationary control.
+Pinned `Unit+0x460`:
+- `CTRL chg 55`;
+- `flip 0`;
+- value `413000 -> 432800`;
+- total increase `+19800` during movement-only control.
 
-Other useful expiry evidence:
-- `Unit+0x1E4` and `Unit+0x1E8` changed from null to a pointer during the effect and returned to zero at visible expiry;
-- `Unit+0x20C/+0x210` similarly became populated during the effect and returned to zero at expiry;
-- `Unit+0x214` changed during the effect and returned exactly to its pre-effect baseline pointer at expiry;
-- these remain better interpreted as effect/visual/container lifecycle markers than a writable gameplay duration field until proven otherwise.
+Therefore `Unit+0x460` is **REJECTED as a Grayback-duration-specific timer**. Its monotonic behavior is reproducible from ordinary movement/activity and is consistent with a generic movement/animation/activity accumulator or neighboring state clock.
 
-## Exact next proof
-Reuse this same V3 binary for a **movement-only no-buff control** before any memory write:
-1. fresh/reloaded BRZE;
-2. select exactly ONE clean normal unit with no hero effect active;
-3. press `1 START 15s CONTROL`;
-4. DURING those 15 seconds deliberately keep the unit walking/moving (no Grayback, no other buff, no attack required);
-5. when the control auto-stops, press `COPY REPORT` immediately;
-6. inspect pinned `Unit+0x460`.
+Do NOT patch, freeze, scale, or otherwise write `Unit+0x460` for hero-effect duration.
 
-Decision rule:
-- if movement-only control gives `CTRL chg > 0`, reject `+0x460` as Grayback-duration-specific and continue toward effect-instance/container interception;
-- if movement-only control still gives `CTRL chg 0`, `+0x460` becomes a very strong Grayback-specific elapsed/duration candidate and the next test should compare its direction/scale across clean Grayback and Issyl runs before any isolated write.
+Additional movement-only evidence:
+- position/transform fields including `Unit+0x028/+0x02C/+0x030`, `+0x45C..+0x4A4`, and several world-coordinate-like fields changed during the no-buff movement control;
+- this confirms the direct movement/transform cluster cannot be used as effect duration evidence solely because it changes monotonically during a buff pass.
+
+## Remaining useful V2/V3 lifecycle evidence
+- `Unit+0x1E4/+0x1E8` populated during Grayback and returned to zero at visible expiry;
+- `Unit+0x20C/+0x210` likewise populated during Grayback and returned to zero at visible expiry;
+- `Unit+0x214` changed during the effect and returned to its pre-effect pointer;
+- structures beneath `Unit+0x094` remain interesting container candidates;
+- object(s) under `Unit+0x1E4` carried XYZ-like values and are likely visual/particle/transform state, so they must not be assumed to contain the gameplay timer.
+
+## Next direction
+Stop scanning direct Unit fields for the timer. Move to a targeted **effect-instance/container differential**:
+- compare recursive object/container paths during movement-only control versus one original Grayback cast;
+- prioritize paths absent/stable during movement but created/changed only during Grayback;
+- correlate candidate field lifetime with natural visible expiry;
+- remain observation-only before any write.
+
+If recursive container differential still fails to isolate a coherent timer, intercept the runtime effect-creation path (`RVA 0x13FFD1`, already runtime-proven by HeroEffectSniffer) to capture the actual created effect/object pointer or downstream container insertion, then observe that object read-only.
 
 ## Read-only architecture
 - process access: `PROCESS_VM_READ | PROCESS_QUERY_INFORMATION` only;
 - no `WriteProcessMemory`;
-- no hooks;
+- no hooks in V3;
 - no `VirtualAllocEx` / `VirtualProtectEx`;
 - no `CreateRemoteThread`;
-- no native ability call/replay;
-- original hero skills are cast manually by the user when required.
+- no native ability call/replay.
 
 Known runtime anchors:
 - selection list RVA `0x441708`;
@@ -79,4 +81,5 @@ Binaries:
 ## Locked safety rules
 - `HeroEffectReplayV2` one-shot native replay remains runtime-proven and untouched.
 - `HeroEffectReplayV3` repeated re-apply/refresh is runtime-rejected and must never be reused.
-- no duration write is allowed until `Unit+0x460` survives the movement-only control and then cross-effect timing proof.
+- `Unit+0x460` is a hard reject for duration-specific writing.
+- no duration write until an effect-instance/container field is correlated against movement control and natural expiry.
