@@ -1,0 +1,139 @@
+name: Final V35 RC Four-Pack
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v35-rc-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate locked V20 integrated base
+        shell: pwsh
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v13_integrated.py
+          python tools/finalize_v14_building_profiles.py
+          python tools/v14_generator_repair.py
+          python tools/v14_ui_compile_repair.py
+          python tools/finalize_v15_compact_ui.py
+          python tools/finalize_v16_unit_catalog.py
+          python tools/finalize_v17_wotw_warning.py
+          python tools/finalize_v18_quick_tabs.py
+          python tools/finalize_v18_2_inline_allslots.py
+          python tools/finalize_v18_3_bulk_actions.py
+          python tools/finalize_v19_hold_death_layout_v2.py
+          python tools/finalize_v20_integrated_features.py
+
+      - name: Apply V22 explicit-target dispatcher facade
+        run: python tools/finalize_v22_group_safe_hero.py
+
+      - name: Apply proven V30 Hero reset layer
+        run: python tools/finalize_v30_reset_hero.py
+
+      - name: Lock proven gameplay sources
+        shell: pwsh
+        run: |
+          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content unit.before
+          (Get-FileHash HookCore.cs -Algorithm SHA256).Hash | Set-Content hook.before
+          (Get-FileHash InstantDeathCore.cs -Algorithm SHA256).Hash | Set-Content death.before
+          (Get-FileHash IntegratedFrameDispatcherCore.cs -Algorithm SHA256).Hash | Set-Content dispatcher.before
+          (Get-FileHash HeroEffectDirectCoreV30.cs -Algorithm SHA256).Hash | Set-Content hero.before
+          (Get-FileHash IntegratedFeaturePanelsV30.cs -Algorithm SHA256).Hash | Set-Content panel.before
+          (Get-FileHash StaminaCore.cs -Algorithm SHA256).Hash | Set-Content stamina.before
+          (Get-FileHash RevealMapCore.cs -Algorithm SHA256).Hash | Set-Content reveal.before
+
+      - name: Apply V34 hard-rebind/collision-clean base
+        run: python tools/finalize_v34_candidate.py
+
+      - name: Apply V35 final polish
+        run: python tools/finalize_v35_final_polish.py
+
+      - name: Runtime patch collision and final-polish audit
+        run: python tools/audit_v35_runtime_conflicts.py
+
+      - name: Verify V35 architecture
+        shell: pwsh
+        run: |
+          function Same($before,$file,$name){$a=(Get-Content $before -Raw).Trim();$b=(Get-FileHash $file -Algorithm SHA256).Hash;if($a -ne $b){throw "V35 changed locked $name"}}
+          Same unit.before UnitChangerCore.cs UnitChanger
+          Same hook.before HookCore.cs HookCore
+          Same death.before InstantDeathCore.cs InstantDeathWrapper
+          Same dispatcher.before IntegratedFrameDispatcherCore.cs SharedDispatcher
+          Same hero.before HeroEffectDirectCoreV30.cs HeroResetCore
+          Same panel.before IntegratedFeaturePanelsV30.cs OriginalV30Panels
+          Same stamina.before StaminaCore.cs StaminaCore
+          Same reveal.before RevealMapCore.cs RevealMapCore
+
+          $ui=Get-Content FinalV18MainForm.cs -Raw
+          foreach($x in @('Text="BRZE Trainer — V35 Clean"','Text="BRZE Trainer — V35 Diagnostics"','V35  ·  FINAL RC + 0.1 OFFSET + MOVABLE OVERLAY  ·  INTEGRATED','OverlayHotkeyControllerV35.Attach(this);','HeroEffectDirectCoreV30.Shutdown();','IntegratedFrameDispatcherCore.StopAll();','GameGate.Probe(true)','ClientSize=new Size(1640,900);')){if($ui -notmatch [regex]::Escape($x)){throw "V35 UI/refresh missing: $x"}}
+
+          $panel=Get-Content IntegratedFeaturePanelsV35.cs -Raw
+          foreach($x in @('Minimum=0.1m','Maximum=64m','Increment=0.1m','PasteCopied((float)offset.Value)')){if($panel -notmatch [regex]::Escape($x)){throw "V35 main COPY panel missing: $x"}}
+
+          $overlay=Get-Content OverlayHotkeyControllerV35.cs -Raw
+          foreach($x in @('Opacity=0.91','91% GLASS','−0.1','+0.1','UserMoved','EnableHeaderDrag','dragCursorStart=Cursor.Position','Location=new Point(x,y);UserMoved=true','overlay.UserMoved?new Rectangle(overlay.Location,overlay.Size)','DEATH TARGET  //  ENEMY ONLY','UNIT CHANGER  //  FULL MINI CONTROL')){if($overlay -notmatch [regex]::Escape($x)){throw "V35 overlay missing: $x"}}
+          if($overlay -match 'CreateRemoteThread'){throw 'V35 overlay must not use remote thread creation'}
+
+          $proj=Get-Content MergedTrainerV35.csproj -Raw
+          foreach($x in @('HeroEffectDirectCoreV30.cs','IntegratedFrameDispatcherCore.cs','IntegratedFeaturePanelsV35.cs','OverlayHotkeyControllerV35.cs','BRZE-Trainer-FINAL-V35')){if($proj -notmatch [regex]::Escape($x)){throw "V35 project missing: $x"}}
+          if($proj -match '<Compile Include="IntegratedFeaturePanelsV30.cs"'){throw 'V35 must compile UI-only V35 panel copy, not V30 panel directly'}
+          if($proj -match 'OverlayHotkeyControllerV34.cs'){throw 'V35 must not compile V34 controller'}
+          Write-Host 'V35 PASS — gameplay cores locked; main 0.1 COPY offset; movable 91% overlay; collision audit clean; hard refresh preserved'
+
+      - name: Compile CLEAN smoke
+        run: dotnet build MergedTrainerV35.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+      - name: Compile DIAGNOSTICS smoke
+        run: dotnet build MergedTrainerV35.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish CLEAN standalone
+        run: |
+          dotnet publish MergedTrainerV35.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
+          Move-Item publish-clean/BRZE-Trainer-FINAL-V35.exe publish-clean/BRZE-Trainer-FINAL-V35-Clean.exe
+      - name: Publish DIAGNOSTICS standalone
+        run: |
+          dotnet publish MergedTrainerV35.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag
+          Move-Item publish-diag/BRZE-Trainer-FINAL-V35.exe publish-diag/BRZE-Trainer-FINAL-V35-Diagnostics.exe
+      - name: Publish CLEAN small
+        run: |
+          dotnet publish MergedTrainerV35.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
+          Move-Item publish-clean-small/BRZE-Trainer-FINAL-V35.exe publish-clean-small/BRZE-Trainer-FINAL-V35-Clean-Small.exe
+      - name: Publish DIAGNOSTICS small
+        run: |
+          dotnet publish MergedTrainerV35.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag-small
+          Move-Item publish-diag-small/BRZE-Trainer-FINAL-V35.exe publish-diag-small/BRZE-Trainer-FINAL-V35-Diagnostics-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-clean/BRZE-Trainer-FINAL-V35-Clean.exe -Algorithm SHA256
+          Get-FileHash publish-diag/BRZE-Trainer-FINAL-V35-Diagnostics.exe -Algorithm SHA256
+          Get-FileHash publish-clean-small/BRZE-Trainer-FINAL-V35-Clean-Small.exe -Algorithm SHA256
+          Get-FileHash publish-diag-small/BRZE-Trainer-FINAL-V35-Diagnostics-Small.exe -Algorithm SHA256
+
+      - name: Upload V35 four-pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V35-RC
+          compression-level: 0
+          path: |
+            publish-clean/BRZE-Trainer-FINAL-V35-Clean.exe
+            publish-diag/BRZE-Trainer-FINAL-V35-Diagnostics.exe
+            publish-clean-small/BRZE-Trainer-FINAL-V35-Clean-Small.exe
+            publish-diag-small/BRZE-Trainer-FINAL-V35-Diagnostics-Small.exe
