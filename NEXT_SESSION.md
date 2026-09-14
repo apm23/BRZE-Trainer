@@ -20,6 +20,7 @@ Branch: `instant-death-v4-hover-telemetry`
 `HeroEffectReplayV2/STATE.md`
 - **RUNTIME-PROVEN one-shot replay.** Keep untouched as known-good fallback.
 - Uses game-thread frame hook RVA `0x135C43`, max 4 native calls/frame, max 120 selected.
+- Proven binary standalone SHA-256 `2b5671e9a4d13768a2e3adccd12a82b0137419cbd926d2a3cbb6870fe930a702`.
 
 `HeroEffectReplayV3/STATE.md`
 - **RUNTIME-REJECTED.** Repeated native replay stacks/compounds effects. NEVER REUSE.
@@ -46,32 +47,52 @@ Branch: `instant-death-v4-hover-telemetry`
 
 `HeroEffectDurationWriteProbeV9/STATE.md`
 - **RUNTIME-PROVEN — DURATION FIELD CONFIRMED.**
-- Same pinned target, Issyl controlled write:
+- Issyl controlled write:
   - baseline nominal `15000`
   - test nominal `30000`
   - baseline natural wall `10738.0 ms`
   - patched natural wall `21222.5 ms`
   - observed ratio `1.976390x`
-  - test parent `0x28C03890` via a different transient path, but same A5 config verified
   - automatic restore `30000 -> 15000` succeeded
-  - final current config back at `15000`
 - Locked conclusion: `parent+0x1F4 -> config+0x0E0` is the hero-effect nominal duration parameter.
-- Critical integration fact: restoring the config after effect creation does NOT shorten the already-created effect. Duration is copied/consumed at effect creation.
+- Restoring config after effect creation does NOT shorten the already-created effect; duration is copied/consumed at effect creation.
 
-## Exact next engineering objective
-Build **V10 Duration Replay Integration Lab** as a separate layer above known-good Replay V2. Do NOT mutate V2.
+`HeroEffectReplayDurationV10/STATE.md`
+- **BUILT / CI-PROVEN COMPANION — RUNTIME TEST NEXT.**
+- V10 deliberately does NOT hook or call native helpers; known-good Replay V2 stays untouched and performs the one-shot replay.
+- CI forbids V10 from containing executable-memory/hook/native-helper machinery.
+- V10 captures A5 config from one original Issyl baseline, then guarded-patches `15000 -> 30000` before a Replay V2 click.
+- When V10 detects the V2-created lifecycle, it immediately restores `30000 -> 15000` and measures the replay effect until natural expiry.
+- Workflow `Hero Effect Replay Duration V10 Companion`.
+- Run `34795909466` SUCCESS; job `103828838973` SUCCESS.
+- Head `2a140fc395cbb9c76e0c8fca173a24933f00d147`.
+- Artifact `10329941650`, digest `sha256:89779875f2dd9f73770c7153aa53ec3132f8a73aa90292ccaae88a95d1e4f733`.
+- Standalone SHA-256 `2933018dd7888598f2d9380bc9155a42885f62ba23a03efe150ef3ae4351bc57`.
+- Small SHA-256 `bb0eebcd330674949115f3991ee171e0000b63bbd364c34a411e010511ff5c1e`.
 
-Desired mechanism:
-1. preserve V2 game-thread one-shot native replay architecture;
-2. resolve/validate the ability-specific config record before replay;
-3. immediately before each native apply call, temporarily patch only `config+0x0E0` to requested nominal duration;
-4. call the native target-helper once;
-5. immediately restore the original nominal duration after that call;
-6. no periodic refresh, no stacking, no lingering global config patch;
-7. retain V2 max-120 / max-4-calls-per-frame guardrails;
-8. runtime-test standalone V10 before any main-trainer integration.
+## Exact next action — V10 Replay V2 duration proof
+Run BOTH the V10 companion and the known-good Replay V2.
 
-Initial safe V10 target: prove Issyl replay at 2X duration first. Grayback can follow after the same mechanism is proven in replay context.
+1. Fresh/reload BRZE.
+2. Open V10 companion.
+3. Open known-good `HeroEffectReplayV2`; do NOT press its buttons yet.
+4. Select exactly ONE clean target in BRZE.
+5. In V10 click `1) ARM BASELINE / CAPTURE`.
+6. Select Issyl in BRZE and cast ORIGINAL Haste ONCE on that target.
+7. Wait until V10 says baseline complete / ready for replay (~10.7 s).
+8. Select the same target again after Haste is fully gone.
+9. In V10 click `2) ARM REPLAY 2X`.
+10. NOW switch to Replay V2 and click `ISSYL 0xA5` exactly once. Do NOT manually cast Issyl this second time.
+11. Return to V10 and do nothing until it shows COMPLETE (~21 s expected).
+12. COPY REPORT from V10 and return it.
+
+Expected proof:
+- baseline ~10.7 s;
+- Replay V2 2X ~21 s;
+- ratio near 2.0x;
+- replay parent resolves to same A5 config;
+- config already restored to 15000 while effect remains active;
+- no stacking/compounded behavior.
 
 ## Locked rejects / safety
 - no repeated native reapplication;
@@ -84,4 +105,4 @@ Initial safe V10 target: prove Issyl replay at 2X duration first. Grayback can f
 - no main V18.3 integration until V10 runtime proof passes.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. Replay V2 one-shot is runtime-proven; V3 repeated refresh is permanently rejected. V8 proved ability config at parent+0x1F4: Issyl A5 duration nominal 15000, Grayback C0 60000. V9 CAUSALLY proved config+0x0E0 is the duration field: Issyl 15000->30000 changed natural wall lifetime 10738.0ms->21222.5ms (1.976390x) and auto-restored to 15000. Next build V10 as a separate Replay-V2-based duration integration lab using temporary per-call config patch + immediate restore.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V9 causally proved config+0x0E0 duration: Issyl 15000->30000 changed natural lifetime 10738.0ms->21222.5ms (1.976390x) and restored safely. Replay V2 one-shot remains runtime-proven and untouched. V10 companion built SUCCESS (run 34795909466, artifact 10329941650): capture A5 config with one original Issyl baseline, arm 30000, then click ISSYL once in known-good Replay V2; V10 restores 15000 immediately on lifecycle detection and measures replay lifetime. Runtime-test V10 next.`
