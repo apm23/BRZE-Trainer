@@ -1,6 +1,6 @@
 # BRZE Hero Effect Current-Time Source V27 — STATE
 
-Status: **BUILT / CI-PROVEN — READ-ONLY CALLER/CLOCK-SOURCE DISCOVERY, RUNTIME REPORT PENDING**
+Status: **RUNTIME-PROVEN READ-ONLY — UNIQUE CALLER CHAIN FOUND, EXACT ARG SOURCE STILL UNRESOLVED**
 Date: 2026-09-14 JST
 
 ## Why V27 exists
@@ -20,29 +20,6 @@ Function RVA `0x13A5EB` consumes a stack argument at `[EBP+8]` that participates
 - creation/init path copies `[EBP+8]` into `record+0x194` when the record is being initialized;
 - later expiry logic subtracts `record+0x194` from current time and compares elapsed time with `record+0x1F4 -> config+0xE0`.
 
-A safe clock reset may still be possible if we can read the **actual current BRZE game-time value** and write that exact value into an existing same-effect record. No guessed wall-clock conversion is allowed.
-
-## V27 purpose
-Strict read-only discovery of the source of RVA `0x13A5EB` argument `[EBP+8]`.
-
-V27:
-1. scans `.text` for direct `E8` call xrefs to RVA `0x13A5EB`;
-2. reconstructs likely caller function boundaries and dumps instructions around each call;
-3. samples absolute memory operands used by caller code twice, 350ms apart, highlighting changing clock-like values;
-4. scans non-`.text` sections for relocated runtime pointers to the tick function, to reveal possible vtable/indirect dispatch;
-5. prints a recursive direct-caller summary up to depth 3;
-6. optionally records the currently selected live A5 record for runtime context.
-
-## Safety
-- PROCESS_VM_READ | PROCESS_QUERY_INFORMATION only;
-- no WriteProcessMemory;
-- no hooks;
-- no VirtualAllocEx;
-- no CreateRemoteThread;
-- no native ability calls;
-- no cleanup/destructor calls;
-- no mutation of BRZE.
-
 ## V27 CI pin
 Workflow: `Hero Effect Current-Time Source V27 Read Only`
 - run `34830108923` — SUCCESS
@@ -53,21 +30,27 @@ Workflow: `Hero Effect Current-Time Source V27 Read Only`
 - standalone SHA256 `014a74d59dc05ad170057c9bb04d7e033e6e8a29376630bc3c6f65bf26fce36e`
 - small SHA256 `5deeeb1437acc3a4eab203959b5fd94e8a947f4cef113da0b8d7dd40cdb021ee`
 
-CI PASS:
-- strict read-only architecture verifier;
-- compile smoke;
-- standalone publish;
-- small publish;
-- hash;
-- artifact upload.
+## V27 runtime result
+Runtime context:
+- PID `6528`, moduleBase `0x00870000`
+- selected Unit* `0x22B47F2C`, UnitDef* `0x1688993C`, owner `0`
+- active A5 record `0x235AE09C` via `Unit+0x1E4->+0x008`
+- record+0x194 `400600`
+- config `0x1D1FA664`, duration `15000`
 
-## Exact runtime action
-1. Prefer exactly ONE selected unit with active Issyl for context; static scan can still run without it.
-2. Run `BRZE-Hero-Effect-Current-Time-Source-V27-ReadOnly.exe`.
-3. Click `SCAN CURRENT-TIME SOURCE` once.
-4. Click `COPY REPORT` and send the full report.
+Direct call discovery:
+- exactly ONE direct E8 call to tick RVA `0x13A5EB`:
+  - call site `0x140125`
+  - caller function start `0x1400F0`
+- no runtime pointer refs to tick function outside `.text`.
 
-## Decision after runtime
-PASS for this discovery stage means the report identifies a plausible real source for the current game-time argument, ideally a readable global or a short caller chain ending in one.
+Unique recursive direct-caller chain:
+`0x144691 -> 0x144794 -> 0x1C3107 -> 0x1400F0 -> 0x13A5EB`
 
-Only after that source is identified should the next guarded write proof set an existing A5 record's `+0x194` directly to the freshly read game-time value.
+Important limitation:
+- V27 printed operand kinds but not exact register names;
+- therefore the value pushed immediately before `0x140125`, and its propagation from upper callers, is not yet concretely identified;
+- V27 did NOT identify a clock global and did NOT justify a write.
+
+## Decision
+Advance to V28 exact-register/stack tracing. No timestamp write yet.
