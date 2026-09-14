@@ -125,14 +125,14 @@ internal static class OverlayHotkeyControllerV32
     static void Toggle()
     {
         if(main==null||main.IsDisposed)return;
-        if(overlay==null||overlay.IsDisposed)overlay=new PremiumOverlayForm(main,()=>{Hide();});
+        if(overlay==null||overlay.IsDisposed)overlay=new PremiumOverlayForm(main,()=>Hide());
         if(overlay.Visible)Hide();else Show();
     }
 
     static void Show()
     {
         if(main==null)return;
-        if(overlay==null||overlay.IsDisposed)overlay=new PremiumOverlayForm(main,()=>{Hide();});
+        if(overlay==null||overlay.IsDisposed)overlay=new PremiumOverlayForm(main,()=>Hide());
         var game=GameWindow();
         var b=OverlayBounds(overlay,game);
         overlay.Location=b.Location;
@@ -174,10 +174,9 @@ internal sealed class PremiumOverlayForm : Form
 
     static readonly Color Bg=Color.FromArgb(13,17,24);
     static readonly Color Card=Color.FromArgb(23,29,39);
-    static readonly Color Card2=Color.FromArgb(29,36,48);
     static readonly Color Accent=Color.FromArgb(94,224,177);
     static readonly Color Accent2=Color.FromArgb(110,184,255);
-    static readonly Color Text=Color.FromArgb(239,244,249);
+    static readonly Color TextColor=Color.FromArgb(239,244,249);
     static readonly Color Dim=Color.FromArgb(153,166,183);
     static readonly Color Off=Color.FromArgb(42,50,64);
     static readonly Color On=Color.FromArgb(29,115,88);
@@ -238,7 +237,7 @@ internal sealed class PremiumOverlayForm : Form
         Controls.Add(root);
 
         var head=new Panel{Dock=DockStyle.Fill,BackColor=Color.Transparent};
-        head.Controls.Add(new Label{Text="BATTLE REALMS  //  LIVE CONTROL DECK",Location=new Point(0,2),Size=new Size(530,29),ForeColor=Text,Font=new Font("Segoe UI Semibold",15.2f,FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft});
+        head.Controls.Add(new Label{Text="BATTLE REALMS  //  LIVE CONTROL DECK",Location=new Point(0,2),Size=new Size(530,29),ForeColor=TextColor,Font=new Font("Segoe UI Semibold",15.2f,FontStyle.Bold),TextAlign=ContentAlignment.MiddleLeft});
 #if RAW_STATUS
         string mode="DIAGNOSTICS";
 #else
@@ -284,13 +283,17 @@ internal sealed class PremiumOverlayForm : Form
 
         var dur=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=4,BackColor=Color.Transparent};
         dur.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,56));dur.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));dur.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,56));dur.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,58));
-        var minus=FlatButton("−5",48,Off),plus=FlatButton("+5",48,Off),reset=FlatButton("30",50,Off);
-        durationLabel.Dock=DockStyle.Fill;durationLabel.ForeColor=Text;durationLabel.Font=new Font("Segoe UI Semibold",12f);durationLabel.TextAlign=ContentAlignment.MiddleCenter;
+        var minus=FlatButton("−5",48,Off);
+        var plus=FlatButton("+5",48,Off);
+        var reset=FlatButton("30",50,Off);
+        durationLabel.Dock=DockStyle.Fill;durationLabel.ForeColor=TextColor;durationLabel.Font=new Font("Segoe UI Semibold",12f);durationLabel.TextAlign=ContentAlignment.MiddleCenter;
         minus.Click+=(_,_)=>{heroSeconds=Math.Max(1m,heroSeconds-5m);UpdateDuration();};plus.Click+=(_,_)=>{heroSeconds=Math.Min(420m,heroSeconds+5m);UpdateDuration();};reset.Click+=(_,_)=>{heroSeconds=30m;UpdateDuration();};
         dur.Controls.Add(minus,0,0);dur.Controls.Add(durationLabel,1,0);dur.Controls.Add(plus,2,0);dur.Controls.Add(reset,3,0);root.Controls.Add(dur,0,0);UpdateDuration();
 
         var hero=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,BackColor=Color.Transparent};for(int c=0;c<3;c++)hero.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.333f));
-        var issyl=FlatButton("ISSYL",100,On),gray=FlatButton("GRAYBACK",100,On),both=FlatButton("BOTH",100,Color.FromArgb(45,92,128));
+        var issyl=FlatButton("ISSYL",100,On);
+        var gray=FlatButton("GRAYBACK",100,On);
+        var both=FlatButton("BOTH",100,Color.FromArgb(45,92,128));
         issyl.Dock=gray.Dock=both.Dock=DockStyle.Fill;issyl.Margin=gray.Margin=both.Margin=new Padding(3);
         issyl.Click+=(_,_)=>Run(()=>HeroEffectDirectCoreV30.Start(DirectHeroMode.Issyl,heroSeconds));
         gray.Click+=(_,_)=>Run(()=>HeroEffectDirectCoreV30.Start(DirectHeroMode.Grayback,heroSeconds));
@@ -299,7 +302,9 @@ internal sealed class PremiumOverlayForm : Form
         root.Controls.Add(new Label{Text="COPY UNIT",Dock=DockStyle.Fill,ForeColor=Dim,Font=new Font("Segoe UI Semibold",8.1f),TextAlign=ContentAlignment.BottomLeft},0,2);
 
         var copy=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,BackColor=Color.Transparent};copy.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));copy.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
-        var cp=FlatButton("COPY SELECTED",120,Off),paste=FlatButton("PASTE BESIDE",120,Off);cp.Dock=paste.Dock=DockStyle.Fill;cp.Margin=paste.Margin=new Padding(3);
+        var cp=FlatButton("COPY SELECTED",120,Off);
+        var paste=FlatButton("PASTE BESIDE",120,Off);
+        cp.Dock=paste.Dock=DockStyle.Fill;cp.Margin=paste.Margin=new Padding(3);
         cp.Click+=(_,_)=>Run(()=>IntegratedFrameDispatcherCore.CopySelection().Message);paste.Click+=(_,_)=>Run(()=>IntegratedFrameDispatcherCore.PasteCopied(8f));copy.Controls.Add(cp,0,0);copy.Controls.Add(paste,1,0);root.Controls.Add(copy,0,3);
 
         var kill=FlatButton("SINGLE KILL  //  ENEMY",250,Color.FromArgb(105,48,52));kill.Dock=DockStyle.Fill;kill.Margin=new Padding(3);kill.Click+=(_,_)=>Run(()=>IntegratedFrameDispatcherCore.DeathTriggerSingle(false)?"Single-kill queued on hovered enemy.":"Single-kill could not be queued.");root.Controls.Add(kill,0,4);
@@ -316,7 +321,7 @@ internal sealed class PremiumOverlayForm : Form
 
     Button FlatButton(string text,int width,Color back)
     {
-        var b=new Button{Text=text,Width=width,Height=36,FlatStyle=FlatStyle.Flat,BackColor=back,ForeColor=Text,Font=new Font("Segoe UI Semibold",8.4f),Cursor=Cursors.Hand,UseMnemonic=false,TabStop=false};b.FlatAppearance.BorderColor=Color.FromArgb(70,82,101);b.FlatAppearance.BorderSize=1;return b;
+        var b=new Button{Text=text,Width=width,Height=36,FlatStyle=FlatStyle.Flat,BackColor=back,ForeColor=TextColor,Font=new Font("Segoe UI Semibold",8.4f),Cursor=Cursors.Hand,UseMnemonic=false,TabStop=false};b.FlatAppearance.BorderColor=Color.FromArgb(70,82,101);b.FlatAppearance.BorderSize=1;return b;
     }
 
     void UpdateDuration()=>durationLabel.Text=$"DURATION  {heroSeconds:0.#}s";
