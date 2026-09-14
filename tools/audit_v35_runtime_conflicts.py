@@ -68,18 +68,28 @@ if 'IntegratedFrameDispatcherCore.QueueReplayUnits' not in hero or 'RVA_FRAME_MO
     raise SystemExit('V35 AUDIT Hero Effect dispatcher ownership invalid')
 
 ui=texts['FinalV18MainForm.cs']
-for marker in ('HeroEffectDirectCoreV30.Shutdown();','IntegratedFrameDispatcherCore.StopAll();','GameGate.Probe(true)','Array.Clear(held,0,held.Length)','OverlayHotkeyControllerV35.Attach(this);'):
-    if marker not in ui: raise SystemExit('V35 AUDIT main/hard-refresh missing: '+marker)
+for marker in (
+    'HeroEffectDirectCoreV30.Shutdown();','IntegratedFrameDispatcherCore.StopAll();','GameGate.Probe(true)',
+    'Array.Clear(held,0,held.Length)','OverlayHotkeyControllerV35.Attach(this);',
+    'UnitChangerMemoryPath','unit-changer-v1.json','SaveUnitChangerMemory()','LoadUnitChangerMemory()',
+    'System.Text.Json.JsonSerializer','SelectProfile(0);LoadUnitChangerMemory();SetUnitFilter(-1);return box;'
+):
+    if marker not in ui: raise SystemExit('V35 AUDIT main/hard-refresh/memory missing: '+marker)
 if 'HookCore.Tick(false,hp.Checked,training.Checked)' not in ui or 'StaminaCore.Tick(stamina.Checked)' not in ui:
     raise SystemExit('V35 AUDIT stamina ownership changed')
 
 panel=texts['IntegratedFeaturePanelsV35.cs']
-for marker in ('Minimum=0.1m','Maximum=64m','Increment=0.1m','DecimalPlaces=1','PasteCopied((float)offset.Value)'):
+for marker in ('Minimum=0.1m','Maximum=64m','Increment=0.1m','DecimalPlaces=1','Value=0.1m','PasteCopied((float)offset.Value)'):
     if marker not in panel: raise SystemExit('V35 AUDIT main COPY offset missing: '+marker)
 
 overlay=texts['OverlayHotkeyControllerV35.cs']
-for marker in ('Opacity=0.91','−0.1','+0.1','Math.Max(0.1f','public bool UserMoved { get; private set; }','EnableHeaderDrag(head)','EnableHeaderDrag(dragTitle)','EnableHeaderDrag(dragSub)','dragCursorStart=Cursor.Position','Location=new Point(x,y);UserMoved=true','overlay.UserMoved?new Rectangle(overlay.Location,overlay.Size)','OverlayHotkeyControllerV35.ReturnGameFocus();','UNIT CHANGER  //  FULL MINI CONTROL'):
-    if marker not in overlay: raise SystemExit('V35 AUDIT movable overlay missing: '+marker)
+for marker in (
+    'Opacity=0.91','−0.1','+0.1','Math.Max(0.1f','float copyOffset=0.1f','copyOffset=0.1f;UpdateOffset();',
+    'public bool UserMoved { get; private set; }','EnableHeaderDrag(head)','EnableHeaderDrag(dragTitle)','EnableHeaderDrag(dragSub)',
+    'dragCursorStart=Cursor.Position','Location=new Point(x,y);UserMoved=true','overlay.UserMoved?new Rectangle(overlay.Location,overlay.Size)',
+    'OverlayHotkeyControllerV35.ReturnGameFocus();','UNIT CHANGER  //  FULL MINI CONTROL'
+):
+    if marker not in overlay: raise SystemExit('V35 AUDIT movable overlay/default offset missing: '+marker)
 if 'CreateRemoteThread' in overlay: raise SystemExit('V35 overlay must not use remote thread creation')
 
 print('=== V35 RUNTIME CONFLICT AUDIT ===')
@@ -89,6 +99,7 @@ for val,f,fn,name in sorted(rows): print(f'  0x{val:06X}  {f:<36} {fn:<10} {name
 print('PASS: no fixed-address mutation site is owned by multiple compiled cores.')
 print('PASS: render hook 0x135C43 has exactly one owner: IntegratedFrameDispatcherCore.')
 print('PASS: Hero + death native work remains serialized through the shared dispatcher.')
-print('PASS: main COPY offset is 0.1..64.0 in 0.1 increments.')
+print('PASS: COPY offset is 0.1..64.0 in 0.1 increments and defaults/resets to 0.1 in both UIs.')
+print('PASS: Unit Changer profile/output/slot settings persist as UI-only LOCALAPPDATA JSON.')
 print('PASS: 91% overlay is draggable from header and preserves user position across hide/show.')
 print('PASS: hard refresh still tears down trainer runtime and force re-probes BRZE.')
