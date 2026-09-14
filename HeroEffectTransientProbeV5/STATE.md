@@ -1,6 +1,6 @@
 # BRZE Hero Effect Transient Probe V5 — STATE
 
-Status: **SOURCE READY — BUILD/RUNTIME PENDING**
+Status: **BUILD/STATIC PROVEN — RUNTIME PENDING**
 Date: 2026-09-14 JST
 
 ## Why V5 exists
@@ -60,6 +60,20 @@ The report also records automatically observed effect wall time, enabling scale 
 Find a field inside a proven transient Issyl/Grayback object whose behavior is monotonic and whose total/rate correlates with automatic natural lifecycle expiry.
 
 No write is allowed from V5 alone. If a strong field appears, confirm it in a second clean run (preferably Issyl) before an isolated write experiment.
+
+## Build pin
+Repository: `apm23/BRZE-Trainer`
+Branch: `instant-death-v4-hover-telemetry`
+Trigger head: `7618406f9488e108f944fc820ed78dd6c99fca13`
+Workflow: `Hero Effect Transient Probe V5 Read Only`
+Run: `34792424502` — SUCCESS
+Job: `103819020397` — SUCCESS
+Artifact: `10327958166`
+Artifact digest: `sha256:1092ef001f920934a2ee0a1c6b5c861fbd4d72b03d4bf9d696965af424a95f6a`
+
+Binaries:
+- Standalone: 151,067,850 bytes — SHA-256 `528e112990cccb86ec52953e8f93ddd8bd00b136915e9bc3d650ff693a9908be`
+- Small: 155,884 bytes — SHA-256 `daeae8b8ddf06ae967f54fa1a43428f04ee849bcab2c907c0e01968c93c9e691`
 
 ## Locked rules
 - `HeroEffectReplayV2` one-shot replay remains runtime-proven and untouched.
