@@ -1,6 +1,6 @@
 # BRZE Hero Effect Reset Deep Scan V24 — STATE
 
-Status: **BUILT NEXT — READ-ONLY FUNCTION BOUNDARY / CALL-CHAIN ANALYSIS**
+Status: **BUILT / CI-PROVEN READ-ONLY — RUNTIME DEEP SCAN PENDING**
 Date: 2026-09-14 JST
 
 ## Input from runtime-proven V23
@@ -46,6 +46,33 @@ STRICT READ-ONLY:
 - no native ability calls;
 - no destructor/cleanup calls;
 - no CreateRemoteThread.
+
+## V24 CI pin
+Workflow: `Hero Effect Reset Deep Scan V24 Read Only`
+- run `34826622129` — SUCCESS
+- job `103920156334` — SUCCESS
+- head `2a8e5acac7402f66a08d7a826b2bc77b7ccad91e`
+- artifact `10339563933`
+- artifact digest `sha256:ab1103571e04c8de3a92c291bb58b45d0a60fde0f3f251ac9190a7b86d62dbf2`
+- standalone SHA256 `333cd6826f0592e8408a8fa5862410b2e432e038738ebea826ec97952ed98ab2`
+- small SHA256 `fe903cb0630d9ca6be8451a97dfb738efc1d4fa17ad8f532dfd85d76af4ff228`
+
+CI passed:
+- strict read-only architecture verifier;
+- compile smoke;
+- standalone publish;
+- small publish;
+- output hash step;
+- artifact upload.
+
+## Exact runtime test
+1. Give Issyl to exactly ONE unit using the original game or known-good trainer path.
+2. While Issyl is visibly active, select only that unit.
+3. Open V24.
+4. Click `DEEP SCAN ACTIVE ISSYL` once.
+5. Click `COPY REPORT` and send the full report.
+
+No waiting for natural expiry is required for this scan. V24 does not modify the game.
 
 ## Decision rule after runtime report
 Do NOT choose a cleanup call merely because it writes `+0x194`.
