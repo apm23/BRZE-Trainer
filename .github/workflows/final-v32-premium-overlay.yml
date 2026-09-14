@@ -1,0 +1,130 @@
+name: Final V32 Premium Alt-W Overlay Four-Pack
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v32-premium-overlay-trigger'
+      - 'OverlayHotkeyControllerV32.cs'
+      - 'MergedTrainerV32.csproj'
+      - 'tools/finalize_v32_premium_overlay.py'
+      - '.github/workflows/final-v32-premium-overlay.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate locked V20 integrated base
+        shell: pwsh
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v13_integrated.py
+          python tools/finalize_v14_building_profiles.py
+          python tools/v14_generator_repair.py
+          python tools/v14_ui_compile_repair.py
+          python tools/finalize_v15_compact_ui.py
+          python tools/finalize_v16_unit_catalog.py
+          python tools/finalize_v17_wotw_warning.py
+          python tools/finalize_v18_quick_tabs.py
+          python tools/finalize_v18_2_inline_allslots.py
+          python tools/finalize_v18_3_bulk_actions.py
+          python tools/finalize_v19_hold_death_layout_v2.py
+          python tools/finalize_v20_integrated_features.py
+
+      - name: Apply V22 explicit-target dispatcher facade
+        run: python tools/finalize_v22_group_safe_hero.py
+
+      - name: Apply proven V30 Hero reset layer
+        run: python tools/finalize_v30_reset_hero.py
+
+      - name: Lock all gameplay sources before V32 UI layer
+        shell: pwsh
+        run: |
+          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content unit.before
+          (Get-FileHash HookCore.cs -Algorithm SHA256).Hash | Set-Content hook.before
+          (Get-FileHash InstantDeathCore.cs -Algorithm SHA256).Hash | Set-Content death.before
+          (Get-FileHash IntegratedFrameDispatcherCore.cs -Algorithm SHA256).Hash | Set-Content dispatcher.before
+          (Get-FileHash HeroEffectDirectCoreV30.cs -Algorithm SHA256).Hash | Set-Content hero.before
+          (Get-FileHash IntegratedFeaturePanelsV30.cs -Algorithm SHA256).Hash | Set-Content panel.before
+
+      - name: Apply V32 premium overlay finalizer
+        run: python tools/finalize_v32_premium_overlay.py
+
+      - name: Verify V32 architecture
+        shell: pwsh
+        run: |
+          function Same($before,$file,$name){$a=(Get-Content $before -Raw).Trim();$b=(Get-FileHash $file -Algorithm SHA256).Hash;if($a -ne $b){throw "V32 changed locked $name"}}
+          Same unit.before UnitChangerCore.cs UnitChanger
+          Same hook.before HookCore.cs HookCore
+          Same death.before InstantDeathCore.cs InstantDeathWrapper
+          Same dispatcher.before IntegratedFrameDispatcherCore.cs SharedDispatcher
+          Same hero.before HeroEffectDirectCoreV30.cs HeroResetCore
+          Same panel.before IntegratedFeaturePanelsV30.cs HeroPanels
+
+          $ui=Get-Content FinalV18MainForm.cs -Raw
+          foreach($x in @('Text="BRZE Trainer — V32 Clean"','Text="BRZE Trainer — V32 Diagnostics"','V32  ·  PREMIUM ALT+W OVERLAY + HERO RESET + COPY UNIT  ·  INTEGRATED','OverlayHotkeyControllerV32.Attach(this);','ClientSize=new Size(1640,900);')){if($ui -notmatch [regex]::Escape($x)){throw "V32 UI missing: $x"}}
+
+          $overlay=Get-Content OverlayHotkeyControllerV32.cs -Raw
+          foreach($x in @('sealed class HotkeySink : NativeWindow','RegisterHotKey(Handle','GetAsyncKeyState','MOD_ALT','MOD_NOREPEAT','VK_W=0x57','Opacity=0.87','WS_EX_NOACTIVATE','ShowWithoutActivation','WM_MOUSEACTIVATE','MA_NOACTIVATE','SW_SHOWNOACTIVATE','HWND_TOPMOST','BATTLE REALMS  //  LIVE CONTROL DECK','QUICK CHEATS','HERO + UNIT ACTIONS','HeroEffectDirectCoreV30.Start','IntegratedFrameDispatcherCore.CopySelection','Battle_Realms_F')){if($overlay -notmatch [regex]::Escape($x)){throw "V32 overlay missing: $x"}}
+          if($overlay -match 'Opacity=0.93'){throw 'V32 stale V31 opacity leaked'}
+          if($overlay -match 'CreateRemoteThread'){throw 'V32 overlay must not use remote thread creation'}
+
+          $proj=Get-Content MergedTrainerV32.csproj -Raw
+          foreach($x in @('HeroEffectDirectCoreV30.cs','IntegratedFeaturePanelsV30.cs','IntegratedFrameDispatcherCore.cs','OverlayHotkeyControllerV32.cs','BRZE-Trainer-FINAL-V32')){if($proj -notmatch [regex]::Escape($x)){throw "V32 project missing: $x"}}
+          if($proj -match 'OverlayHotkeyController.cs'){throw 'V32 must not compile failed V31 controller'}
+          Write-Host 'V32 PASS — V30 gameplay byte-locked; HWND hotkey + async fallback; separate premium 87% no-activate overlay'
+
+      - name: Compile CLEAN smoke
+        run: dotnet build MergedTrainerV32.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+      - name: Compile DIAGNOSTICS smoke
+        run: dotnet build MergedTrainerV32.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish CLEAN standalone
+        run: |
+          dotnet publish MergedTrainerV32.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
+          Move-Item publish-clean/BRZE-Trainer-FINAL-V32.exe publish-clean/BRZE-Trainer-FINAL-V32-Clean.exe
+      - name: Publish DIAGNOSTICS standalone
+        run: |
+          dotnet publish MergedTrainerV32.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag
+          Move-Item publish-diag/BRZE-Trainer-FINAL-V32.exe publish-diag/BRZE-Trainer-FINAL-V32-Diagnostics.exe
+      - name: Publish CLEAN small
+        run: |
+          dotnet publish MergedTrainerV32.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
+          Move-Item publish-clean-small/BRZE-Trainer-FINAL-V32.exe publish-clean-small/BRZE-Trainer-FINAL-V32-Clean-Small.exe
+      - name: Publish DIAGNOSTICS small
+        run: |
+          dotnet publish MergedTrainerV32.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag-small
+          Move-Item publish-diag-small/BRZE-Trainer-FINAL-V32.exe publish-diag-small/BRZE-Trainer-FINAL-V32-Diagnostics-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-clean/BRZE-Trainer-FINAL-V32-Clean.exe -Algorithm SHA256
+          Get-FileHash publish-diag/BRZE-Trainer-FINAL-V32-Diagnostics.exe -Algorithm SHA256
+          Get-FileHash publish-clean-small/BRZE-Trainer-FINAL-V32-Clean-Small.exe -Algorithm SHA256
+          Get-FileHash publish-diag-small/BRZE-Trainer-FINAL-V32-Diagnostics-Small.exe -Algorithm SHA256
+
+      - name: Upload V32 four-pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V32-Premium-Overlay
+          compression-level: 0
+          path: |
+            publish-clean/BRZE-Trainer-FINAL-V32-Clean.exe
+            publish-diag/BRZE-Trainer-FINAL-V32-Diagnostics.exe
+            publish-clean-small/BRZE-Trainer-FINAL-V32-Clean-Small.exe
+            publish-diag-small/BRZE-Trainer-FINAL-V32-Diagnostics-Small.exe
