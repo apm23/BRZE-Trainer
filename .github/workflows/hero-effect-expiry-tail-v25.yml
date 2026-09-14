@@ -1,0 +1,66 @@
+name: Hero Effect Expiry Tail V25 Read Only
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - 'HeroEffectExpiryTailV25/**'
+      - '.github/workflows/hero-effect-expiry-tail-v25.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify strict read-only architecture
+        shell: pwsh
+        run: |
+          $src=Get-Content HeroEffectExpiryTailV25/ExpiryTailCore.cs -Raw
+          foreach($required in @('TICK_FN=0x13A5EB','STAMP_MARKER=0x13A8B3','CONFIG+E0 DURATION','record+0x194','STRICT READ-ONLY','DumpTickTail','DumpCallXrefs')){
+            if($src -notmatch [regex]::Escape($required)){throw "V25 invariant missing: $required"}
+          }
+          foreach($forbidden in @('WriteProcessMemory','VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','RVA_TARGET_HELPER','RVA_MAGIC_CREATE')){
+            if($src -match [regex]::Escape($forbidden)){throw "V25 read-only violation: $forbidden"}
+          }
+          Write-Host 'V25 READ-ONLY architecture PASS'
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectExpiryTailV25/HeroEffectExpiryTailV25.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: dotnet publish HeroEffectExpiryTailV25/HeroEffectExpiryTailV25.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish
+
+      - name: Publish small
+        run: dotnet publish HeroEffectExpiryTailV25/HeroEffectExpiryTailV25.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+
+      - name: Rename outputs
+        shell: pwsh
+        run: |
+          Move-Item publish/BRZE-Hero-Effect-Expiry-Tail-V25.exe publish/BRZE-Hero-Effect-Expiry-Tail-V25-ReadOnly.exe
+          Move-Item publish-small/BRZE-Hero-Effect-Expiry-Tail-V25.exe publish-small/BRZE-Hero-Effect-Expiry-Tail-V25-ReadOnly-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish/BRZE-Hero-Effect-Expiry-Tail-V25-ReadOnly.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Hero-Effect-Expiry-Tail-V25-ReadOnly-Small.exe -Algorithm SHA256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Expiry-Tail-V25-ReadOnly
+          compression-level: 0
+          path: |
+            publish/BRZE-Hero-Effect-Expiry-Tail-V25-ReadOnly.exe
+            publish-small/BRZE-Hero-Effect-Expiry-Tail-V25-ReadOnly-Small.exe
