@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x86</PlatformTarget>
+    <AssemblyName>BRZE-Hero-Effect-Replay-Duration-Merged</AssemblyName>
+    <RootNamespace>BRZEHeroEffectReplayDurationMerged</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="..\HeroEffectReplayV2\ReplayCore.cs" Link="ReplayCoreV2.cs" />
+    <Compile Include="..\HeroEffectReplayDurationV10\ReplayDurationCore.cs" Link="ReplayDurationCoreV10.cs" />
+  </ItemGroup>
+</Project>
