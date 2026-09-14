@@ -1,0 +1,69 @@
+name: Hero Effect Reset Forensics V23B Read Only
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - 'tools/fix_v23_forensics_compile.py'
+      - '.github/workflows/hero-effect-reset-forensics-v23b.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Apply compile compatibility patch
+        run: python tools/fix_v23_forensics_compile.py
+
+      - name: Verify strict read-only architecture
+        shell: pwsh
+        run: |
+          $src=Get-Content HeroEffectResetForensicsV23/ProbeCore.cs -Raw
+          foreach($required in @('ABILITY_OFF=0x58','TARGET_OFF=0x17C','CONFIG_OFF=0x1F4','TEARDOWN_OFF=0x194','ScanText','ScanVtable','STRICT READ-ONLY','Iced.Intel.Decoder.Create')){
+            if($src -notmatch [regex]::Escape($required)){throw "V23B invariant missing: $required"}
+          }
+          foreach($forbidden in @('WriteProcessMemory','VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','RVA_TARGET_HELPER','RVA_MAGIC_CREATE')){
+            if($src -match [regex]::Escape($forbidden)){throw "V23B read-only violation: $forbidden"}
+          }
+          Write-Host 'V23B READ-ONLY architecture PASS'
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectResetForensicsV23/HeroEffectResetForensicsV23.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: dotnet publish HeroEffectResetForensicsV23/HeroEffectResetForensicsV23.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-standalone
+
+      - name: Publish small
+        run: dotnet publish HeroEffectResetForensicsV23/HeroEffectResetForensicsV23.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+
+      - name: Rename outputs
+        shell: pwsh
+        run: |
+          Move-Item publish-standalone/BRZE-Hero-Effect-Reset-Forensics-V23.exe publish-standalone/BRZE-Hero-Effect-Reset-Forensics-V23B-ReadOnly.exe
+          Move-Item publish-small/BRZE-Hero-Effect-Reset-Forensics-V23.exe publish-small/BRZE-Hero-Effect-Reset-Forensics-V23B-ReadOnly-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-standalone/BRZE-Hero-Effect-Reset-Forensics-V23B-ReadOnly.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Hero-Effect-Reset-Forensics-V23B-ReadOnly-Small.exe -Algorithm SHA256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Reset-Forensics-V23B-ReadOnly
+          compression-level: 0
+          path: |
+            publish-standalone/BRZE-Hero-Effect-Reset-Forensics-V23B-ReadOnly.exe
+            publish-small/BRZE-Hero-Effect-Reset-Forensics-V23B-ReadOnly-Small.exe
