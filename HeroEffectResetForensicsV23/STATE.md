@@ -1,6 +1,6 @@
 # BRZE Hero Effect Reset Forensics V23 — STATE
 
-Status: **BUILT NEXT — READ-ONLY NATIVE CLEANUP DISCOVERY**
+Status: **BUILT / CI-PROVEN READ-ONLY — RUNTIME SCAN PENDING**
 Date: 2026-09-14 JST
 
 ## Goal
@@ -14,8 +14,8 @@ without stacking/repeated refresh.
 User requested replacement/reset semantics instead of V22 skip/hold behavior.
 
 Rejected implementation:
-- blindly call Replay V2 again on a unit that already has the same active effect.
-- V3 runtime already proved repeated native application can compound/stack into extreme speed, invulnerability-like damage behavior, and other corruption.
+- blindly call Replay V2 again on a unit that already has the same active effect;
+- V3 runtime already proved repeated native application can compound/stack into extreme speed, invulnerability-like damage behavior, one-hit buildings, and other corruption.
 
 Therefore V23 does NOT modify or remove anything. It performs strict read-only forensics first.
 
@@ -54,12 +54,33 @@ Therefore V23 does NOT modify or remove anything. It performs strict read-only f
 - V11 duration config path remains proven and unchanged.
 - V22 remains fallback integrated trainer while reset semantics are researched.
 
-## Runtime test
+## CI build pin
+Authoritative build workflow: `Hero Effect Reset Forensics V23B Read Only`
+- run `34825682469` — SUCCESS
+- job `103917157659` — SUCCESS
+- head `5a3c22b563eb879be2212afa20a05c49b9af625a`
+- artifact `10340067680`
+- artifact digest `sha256:60153b70296f7f254eb9785812f2518c9a85f60f9ba8648d9f81cfb9cf704f6b`
+- standalone SHA256 `db5005e355f6be87b6330a033ed100ddf4b906079b2f5a593874178e8d6273d7`
+- small SHA256 `cef5f68a820b95512b22939d2ed18e19ef584cc83823fa6461a1fd2bff73630c`
+
+CI passed:
+- strict read-only architecture verifier;
+- Iced x86 decoder compile compatibility patch;
+- compile smoke;
+- standalone publish;
+- small publish;
+- output hashes;
+- artifact upload.
+
+The first V23 workflow attempt failed only on C# Iced API compatibility (`Decoder` ambiguity / missing `CanDecode`), before any runtime probe existed. V23B fixes those compile-only issues without changing the read-only research design.
+
+## Exact runtime test
 Use a clean throwaway save/runtime:
 1. apply Issyl to one unit using original game or V22;
-2. while Issyl is visibly active, select exactly that one unit;
-3. close any other standalone hook probe if necessary; V23 itself does not hook;
-4. open V23 and click `SCAN ACTIVE ISSYL`;
-5. `COPY REPORT` and send the report back.
+2. while Issyl is visibly active, select exactly that ONE unit;
+3. open V23B read-only probe;
+4. click `SCAN ACTIVE ISSYL`;
+5. click `COPY REPORT` and send the report back.
 
-Only one scan is expected. The next step will be chosen from the ranked native candidates; do not test random writes.
+Only one scan is expected. The next step will be chosen from the ranked native candidates; do not test random writes or native calls before the report is analyzed.
