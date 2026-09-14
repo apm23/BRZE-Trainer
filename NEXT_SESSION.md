@@ -9,75 +9,81 @@ Branch: `instant-death-v4-hover-telemetry`
 
 ## Proven side feature
 `UnitCloneLab/STATE.md`
-- Native Copy/Paste of currently selected units is RUNTIME-PROVEN.
-- Hero / unique / story units are allowed and successfully duplicated.
-- Uses native coordinate spawn path; never raw-clones Unit structs.
+- Native Copy/Paste selected units is RUNTIME-PROVEN.
+- Hero / unique / story units work.
+- Never raw-clone Unit structs.
 
-## Hero Effect research status
+## Hero Effect locked facts
 `HeroEffectSniffer/STATE.md`
-- RUNTIME-PROVEN.
 - Grayback runtime ability `0xC0`; Issyl runtime ability `0xA5`.
 - Target helper RVA `0x1F0C32`; magic-create helper RVA `0x13FFD1`.
 
 `HeroEffectReplayV2/STATE.md`
-- **RUNTIME-PROVEN** one-shot effect replay.
-- Keep untouched as known-good fallback.
+- RUNTIME-PROVEN one-shot replay. Keep untouched as known-good fallback.
 
 `HeroEffectReplayV3/STATE.md`
-- **RUNTIME-REJECTED — NEVER REUSE REFRESH/STACK APPROACH.**
-- Repeated native application stacks/compounds effect instances and corrupts combat behavior.
+- RUNTIME-REJECTED. Repeated native replay stacks/compounds effects. NEVER REUSE.
 
 `HeroEffectDurationProbeV3/STATE.md`
-- `Unit+0x460` is hard-rejected as duration-specific because movement-only no-buff control changed it 55 times (`413000 -> 432800`).
+- `Unit+0x460` hard-rejected as duration-specific.
 
 `HeroEffectContainerProbeV4/STATE.md`
-- ORIGINAL ISSYL proved transient lifecycle roots.
-- `+0x1E4/+0x1E8/+0x20C/+0x210` appear during effect and return to zero at expiry.
-- `+0x214` returns exactly to its baseline pointer.
+- Issyl proved transient lifecycle roots `+0x1E4/+0x1E8/+0x20C/+0x210`; `+0x214` returns to baseline at expiry.
 
 `HeroEffectTransientProbeV5/STATE.md`
-- **RUNTIME-PROVEN OBSERVER — TWO ISSYL PASSES COMPLETE.**
-- Pass A wall time `10763.1 ms`, 173 samples.
-- Pass B wall time `10805.1 ms`, 174 samples.
-- Automatic start/end detection is stable (~42 ms difference).
-- Critical: transient topology swaps across casts. In one pass `+0x1E4=0x1E01BF30/+0x1E8=0x1E01BF3C`; in the other those addresses swap. NEVER hard-code a transient path.
-- Strong Pass A identity record:
-  - `record+0x058 = 0xA5` (Issyl runtime ability ID)
-  - `record+0x17C = pinned Unit*` (exact armed target)
-- repeatable sibling/config constant `0x50DC = 20700` appeared in both passes, but it does not directly match the ~10.8 s wall time and is NOT proven duration.
+- Two automatic Issyl passes proved lifecycle timing and showed transient paths swap between casts.
 
 `HeroEffectSignatureProbeV6/STATE.md`
-- **BUILT / CI-PROVEN READ-ONLY — RUNTIME PENDING.**
-- V6 searches transient roots/children by CONTENT rather than path.
-- Signature lock requires BOTH:
-  - `+0x058 == 0xA5`
-  - `+0x17C == pinned Unit*`
-- Once found, the exact record address is pinned and sampled with a 20 ms UI timer until automatic natural expiry.
-- No writes, injection, hooks, or native replay.
-- Run `34793023696` SUCCESS; job `103820717005` SUCCESS.
-- Artifact `10328444898`, digest `sha256:312392823c7aa0ea58cc82dfed9bdb222f32d20cd66693f6e04c2073ec206ea7`.
-- Standalone SHA-256 `38bd623c56bada4e155e4fcc5827147bae562218c58ac8f1942e89a5469ea5be`.
-- Small SHA-256 `e21668996208aae24cc7cfe885e78937d5426be9b723216b3b75ce35d834456e`.
+- **RUNTIME-PROVEN SIGNATURE TRACKER — PARENT TIMER NOT ISOLATED.**
+- Three clean ORIGINAL ISSYL passes with intentionally different human timing:
+  - 10725.9 ms / 343 polls
+  - 10713.8 ms / 342 polls
+  - 10733.2 ms / 343 polls
+  - spread only 19.4 ms, proving human click speed is irrelevant to measured lifecycle.
+- Every pass found the actual effect parent using BOTH content fields:
+  - `parent+0x058 == 0xA5`
+  - `parent+0x17C == pinned Unit*`
+- Parent addresses/paths differed:
+  - A `0x28BFFD08` via `Unit+0x20C->+0x008`, 34.1 ms discovery
+  - B `0x28C00100` via `Unit+0x1E4->+0x014`, 30.7 ms discovery
+  - C `0x28C004F8` via `Unit+0x20C->+0x008`, 31.6 ms discovery
+- Therefore effect identity MUST remain content-signature-based, never path-based.
+- Parent `+0x194` HARD-REJECTED as duration: terminal values rose `623600 -> 653700 -> 678400` while lifetime stayed ~10.72 s; likely absolute/global counter/cleanup timestamp.
+- Parent high-change `+0x028/+0x02C/+0x030` have many flips and are spatial/visual/activity noise, not clean timer.
+
+`HeroEffectChildProbeV7/STATE.md`
+- **NEW READ-ONLY CHILD TIMER PROBE — CI BUILD IN PROGRESS at handoff update.**
+- After A5+target parent signature lock, V7 scans the parent `0x240` bytes for readable pointer fields.
+- Deduplicates alias offsets pointing to the same child.
+- Pins up to 24 child objects, scans `0x200` bytes each, 20 ms UI timer.
+- Automatic lifecycle start/end; no human timing.
+- Dynamic child fields ranked by high change-rate + low/zero direction flips.
+- Static duration-like child constants separated.
+- No writes/injection/hooks/native replay.
+- Workflow: `Hero Effect Child Probe V7 Read Only`.
+- Initial run ID `34793489888`, job `103822036340` (build status must be rechecked).
 
 ## Exact next action
-Runtime-test `HeroEffectSignatureProbeV6` using ORIGINAL ISSYL:
-1. fresh/reload BRZE;
-2. select exactly ONE clean normal target unit;
-3. click `ARM TARGET + AUTO WATCH`;
-4. select Issyl;
-5. cast ORIGINAL Haste exactly once on the armed target;
-6. do nothing until V6 shows `COMPLETE`;
-7. click `COPY REPORT` and return the full report.
+1. Check V7 CI run `34793489888`.
+2. If compile fails, fix V7 before runtime testing.
+3. If green, download/extract V7 artifact and runtime-test ORIGINAL ISSYL:
+   - fresh/reload BRZE;
+   - select exactly ONE clean normal target;
+   - ARM;
+   - select Issyl;
+   - cast original Haste once on armed target;
+   - do nothing until COMPLETE;
+   - COPY REPORT.
+4. Analyze child pointer map and child dynamic fields.
+5. Prefer child fields with many changes, `flip 0`, and scale matching ~10.72 s.
+6. If one strong child timing field appears, confirm with at least a second clean V7 pass before any write.
 
-Analysis priority for V6 report:
-- confirm `Signature record` is FOUND;
-- confirm signature check shows `+0x058 = 0xA5` and `+0x17C = pinned Unit*`;
-- inspect dynamic fields from this content-identified record only;
-- prioritize high change-rate + `flip 0` fields whose total/rate correlates with ~11 s natural Issyl lifetime;
-- inspect `+0x194` specifically but do not assume it is duration;
-- if one strong candidate emerges, repeat V6 once more before any write.
-
-Do not integrate duration into the main trainer yet. Never reintroduce repeated native re-application. Never hard-code V5 transient paths.
+## Locked rejects / safety
+- no repeated native reapplication;
+- no `Unit+0x460` duration writes;
+- no parent `+0x194` duration writes;
+- no hard-coded transient path;
+- no duration integration into main trainer until a real effect-instance timing field is proven.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5); repeated refresh and Unit+0x460 are rejected. V5 completed two Issyl passes (~10.8 s each), proved transient paths swap between casts, and captured an effect record with +0x058=A5 plus +0x17C=target Unit*. V6 read-only signature tracker is built successfully; runtime-test V6 next.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot replay is proven; repeated refresh and Unit+0x460 are rejected. V6 completed THREE Issyl passes at 10725.9/10713.8/10733.2 ms despite different human timing, proving auto lifecycle stability and A5+target content signature. Parent +0x194 is rejected as duration. Continue from HeroEffectChildProbeV7: recheck CI run 34793489888, then test child objects of the signature-locked A5 parent.`
