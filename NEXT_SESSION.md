@@ -30,54 +30,59 @@ Branch: `instant-death-v4-hover-telemetry`
 - **RUNTIME-REJECTED — NEVER REUSE REFRESH/STACK APPROACH.**
 - Repeated native application stacks/compounds effect instances and corrupts combat behavior.
 
-`HeroEffectDurationProbe/STATE.md`
-- V1 read-only observer completed; no trustworthy duration field isolated.
-
-`HeroEffectDurationProbeV2/STATE.md`
-- **RUNTIME-PROVEN OBSERVER — TIMER NOT YET PROVEN.**
-- Recursive graph observation identified likely effect/visual lifecycle objects under `Unit+0x1E4` and interesting structures beneath `Unit+0x094`.
-
 `HeroEffectDurationProbeV3/STATE.md`
 - **RUNTIME-PROVEN OBSERVER — `Unit+0x460` REJECTED AS DURATION-SPECIFIC.**
-- Earlier idle control + Grayback pass looked promising: idle `CTRL chg 0`, Grayback `FX chg 164`, `flip 0`, PRE `345400` -> EXP `413000`.
-- Decisive movement-only no-buff control: `Unit+0x460 CTRL chg 55`, `flip 0`, `413000 -> 432800`.
-- Therefore `+0x460` is ordinary movement/activity-correlated state, not a Grayback-specific duration timer. DO NOT PATCH/FREEZE/WRITE IT.
-- Direct movement/transform cluster is no longer the duration target.
+- Movement-only no-buff control changed `+0x460` 55 times with 0 flips (`413000 -> 432800`).
+- Do not patch/freeze/write it.
 
 `HeroEffectContainerProbeV4/STATE.md`
+- **RUNTIME-PROVEN LIFECYCLE OBSERVER — TIMER NOT YET ISOLATED.**
+- User used ORIGINAL ISSYL instead of Grayback because Grayback lasts about one minute; this is valid because the probe is ability-agnostic.
+- Clean root lifecycle:
+  - `+0x1E4`: 0 -> `0x1E01B958` -> 0
+  - `+0x1E8`: 0 -> `0x1E01B964` -> 0
+  - `+0x20C`: 0 -> `0x1DF8EA80` -> 0
+  - `+0x210`: 0 -> `0x1DF8EA80` -> 0
+  - `+0x214`: `0x1DF8EA80` -> 0 -> exact baseline `0x1DF8EA80`
+- `+0x1E4/+0x1E8` differ by 0x0C, strongly suggesting related views into one transient structure.
+- `+0x20C/+0x210` are the exact same pointer.
+- V4 ranking flooded the report with NEW static fields (`FX chg 0`, `EXP UNREADABLE`), proving lifecycle but obscuring changing timer candidates.
+
+`HeroEffectTransientProbeV5/STATE.md`
 - **BUILD/STATIC PROVEN — RUNTIME PENDING.**
-- Strict read-only movement-subtracted recursive container observer.
-- Target roots: `Unit+0x094/+0x098/+0x1E4/+0x1E8/+0x1F4/+0x20C/+0x210/+0x214/+0x21C`.
-- Recursive depth <= 4; node scan 0x180; max 260 nodes; 250 ms sample interval.
-- Movement-only changes are penalized; effect-only fields/objects that return to pre-effect state, hit zero, or disappear at natural expiry are boosted.
-- Static fields inside NEW effect objects are retained because duration may be an expiry timestamp/constant rather than a countdown.
-- Run `34791583601` SUCCESS; job `103816698699` SUCCESS.
-- Artifact `10328387975`, digest `sha256:9170fbf96b3b922ab411932dc9d2f6d0f6dafef7bed2e166e9ab13a00af4133a`.
-- Standalone SHA-256 `2294592d2844c05a00a72dd06f306e22b0308d99cc7cfeb9a06b66368925a422`.
-- Small SHA-256 `8b8b98155acce0e8690a9c09c5e56a84bae58d30e2669cb1c3ff0cd0542ea7f4`.
+- Strict read-only automatic transient-object observer.
+- ARM one clean target once; after ARM user may change selection to cast the hero skill.
+- Automatic start detection from proven lifecycle roots; no human timing required.
+- Pins transient root objects from `+0x1E4/+0x1E8/+0x20C/+0x210` plus bounded one-level children.
+- 50 ms sampling.
+- Automatic natural expiry after lifecycle roots equal baseline for 3 consecutive samples.
+- Dynamic/changing fields are ranked first; static duration-like constants are separated so they cannot bury timers.
+- Observed effect wall time is reported for scale correlation.
+- Run `34792424502` SUCCESS; job `103819020397` SUCCESS.
+- Artifact `10327958166`, digest `sha256:1092ef001f920934a2ee0a1c6b5c861fbd4d72b03d4bf9d696965af424a95f6a`.
+- Standalone SHA-256 `528e112990cccb86ec52953e8f93ddd8bd00b136915e9bc3d650ff693a9908be`.
+- Small SHA-256 `daeae8b8ddf06ae967f54fa1a43428f04ee849bcab2c907c0e01968c93c9e691`.
 
 ## Exact next action
-Runtime-test `HeroEffectContainerProbeV4`:
-1. fresh/reloaded BRZE;
-2. select exactly ONE clean normal unit;
-3. press `1 START 15s MOVE CONTROL` and keep it walking continuously with NO buff;
-4. after auto-stop, stop the unit;
-5. press `2 CAPTURE PRE-EFFECT`;
-6. cast ORIGINAL Grayback exactly once on that unit;
-7. immediately press `3 START EFFECT WATCH`;
-8. do not recast;
-9. the instant the visible Grayback effect ends naturally, press `4 MARK EXPIRED`;
-10. press `COPY REPORT` and return the full report.
+Runtime-test `HeroEffectTransientProbeV5` using ORIGINAL ISSYL:
+1. fresh/reload BRZE and use a clean target with no hero buff active;
+2. select exactly ONE normal unit that will receive Issyl;
+3. click `ARM TARGET + AUTO WATCH`;
+4. after ARM, selection may change if needed to operate Issyl;
+5. cast ORIGINAL ISSYL exactly once on the armed target;
+6. do NOT click anything for timing — wait for V5 itself to show `COMPLETE`;
+7. click `COPY REPORT` and return the full report.
 
-Analysis priority for returned V4 report:
-- top-ranked `NEW` fields with `CTRL unseen` or `CTRL chg 0`;
-- low/zero FX flips;
-- fields that become `EXP UNREADABLE`, zero, or return exactly to PRE at natural expiry;
-- inspect root lifecycle block first to see which Unit root owns the effect-created object.
+Analysis priority:
+- `Observed effect wall time`;
+- automatic root lifecycle should reproduce V4 pattern;
+- highest-ranked `DYNAMIC FIELDS` with high change rate and `flip 0` or very low flips;
+- compare total int/float change against wall-time to infer milliseconds/ticks/seconds;
+- inspect `STATIC EFFECT-OBJECT CONSTANTS` secondarily for fixed duration or expiry constants.
 
-If V4 still fails to isolate a coherent timer, stop recursive guessing and build an effect-creation pointer interceptor from runtime-proven magic-create RVA `0x13FFD1`, capturing the created effect/object pointer or downstream insertion before any write.
+If V5 produces one strong candidate, confirm it in a second clean Issyl run before any write. No duration write from one run alone.
 
 Do not integrate duration into the main trainer yet. Never reintroduce repeated native re-application.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5); repeated refresh is permanently rejected. Duration Probe V3 decisively rejected Unit+0x460 because movement-only no-buff control changed it 55 times (413000->432800). Continue from HeroEffectContainerProbeV4 movement-subtracted read-only runtime test; if it cannot isolate timer, intercept the proven magic-create path RVA 0x13FFD1 for actual effect-object pointer telemetry.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5); repeated refresh is permanently rejected. Unit+0x460 is rejected. V4 Issyl runtime proved transient lifecycle roots: +1E4/+1E8 and +20C/+210 appear only during effect and vanish at expiry; +214 is inverse. V5 automatic read-only transient-object timer probe is built successfully and is the exact next runtime test.`
