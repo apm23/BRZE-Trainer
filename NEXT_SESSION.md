@@ -6,120 +6,103 @@ GitHub is authoritative.
 
 ## Authoritative fallbacks
 - Locked main stable fallback: V18.3 (`FINAL_CURRENT.md`).
-- V19 remains the latest pre-integration main-trainer fallback.
-- V20 integrated remains a built fallback.
-- V21 Direct Hero is built/CI-proven but runtime-rejected for two integration defects described below.
+- V19 = latest pre-integration main-trainer fallback.
+- V20 = integrated fallback.
+- V21 Direct Hero = runtime-rejected due generic transient-root gating/hold bugs.
+- V22 Group-Safe Hero = built/CI-proven integrated fallback while reset semantics are researched.
 - Unit Clone Lab standalone remains runtime-proven.
-- Replay V2 / V11 duration research remain runtime-proven references.
+- Replay V2 / V11 duration proof remain runtime-proven references.
 
-Do not mutate the locked V18.3 baseline directly.
+Do not mutate V18.3 directly.
 
-## Duration research — CLOSED / LOCKED
-Authoritative V11 proof:
-- Issyl baseline `10742.1 ms`;
-- Issyl 3X nominal `45000` -> `31612.4 ms`, ratio `2.942838x`;
-- custom duration runtime-proven longer;
-- restore `45000 -> 15000` after natural expiry;
-- no repeated native refresh/reapplication.
-
-Locked duration rule:
-- Issyl A5 base nominal `15000`;
-- Grayback C0 base nominal `60000`;
-- modified ability config must stay resident through the active effect lifetime;
-- restore only after the tracked effect naturally expires.
+## Locked duration facts
+- Issyl A5 config base nominal `15000`; natural wall ~`10.7271s`.
+- Grayback C0 config base nominal `60000`; natural wall ~`42.2221s`.
+- `parent+0x1F4 -> config+0x0E0` is the proven duration path.
+- Extended config must remain resident through natural effect lifetime, then restore.
+- V11 final proof: baseline `10742.1ms`; Issyl nominal `45000` -> `31612.4ms`, ratio `2.942838x`; restore `45000 -> 15000` OK.
 
 Rejected forever:
-- repeated native replay refresh;
+- repeated native replay refresh / stacking;
 - Unit+0x460 duration writes;
-- parent+0x194 duration writes;
-- lifecycle-first / immediate restore;
+- parent+0x194 as duration;
+- lifecycle-first restore;
 - native-helper-return restore;
-- claim that duration fully latches at creation.
+- assuming duration fully latches at creation.
 
-## V21 runtime rejection
-User runtime screenshots proved two V21 defects:
-1. multi-select could be rejected by `selected unit ... has an active transient effect` because V21 required generic transient roots to be clean;
-2. Hero Effect could remain `HELD until natural expiry` after the requested visible effect had ended, and that blocked applying the same ability to another selected group.
+## User-requested final semantics
+User wants Hero Effect APPLY to behave like replacement/reset:
 
-Root cause: V21 tracked generic lifecycle/transient roots, not the actual requested A5/C0 effect record.
+`if selected unit already has same Issyl/Grayback buff -> remove/reset OLD same-effect instance safely -> one-shot fresh apply -> requested duration starts again from zero`
 
-Do NOT return to V21 generic root gating/tracking.
+Unrelated buffs must remain untouched.
 
-## V22 Group-Safe Hero Effect — BUILT / CI-PROVEN, RUNTIME PENDING
-State: `V22_GROUP_SAFE_HERO_STATE.md`
+Do NOT implement this by simply calling native apply again on an already-active same effect. Old V3 proved repeated application can compound/stack into extreme speed, invulnerability-like behavior, one-hit buildings, and other corruption.
 
-V22 preserves V20 layout + Copy Unit + Instant Death + one shared frame dispatcher, but replaces the Hero Effect runtime tracker.
+## V22 Group-Safe Hero — current integrated fallback
+V22 fixes V21 generic transient-root problems using content signature:
+- effect record `+0x058 = ability ID`;
+- effect record `+0x17C = target Unit*`;
+- transient path itself is NOT stable and must never be hard-coded.
 
-### Exact effect identity
-V22 uses the runtime-proven V6 content signature:
-- record `+0x058 = ability ID`;
-- record `+0x17C = target Unit*`;
-- search through Unit transient roots `+0x1E4`, `+0x1E8`, `+0x20C`, `+0x210` and one-level pointer children.
+V22 CI:
+- workflow `Final V22 Group Safe Hero Effect`
+- run `34823248974` SUCCESS
+- job `103909409512` SUCCESS
+- head `a8e55e21d5b20e468fd08db14b00d3d6cba5dc73`
+- artifact `10339202775`
 
-Therefore:
-- unrelated buffs/debuffs no longer block a selected unit;
-- if a selected unit already has the requested Issyl/Grayback effect, that unit is skipped instead of failing the whole group;
-- generic `RootsClean` gating is forbidden.
+V22 remains fallback only; user prefers true reset/replace behavior instead of skip/hold semantics.
 
-### Concurrent selected groups
-V22 maintains independent global holds for Issyl and Grayback.
+## V23 Reset Forensics — BUILT / CI-PROVEN READ ONLY
+State: `HeroEffectResetForensicsV23/STATE.md`
 
-While Issyl 30s is still active on group A:
-- group B may immediately receive Issyl 30s too;
-- Grayback may be applied independently to another group at its own duration;
-- Issyl with a DIFFERENT duration is blocked until all currently tracked Issyl instances naturally expire, because the A5 config is global.
+Purpose: identify a REAL native/per-instance cleanup/expire path before any reset write/call is attempted.
 
-The same rule applies symmetrically to Grayback.
+V23B is strictly read-only:
+- PROCESS_VM_READ + PROCESS_QUERY_INFORMATION only;
+- no WriteProcessMemory;
+- no VirtualAllocEx;
+- no hooks;
+- no native ability calls;
+- no destructor invocation;
+- no CreateRemoteThread.
 
-### Explicit filtered replay queue
-The V22 build finalizer adds `QueueReplayUnits(...)` to the existing V20 shared dispatcher so Hero Effect can queue only safe filtered targets.
+Method:
+1. select exactly one unit with active Issyl A5;
+2. signature-lock exact effect record with:
+   - `record+0x058 == 0xA5`
+   - `record+0x17C == selected Unit*`;
+3. capture parent vtable/type pointer, `parent+0x194`, and `parent+0x1F4` config;
+4. parse live BRZE PE `.text`;
+5. disassemble with Iced x86;
+6. inspect first 48 vtable slots and rank `.text` references to `+0x194`, including likely writes/calls and co-occurrence with known effect offsets.
 
-Locked dispatcher rules remain:
-- exactly one owner of frame hook RVA `0x135C43`;
-- replay target helper `0x1F0C32`;
-- Copy Unit spawn wrapper `0x0C4A1C`;
-- cursor query `0x135EFB`;
-- no CreateRemoteThread;
-- FXSAVE/FXRSTOR + pushfd/pushad;
-- max 120 targets;
-- no raw Unit clone.
+`parent+0x194` remains HARD REJECTED as duration; here it is ONLY a teardown/static-analysis lead.
 
-## V22 CI pin
-Workflow: `Final V22 Group Safe Hero Effect`
-Run: `34823248974` — SUCCESS
-Job: `103909409512` — SUCCESS
-Head: `a8e55e21d5b20e468fd08db14b00d3d6cba5dc73`
-Artifact: `10339202775`
-Artifact digest: `sha256:17e4c238f421d60aff4525c0953e75285b040be873b4b16f903d67adacf6c5fa`
+### V23B CI pin
+Workflow: `Hero Effect Reset Forensics V23B Read Only`
+- run `34825682469` — SUCCESS
+- job `103917157659` — SUCCESS
+- head `5a3c22b563eb879be2212afa20a05c49b9af625a`
+- artifact `10340067680`
+- digest `sha256:60153b70296f7f254eb9785812f2518c9a85f60f9ba8648d9f81cfb9cf704f6b`
+- standalone SHA256 `db5005e355f6be87b6330a033ed100ddf4b906079b2f5a593874178e8d6273d7`
+- small SHA256 `cef5f68a820b95512b22939d2ed18e19ef584cc83823fa6461a1fd2bff73630c`
 
-Build hashes:
-- CLEAN standalone `845f860a250eafd23eebb009c306da08ddd14246b62731b37cc32ca665eac310`
-- DIAGNOSTICS standalone `a7cf73690102e84ad363ab24a6134da939df384dff3a15de5f1b3b003ce97a67`
-- CLEAN small `7d58f0080c79b050af3ccfe1f859ff5a94c271a6b10f16420b7afa4ef23f0eb5`
-- DIAGNOSTICS small `11fc5f494976d77fc196302a50a853b4a0d7c74576b732142a1efcad8ade8341`
+First V23 workflow attempt failed only on Iced C# API compile compatibility before runtime; V23B fixed Decoder qualification / decode loop and passed all CI.
 
-CI passed:
-- V20 base generation;
-- explicit filtered target queue patch;
-- signature A5/C0 tracking invariants;
-- generic transient-root blocking forbidden;
-- independent Issyl/Grayback hold policy;
-- same-duration concurrent group policy;
-- CLEAN + DIAGNOSTICS compile;
-- four publish outputs;
-- hash + artifact upload.
+## EXACT NEXT ACTION — ONE READ-ONLY RUNTIME SCAN
+Do not start a broad test loop.
 
-## Exact next action — ONE V22 runtime smoke
-Use V22 Diagnostics.
+1. Launch BRZE.
+2. Give Issyl to exactly one unit using original game or V22.
+3. While Issyl is visibly ACTIVE, select ONLY that unit.
+4. Open `BRZE-Hero-Effect-Reset-Forensics-V23B-ReadOnly.exe`.
+5. Click `SCAN ACTIVE ISSYL` once.
+6. Click `COPY REPORT` and send the report.
 
-1. Select MANY units, including units that may have unrelated buffs/effects -> set 30s -> APPLY ISSYL. It must not reject the entire group because of unrelated transient effects.
-2. While group A still has Issyl 30s, select group B -> APPLY ISSYL 30s again. It must apply immediately without waiting for group A to expire.
-3. While Issyl remains active, select another group -> APPLY GRAYBACK. Grayback must be independent.
-4. Optional guard check: while Issyl 30s is still active, change to e.g. 40s and APPLY ISSYL. It should BLOCK only because the same global A5 config is currently held at 30s.
-5. After the last tracked A5/C0 record disappears, that ability must automatically restore and become ready for a different duration.
-6. One Copy Unit + one Instant Death smoke afterward.
+The scan does not modify the game. After the report, analyze ranked vtable / +0x194 candidates and choose the smallest structurally justified cleanup proof. Do NOT call or write any cleanup candidate until evidence supports it.
 
-If V22 passes, promote V22 as the integrated main trainer candidate. Do not reopen duration research.
-
-## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. V21 runtime-rejected because generic transient roots blocked multi-select and kept Hero Effect HELD after the requested effect ended. V22 is BUILT/CI-PROVEN: V6 signature tracking (record+0x058 ability ID + record+0x17C target Unit*), skip-not-block multi-select, explicit filtered replay targets, independent Issyl/Grayback holds, and same-duration concurrent groups. CI run 34823248974 SUCCESS, artifact 10339202775. Next: one V22 Diagnostics runtime smoke.`
+## New-chat bootstrap
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants true Hero Effect RESET/REPLACE semantics, never repeated stacking. V22 remains integrated fallback. V23B read-only cleanup forensics is BUILT/CI-PROVEN: signature-lock active A5 record, inspect vtable + live .text teardown candidates, no writes/hooks/native calls. CI run 34825682469 SUCCESS, artifact 10340067680. Next: ONE runtime scan on exactly one selected unit while Issyl is visibly active, then send COPY REPORT.`
