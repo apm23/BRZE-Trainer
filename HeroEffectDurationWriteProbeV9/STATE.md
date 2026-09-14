@@ -1,53 +1,54 @@
 # BRZE Hero Effect Duration Write Probe V9 — STATE
 
-Status: **BUILT / CI-PROVEN GUARDED WRITE — RUNTIME 2X TEST PENDING**
+Status: **RUNTIME-PROVEN — DURATION FIELD CONFIRMED**
 Date: 2026-09-14 JST
 
-## Why V9 exists
-V8 produced strong cross-ability proof that `parent+0x1F4` is an ability-specific config record and `config+0x0E0` is the nominal duration parameter:
+## Final runtime proof
+V9 completed the guarded Issyl 2X experiment successfully on the same pinned target.
 
-- Issyl A5: config ID `0xA5`, `config+0x0E0 = 15000`, observed natural wall lifetime `10727.1 ms`.
-- Grayback C0: config ID `0xC0`, `config+0x0E0 = 60000`, observed natural wall lifetime `42222.1 ms`.
-- Config ratio is exactly `4.0x`; observed wall-lifetime ratio is `~3.936x`.
-- Both config records stayed static through their entire effect lifecycles with zero read failures.
+Observed report:
+- Pinned Unit*: `0x281ABE6C`
+- Baseline parent: `0x28C0329C` via `Unit+0x20C->+0x008`
+- A5 config: `0x227F4664`
+- `config+0x000 == 0xA5`
+- baseline nominal `config+0x0E0 = 15000`
+- test nominal `config+0x0E0 = 30000`
+- baseline natural wall lifetime: `10738.0 ms`
+- 2X-patched natural wall lifetime: `21222.5 ms`
+- observed ratio: `1.976390x`
+- test parent: `0x28C03890` via `Unit+0x1E4->+0x014`
+- same config + 30000 verified: `True`
+- automatic restore attempted: `True`
+- automatic restore OK: `True`
+- final `config+0x0E0` returned to `15000`
 
-V9 performs the first isolated write proof. It does NOT touch the main trainer.
+## Locked conclusion
+`parent+0x1F4 -> config+0x0E0` is the hero-effect nominal duration parameter.
 
-## Controlled experiment
-Issyl only:
-1. ARM one clean target.
-2. Cast ORIGINAL Issyl Haste once and measure baseline natural lifetime.
-3. Capture the A5 config through the proven A5+target signature and `parent+0x1F4`.
-4. Require strict guards before any write:
-   - `config+0x000 == 0xA5`
-   - `config+0x0E0 == 15000`
-5. After baseline expiry, select one clean test target.
-6. Click `PATCH 30000 + ARM TEST`.
-7. V9 writes ONLY `config+0x0E0: 15000 -> 30000` and verifies readback.
-8. Cast ORIGINAL Issyl Haste once on the test target.
-9. Measure natural test lifetime.
-10. At natural expiry, automatically restore `config+0x0E0: 30000 -> 15000` and verify.
-11. Report baseline/test ratio.
+The proof is causal, not merely correlational:
+- doubling Issyl `15000 -> 30000` produced ~`1.976x` natural wall lifetime;
+- no repeated application/refresh was used;
+- the effect remained extended after config was restored, proving the duration value is copied/consumed when the effect instance is created rather than continuously read from the config record.
 
-Expected proof condition: test natural lifetime is approximately `2x` baseline under the same game time scale.
+This validates a safe integration strategy for one-shot replay:
+1. identify the correct ability config;
+2. temporarily patch only `config+0x0E0` immediately before the native apply call;
+3. invoke the proven native one-shot helper on the game thread;
+4. immediately restore the original nominal config value after the call;
+5. never use repeated native refresh.
 
-## Safety guards
-- no hooks
-- no injection
-- no VirtualAllocEx
-- no VirtualProtectEx
-- no CreateRemoteThread
-- no native hero-effect replay
-- no repeated application/refresh
-- only one guarded data field is writable: discovered Issyl `config+0x0E0`
-- manual `RESTORE NOW`
-- automatic restore after test expiry
-- restore on RESET
-- restore on normal tool close
-- restore refuses to clobber any unexpected value
-- patch refuses unless config identity is exactly A5 and original duration is exactly 15000
+## Supporting V8 cross-ability proof
+- Issyl A5: `config+0x0E0 = 15000`, natural wall `10727.1 ms`.
+- Grayback C0: `config+0x0E0 = 60000`, natural wall `42222.1 ms`.
+- config ratio exactly `4.0x`; observed wall ratio ~`3.936x`.
 
-CI explicitly verifies the guarded architecture before compilation.
+## Safety / rejected approaches remain locked
+- NEVER repeated native reapplication/refresh (V3 rejected).
+- NEVER use `Unit+0x460` as duration.
+- NEVER use parent `+0x194` as duration.
+- NEVER hard-code transient parent path.
+- V7 cleanup-only child fields remain rejected.
+- low-address/vtable `10272` remains rejected.
 
 ## Build pin
 Repository: `apm23/BRZE-Trainer`
@@ -60,22 +61,8 @@ Artifact: `10328933404`
 Artifact digest: `sha256:9e755bb48a0383ccdf484479648fd720f5205c83a597b029de7c8088c4fc499a`
 
 Binaries:
-- Standalone: 151,067,880 bytes — SHA-256 `9dae8e6c07c66417c268fc5226e8273109de4187b0915bc24bce8a3121ebdd72`
-- Small: 154,378 bytes — SHA-256 `b11092f3a7d30b205fe3d59279ba76899d5952a4120d678ca74c1649131ef453`
+- Standalone SHA-256 `9dae8e6c07c66417c268fc5226e8273109de4187b0915bc24bce8a3121ebdd72`
+- Small SHA-256 `b11092f3a7d30b205fe3d59279ba76899d5952a4120d678ca74c1649131ef453`
 
-## Runtime test flow
-1. Fresh/reload BRZE.
-2. Select exactly ONE clean normal target.
-3. Click `1) ARM BASELINE`.
-4. Select Issyl and cast ORIGINAL Haste once on that target.
-5. Wait until V9 says baseline is complete / ready for patch.
-6. Select exactly ONE clean target for the test cast.
-7. Click `2) PATCH 30000 + ARM TEST`.
-8. Select Issyl and cast ORIGINAL Haste once on that target.
-9. Do nothing until natural expiry and V9 says TEST COMPLETE.
-10. Confirm UI/report says config auto-restored to 15000.
-11. Click `COPY REPORT` and return it.
-
-If anything unexpected happens after the patch, click `RESTORE NOW`. Closing the tool normally or RESET also attempts restore.
-
-If the 2x result is not clean, do NOT integrate this field into the main trainer.
+## Next engineering objective
+Build a separate V10 integration lab above known-good `HeroEffectReplayV2`, preserving V2 untouched as fallback. V10 should use temporary per-call duration patch + immediate restore, with strong config identity/value guards, and must prove the integration before touching the main V18.3 trainer.
