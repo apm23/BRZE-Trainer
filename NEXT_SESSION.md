@@ -28,47 +28,38 @@ Branch: `instant-death-v4-hover-telemetry`
 
 `HeroEffectReplayV3/STATE.md`
 - **RUNTIME-REJECTED — NEVER REUSE REFRESH/STACK APPROACH.**
-- Repeated native application stacks/compounds effect instances and corrupts combat behavior (extreme movement speed, building one-hit behavior, unit-damage/invulnerability anomalies, slower-feeling attack cadence).
+- Repeated native application stacks/compounds effect instances and corrupts combat behavior.
 
 `HeroEffectDurationProbe/STATE.md`
 - V1 read-only observer completed; no trustworthy duration field isolated.
 
 `HeroEffectDurationProbeV2/STATE.md`
 - **RUNTIME-PROVEN OBSERVER — TIMER NOT YET PROVEN.**
-- Recursive depth-3 read-only graph pass completed using ORIGINAL Grayback and natural expiry.
-- `Unit+0x1E4 -> +0x008` produced XYZ-like values at `+0x028/+0x02C/+0x030` and clears at expiry: likely visual/particle/transform object, not a proven gameplay timer.
-- structures beneath `Unit+0x094` remain interesting effect/container candidates but are not safe to patch.
-- direct `Unit+0x460` is the strongest direct timer/accumulator candidate: starts from zero, changes frequently, and showed zero direction flips in repeated runs; latest run ended at integer 178500 with 89 changes / 0 flips.
-- because earlier run ended at a different total (102000), `Unit+0x460` may be a generic unit clock. NO WRITE is allowed yet.
+- Recursive graph observation identified likely effect/visual lifecycle objects under `Unit+0x1E4` and interesting structures beneath `Unit+0x094`.
 
 `HeroEffectDurationProbeV3/STATE.md`
-- **BUILD/STATIC PROVEN — RUNTIME PENDING.**
-- Strictly read-only same-unit CONTROL-vs-EFFECT differential.
-- 15-second no-buff idle control sampled every 250 ms, then pre-effect capture, ORIGINAL Grayback once, effect watch, natural-expiry mark.
-- Direct Unit scan only (`0x500`) with UnitDef/owner identity validation.
-- `Unit+0x460` is pinned at top of report.
-- Run `34790956827` SUCCESS; job `103814953856` SUCCESS.
-- Artifact `10327249644`, digest `sha256:a7eeb16a1bccd51bd7f449f9ac55913989e42c46f8ef4e7536451ae650d08ac9`.
-- Standalone SHA-256 `d3902d905d7787dd85f0b11b54befb62f7081b5ee8c9fa465812ad0058bdee9f`.
-- Small SHA-256 `a4006557ae4a98c1a0fdb7502536ea48d773535c39b6ff63efaea7b91e1b3235`.
+- **RUNTIME-PROVEN OBSERVER — `Unit+0x460` HIGH-CONFIDENCE CANDIDATE, MOVEMENT CONTROL REQUIRED.**
+- Idle no-buff 15s control: `+0x460` stayed exactly `345400`, `CTRL chg 0`, `flip 0`.
+- Grayback-active watch: `FX chg 164`, `flip 0`, first observed active value `354400`, natural-expiry value `413000`.
+- PRE -> EXP increase = `+67600`, strictly one-directional.
+- This is strong effect correlation, but target position fields also changed continuously during the effect and `+0x460` sits next to the noisy movement/transform region `0x45C..0x4A4`.
+- Therefore `+0x460` is NOT yet approved for writing; it may be a movement/animation accumulator.
+- `Unit+0x1E4/+0x1E8` and `+0x20C/+0x210` populated during the effect and returned to zero at visible expiry; `+0x214` returned to its pre-effect pointer. Treat these as lifecycle markers until deeper proof.
 
 ## Exact next action
-Runtime-test `HeroEffectDurationProbeV3`:
-1. restart/reload BRZE clean if needed;
-2. select exactly ONE normal clean target unit and keep it completely idle;
-3. press `1 START 15s CONTROL`; do not move, attack, or cast anything until it auto-stops;
-4. press `2 CAPTURE PRE-EFFECT`;
-5. cast ORIGINAL Grayback exactly once on the same target;
-6. immediately press `3 START EFFECT WATCH`;
-7. leave the target completely idle; do not move, attack, or recast;
-8. the instant the visible Grayback effect disappears naturally, press `4 MARK EXPIRED`;
-9. press `COPY REPORT` and return it.
+Reuse the existing `HeroEffectDurationProbeV3` binary for a movement-only no-buff control:
+1. restart/reload BRZE clean;
+2. select exactly ONE normal clean unit with no hero buff active;
+3. press `1 START 15s CONTROL`;
+4. during those 15 seconds deliberately keep the selected unit walking/moving; do NOT cast Grayback/Issyl or any other buff;
+5. when the control auto-stops, press `COPY REPORT` immediately and return it;
+6. the only decisive line needed first is pinned `Unit+0x460`.
 
-Interpretation:
-- if pinned `Unit+0x460` shows `CTRL chg > 0`, reject it as Grayback-specific duration and continue toward the effect-instance/container path;
-- if `CTRL chg = 0` while FX shows many smooth changes with low/zero flips, promote `+0x460` to a high-confidence candidate, but first determine direction/scale before any isolated write test.
+Decision:
+- movement-only `CTRL chg > 0` at `Unit+0x460` => reject it as Grayback-duration-specific and move to effect-instance/container interception;
+- movement-only `CTRL chg 0` => promote `+0x460` to very strong Grayback-specific elapsed/duration candidate, then compare clean Grayback vs Issyl timing/direction before any isolated write.
 
-Do not integrate duration into the main trainer until runtime proof. Never reintroduce repeated native re-application.
+Do not integrate duration into the main trainer yet. Never reintroduce repeated native re-application.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5); repeated refresh V3 is permanently rejected because effects stack/corrupt combat. Recursive Duration Probe V2 found likely visual object under Unit+0x1E4 and a still-unproven direct candidate Unit+0x460. Continue from HeroEffectDurationProbeV3 CONTROL-vs-EFFECT runtime test. Copy/Paste Hero is already runtime-proven.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5); repeated refresh V3 is permanently rejected. Duration Probe V3 runtime result made Unit+0x460 a high-confidence candidate: idle control chg0, Grayback FX chg164 flip0, PRE345400 -> EXP413000. But movement fields also changed, so the exact next test is movement-only no-buff control using the same V3 binary before any write.`
