@@ -1,0 +1,53 @@
+name: Hero Effect Replay Duration V10 Companion
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - 'HeroEffectReplayDurationV10/**'
+      - '.hero-effect-replay-duration-v10-trigger'
+      - '.github/workflows/hero-effect-replay-duration-v10.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify companion guarded-write architecture
+        shell: pwsh
+        run: |
+          $src = Get-Content 'HeroEffectReplayDurationV10/ReplayDurationCore.cs' -Raw
+          $forbidden = @('VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','FlushInstructionCache','0x135C43','0x1F0C32')
+          foreach ($token in $forbidden) {
+            if ($src.Contains($token)) { throw "Forbidden V10 companion token: $token" }
+          }
+          foreach ($required in @('WriteProcessMemory','CONFIG_DURATION_OFF=0x0E0','ORIGINAL_DURATION=15000','DOUBLE_DURATION=30000','ISSYL_ID=0xA5')) {
+            if (-not $src.Contains($required)) { throw "Required V10 guard missing: $required" }
+          }
+          Write-Host 'V10 companion guarded-write invariants PASS'
+      - name: Compile smoke
+        run: dotnet build HeroEffectReplayDurationV10/HeroEffectReplayDurationV10.csproj -c Release -p:Platform=x86
+      - name: Publish standalone
+        run: dotnet publish HeroEffectReplayDurationV10/HeroEffectReplayDurationV10.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o out/standalone
+      - name: Publish small
+        run: dotnet publish HeroEffectReplayDurationV10/HeroEffectReplayDurationV10.csproj -c Release -r win-x86 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o out/small
+      - name: Stage outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item 'out/standalone/BRZE-Hero-Effect-Replay-Duration-V10.exe' 'artifact/BRZE-Hero-Effect-Replay-Duration-V10-Companion.exe'
+          Copy-Item 'out/small/BRZE-Hero-Effect-Replay-Duration-V10.exe' 'artifact/BRZE-Hero-Effect-Replay-Duration-V10-Companion-Small.exe'
+      - name: Hash outputs
+        shell: pwsh
+        run: Get-FileHash artifact/*.exe -Algorithm SHA256 | Format-Table -AutoSize
+      - name: Upload V10 companion
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Replay-Duration-V10-Companion
+          path: artifact/*
+          if-no-files-found: error
