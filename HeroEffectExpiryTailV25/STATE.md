@@ -1,6 +1,6 @@
 # BRZE Hero Effect Expiry Tail V25 — STATE
 
-Status: **BUILT NEXT — READ-ONLY NATURAL EXPIRY DECISION SCAN**
+Status: **BUILT / CI-PROVEN READ-ONLY — RUNTIME EXPIRY-TAIL SCAN PENDING**
 Date: 2026-09-14 JST
 
 ## Input from V24 runtime
@@ -34,7 +34,7 @@ V25 is NOT a write/call probe.
 5. print the tick-function tail from before the stamp marker through the first return;
 6. print focus windows around proven nested `config+0xE0` / `config+0xE4` accesses;
 7. list direct CALL targets near the duration decision;
-8. also dump RVA `0x13A349`, already observed as a direct call from the V24 tick body, plus all direct `.text` xrefs to it.
+8. dump RVA `0x13A349`, already observed as a direct call from the V24 tick body, plus all direct `.text` xrefs to it.
 
 ## Safety
 STRICT READ-ONLY:
@@ -45,6 +45,33 @@ STRICT READ-ONLY:
 - no native ability calls;
 - no destructor/cleanup invocation;
 - no CreateRemoteThread.
+
+## V25 CI pin
+Workflow: `Hero Effect Expiry Tail V25 Read Only`
+- run `34827531830` — SUCCESS
+- job `103923007903` — SUCCESS
+- head `45e0bc3972544908fd1b92877d4bca52cb1effa3`
+- artifact `10341240369`
+- artifact digest `sha256:9d7879a39c9b47085ab99e40cba0fb41d6bfd36f4714649a47bdf0237eeee2aa`
+- standalone SHA256 `4b569a3e0155fce68d74fd344cda4f0c679c08eb7c7bddd01a31db62b42bac57`
+- small SHA256 `07b3ad5af41a3247014d8355005a4581941e5c4e7a271d171363874da8dd2de1`
+
+CI passed:
+- strict read-only architecture verifier;
+- compile smoke;
+- standalone publish;
+- small publish;
+- hash step;
+- artifact upload.
+
+## Exact runtime test
+1. Give Issyl to exactly ONE unit.
+2. While Issyl is visibly active, select only that unit.
+3. Open `BRZE-Hero-Effect-Expiry-Tail-V25-ReadOnly.exe`.
+4. Click `SCAN EXPIRY TAIL` once.
+5. Click `COPY REPORT` and send the full report.
+
+No wait for natural expiry is required. V25 performs no game writes, hooks, or native calls.
 
 ## Decision rule after V25 runtime report
 Advance to a guarded cleanup proof only if the report structurally identifies:
