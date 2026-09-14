@@ -1,53 +1,41 @@
 # BRZE Hero Effect Clock Reset V26 — STATE
 
-Status: **BUILT / CI-PROVEN — GUARDED ONE-FIELD RESET RUNTIME PROOF PENDING**
+Status: **RUNTIME-REJECTED — ZERO-REINIT HYPOTHESIS FALSE**
 Date: 2026-09-14 JST
 
-## Runtime evidence from V25
-V25 runtime disassembly proved the active effect record uses `+0x194` as the start/lifecycle timestamp, not as duration.
+## Proven V25 background
+V25 runtime disassembly proved `record+0x194` participates as the effect start/lifecycle timestamp, not duration:
+- tick function RVA `0x13A5EB` checks `record+0x194` for zero at `0x13A8B3`;
+- on the creation/init path, `[EBP+8]` is copied into `record+0x194` at `0x13A8BC..0x13A8BF`;
+- later the game subtracts `record+0x194` from current time at `0x13B1C3..0x13B1C6`;
+- `record+0x1F4 -> config+0xE0` supplies nominal duration;
+- elapsed vs duration is compared at `0x13B1E2`, with expiry branch at `0x13B1E5`.
 
-Observed live A5:
-- selected Unit* `0x22B47F2C`
-- A5 record `0x235AD8AC`
-- config `0x1D1FA664`
-- config ID `0xA5`
-- config+0xE0 `15000`
-- record+0x194 `355400`
+This remains valid.
 
-Exact tick flow:
-- RVA `0x13A8B3`: compare `record+0x194` against zero;
-- RVA `0x13A8BC..0x13A8BF`: if zero, copy current tick argument `[EBP+8]` into `record+0x194`;
-- RVA `0x13B1C3`: load current time;
-- RVA `0x13B1C6`: subtract `record+0x194`;
-- RVA `0x13B1CC`: load `config+0xE0` nominal duration;
-- RVA `0x13B1E2`: compare elapsed vs duration-derived value;
-- RVA `0x13B1E5`: branch to `0x13B74D` when elapsed exceeds threshold.
+## V26 runtime result — REJECTED
+User runtime report on one live stock Issyl A5 instance:
+- PID `6528`, moduleBase `0x00870000`
+- Unit* `0x22B47F2C`, UnitDef* `0x1688993C`, owner `0`
+- A5 record `0x235ADCA4` via `Unit+0x1E4->+0x008`
+- signature `ability=0xA5`, `target=0x22B47F2C`
+- config `0x1D1FA664`, config ID `A5`, duration `15000`
+- old `record+0x194 = 375600`
+- V26 wrote exactly `record+0x194 = 0`
+- immediate post-write sample remained `0`
+- the game did **NOT** repopulate the field within ~1 second
+- V26 fail-safe restored old timestamp successfully
 
-This strongly supports a safer reset primitive than cleanup + reapply: zero the existing instance start timestamp and let the game's own tick initialize a fresh start time.
+### Conclusion
+The assumption "mid-lifecycle `+0x194 = 0` makes the normal tick creation path initialize a fresh timestamp" is FALSE.
 
-## V26 guarded hypothesis
-For ONE active stock Issyl A5 instance:
-1. signature-lock exact record with `record+0x58 == 0xA5` and `record+0x17C == selected Unit*`;
-2. require config identity A5 and stock config+0xE0 `15000`;
-3. capture nonzero old `record+0x194`;
-4. write exactly one field: `record+0x194 = 0`;
-5. do NOT call any native ability helper;
-6. poll the SAME record and verify BRZE itself replaces zero with a different nonzero timestamp.
+Do not use this reset primitive again.
+Do not interpret the failure as disproving the timestamp role. It only proves the zero-initialization branch is not re-entered/reached for an already-active effect instance in the way V26 assumed.
 
-If confirmed, existing Issyl can restart from zero without creating a second effect instance and without V3-style stacking.
+## Next hypothesis
+A safer reset may still be possible without native reapply if we write the **actual current BRZE game-time value** directly into the existing effect's `record+0x194`.
 
-## Safety
-- exactly ONE selected unit;
-- active A5+target signature required before write;
-- config ID must be A5;
-- first proof requires stock duration 15000;
-- only intended mutation is one 4-byte timestamp zero write;
-- no hooks;
-- no allocation;
-- no CreateRemoteThread;
-- no native replay/application call;
-- no destructor/cleanup call;
-- if same signature remains but timestamp stays zero for ~1 second, V26 attempts to restore the original timestamp.
+This requires first identifying the source of function RVA `0x13A5EB` argument `[EBP+8]` / current game time from its real caller(s). No guessed timestamps and no synthetic wall-clock conversion.
 
 ## V26 CI pin
 Workflow: `Hero Effect Clock Reset V26 Guarded`
@@ -59,30 +47,8 @@ Workflow: `Hero Effect Clock Reset V26 Guarded`
 - standalone SHA256 `0900937462afc93b1aae290c135872b07ff673de1884b208b5648411d18dcaab`
 - small SHA256 `f0723b84921604b2558dee30da212db574d42fe6f05e942d1a77fba374b55828`
 
-CI PASS:
-- guarded architecture verifier;
-- compile smoke;
-- standalone publish;
-- small publish;
-- hash step;
-- artifact upload.
-
-## Exact runtime proof
-1. Use a fresh/stock Issyl A5 effect on exactly ONE unit.
-2. While visibly active, select only that unit.
-3. Open `BRZE-Hero-Effect-Clock-Reset-V26-Guarded.exe`.
-4. Click `RESET ACTIVE ISSYL CLOCK` once.
-5. Copy/send the report.
-
-PASS requires:
-- same A5 record remains signature-valid;
-- old timestamp is nonzero;
-- game repopulates +0x194 with a different nonzero timestamp;
-- no crash/freeze/corruption;
-- visually, Issyl lifetime restarts from the reset moment.
-
-If PASS, next integrated semantics should be:
-- selected unit already has same ability -> reset existing instance timestamp, no native replay;
-- selected unit lacks same ability -> one-shot native apply;
-- unrelated buffs untouched;
-- duration still follows proven config+0xE0 hold rules.
+## Locked safety conclusion
+- V26 binary is historical evidence only; do not integrate it.
+- Never zero `record+0x194` as the final reset implementation.
+- Keep avoiding repeated native replay/stacking.
+- Next work must be read-only caller/current-time-source discovery before another write proof.
