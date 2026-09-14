@@ -87,39 +87,81 @@ Runtime result:
 - hold active after completion: `False`
 - no repeated replay/refresh loop.
 
-IMPORTANT report interpretation:
-- the old companion block may still show `Stage: ReadyForReplay`, replay `0.0 ms`, ratio `0.0x` because V10.2 intentionally bypasses the old V10 lifecycle state machine during its full-lifetime hold;
-- the authoritative V10.2 runtime section is `MERGED V10.2 FULL-LIFETIME HOLD`.
+V10.2 remains the known-good merged fallback.
+
+## V11 configurable duration — BUILT / CI-PROVEN, RUNTIME TEST NEXT
+Source/state: `HeroEffectReplayDurationV11/STATE.md`
+
+Purpose:
+- preserve V10.2 full-lifetime-hold semantics;
+- make Issyl replay duration user-selectable;
+- baseline capture once, then repeated one-shot replays without recapturing baseline.
+
+UI/config:
+- `REPLAY 1X` => nominal `15000`
+- `REPLAY 2X` => nominal `30000`
+- `REPLAY 3X` => nominal `45000`
+- `REPLAY CUSTOM` => `15000 × multiplier`
+- custom UI range `0.25x..20.00x`
+
+Runtime architecture:
+1. capture original Issyl baseline/config once;
+2. select exactly one clean target;
+3. choose preset/custom multiplier;
+4. guard A5 config and patch desired nominal value if not 1X;
+5. queue one known-good Replay V2 A5 call;
+6. keep chosen config resident for the ENTIRE replay lifetime;
+7. read-only watcher tracks target transient roots;
+8. after natural expiry stable for 4 polls, restore `15000`;
+9. return to READY so another target/duration can be tested without recapturing baseline.
+
+Current V11 initial runtime proof remains **single-target only**. Do not widen to multi-target until this passes.
 
 Build pin:
-- workflow `Hero Effect Replay Duration Merged`
-- run `34797240949` SUCCESS
-- job `103832611033` SUCCESS
-- head `0062f32fa0d3d903f85ef613eb71dd8034de95a3`
-- artifact `10330421265`
-- digest `sha256:4dcdf829c606197fb631257248753befa5d6d00757a38e32c3281b33675a7b77`
-- standalone SHA-256 `d522c611f48e84b1a9b0259938e8847f87e9c968ec07bbb2cfb2c10f58f51c29`
-- small SHA-256 `6a22bc4611edc41daa174a024d3334c6b152b7481838887d4edc1c270892c17d`
+- workflow `Hero Effect Replay Duration V11 Configurable`
+- run `34797972869`
+- job `103834678005`
+- head `ba5f8d63dd578bbc4e2f07980c1c2ae9f256cd6f`
+- artifact `10330576956`
+- digest `sha256:cb7dbf423a52000ab38434f0128c5de3c136dbd86394c1c13402a287d3033444`
+- standalone SHA-256 `5d5525754185d34c90313fe3215022121e5fab46c0c66e15d0cccf156800029b`
+- small SHA-256 `8aba3e1246f890160ac41495c6cb5185f65c7307d26872fef0ae1c55426eab02`
 
-## Exact next engineering action
-Build the next merged version ABOVE V10.2 with **user-configurable Issyl duration** while preserving V10.2 semantics:
-1. capture/validate A5 config;
-2. user chooses desired nominal duration instead of fixed 30000;
-3. patch before one-shot Replay V2;
-4. keep patched value for the entire active replay lifetime;
-5. restore original `15000` after natural expiry;
-6. never refresh/reapply the effect.
+CI:
+- architecture invariants PASS
+- compile smoke PASS
+- standalone publish PASS
+- small publish PASS
+- artifact upload PASS
 
-Recommended first configurable proof values:
-- `15000` = normal
-- `30000` = 2x proven
-- optionally `45000` = 3x experimental after 2x path remains locked.
+## Exact next runtime action — test V11 3X first
+Use ONLY `BRZE-Hero-Effect-Replay-Duration-V11.exe`.
 
-Critical limitation to surface in final integration:
-- A5 config object is global/shared. While an override is resident, another Issyl effect created during that interval may also inherit/observe the modified duration.
-- Do not hide this limitation; final design should minimize or control concurrent Issyl casts.
+1. Fresh/reload BRZE.
+2. Open V11 only.
+3. Select exactly ONE clean target.
+4. Click `1) CAPTURE ISSYL BASELINE`.
+5. Cast ORIGINAL Issyl Haste ONCE on that target.
+6. Wait until V11 says baseline complete / READY.
+7. Select the same clean target again.
+8. Click `REPLAY 3X` ONCE.
+9. Do NOT manually cast Issyl the second time.
+10. Wait until natural expiry and automatic restore.
+11. COPY REPORT.
 
-Do NOT integrate duration into locked V18.3 main trainer until the configurable merged version is runtime-proven.
+Expected 3X proof:
+- baseline around current ~10.7 s;
+- replay around ~31–32 s;
+- ratio near 3.0x;
+- current config returns to `15000` after expiry;
+- no repeated application / no stacking.
+
+If 3X passes, immediately test one custom value such as `4.00x` without recapturing baseline. Expected wall lifetime ~4x baseline and automatic restore afterward.
+
+## Critical limitation
+- A5 config is global/shared while the override is resident.
+- Another Issyl effect created during an active extended hold may observe the modified duration.
+- V11 blocks another configurable replay in its UI while hold is active, but the user should also avoid manually casting Issyl during that interval.
 
 ## Locked rejects / safety
 - no repeated native reapplication;
@@ -129,7 +171,9 @@ Do NOT integrate duration into locked V18.3 main trainer until the configurable 
 - no lifecycle-first restore timing;
 - no native-call-return restore timing;
 - no claim that duration is copied at effect creation;
-- keep original HeroEffectReplayV2 source/binary untouched as fallback.
+- keep original HeroEffectReplayV2 source/binary untouched as fallback;
+- keep V10.2 merged build untouched as proven duration fallback;
+- no main V18.3 integration until V11 configurable runtime proof passes.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V10.2 is now RUNTIME-PROVEN: original Issyl baseline 10755.0ms, Replay V2 with A5 config held at 30000 for the full effect lifetime 21115.9ms, ratio 1.963355x, then automatic restore to 15000 after natural expiry succeeded. Lifecycle-first restore and native-call-return restore are permanently rejected. Next: configurable Issyl duration above V10.2, still one-shot Replay V2 + full-lifetime hold + restore after expiry.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V10.2 is RUNTIME-PROVEN: baseline 10755.0ms, Replay V2 with A5 duration held at 30000 for full effect lifetime 21115.9ms, ratio 1.963355x, then restore 15000 after expiry. V11 configurable is now BUILT/CI-PROVEN: presets 1X/2X/3X plus custom 0.25x..20x, baseline once then repeat replays, still full-lifetime hold and restore after expiry. CI run 34797972869. Next runtime test: V11 REPLAY 3X on one clean target.`
