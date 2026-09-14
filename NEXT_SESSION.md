@@ -9,7 +9,7 @@ GitHub is authoritative.
 - V19 = latest pre-integration main-trainer fallback.
 - V20 = integrated fallback.
 - V21 Direct Hero = runtime-rejected due generic transient-root gating/hold bugs.
-- V22 Group-Safe Hero = built/CI-proven integrated fallback while reset semantics are researched.
+- V22 Group-Safe Hero = built/CI-proven integrated fallback while true reset/replace semantics are researched.
 - Unit Clone Lab standalone remains runtime-proven.
 - Replay V2 / V11 duration proof remain runtime-proven references.
 
@@ -37,10 +37,10 @@ Hero Effect APPLY should behave like replacement/reset:
 
 Unrelated buffs must remain untouched.
 
-Never implement this by blindly applying again on an already-active same effect. V3 proved repeated application can stack/compound into extreme speed, invulnerability-like behavior, one-hit buildings, and other corruption.
+Never implement by blindly applying again on an already-active same effect. V3 proved repeated application can stack/compound into extreme speed, invulnerability-like behavior, one-hit buildings, and other corruption.
 
 ## V22 Group-Safe Hero — current integrated fallback
-V22 fixes V21 generic transient-root problems using exact content signature:
+Uses exact content signature:
 - effect record `+0x058 = ability ID`;
 - effect record `+0x17C = target Unit*`;
 - transient root path itself is NOT stable and must never be hard-coded.
@@ -52,73 +52,76 @@ V22 CI:
 - artifact `10339202775`
 
 ## V23 Reset Forensics — RUNTIME-PROVEN READ-ONLY DISCOVERY
-State: `HeroEffectResetForensicsV23/STATE.md`
+V23 runtime successfully locked a live A5 effect and ranked +0x194 references.
 
-Runtime report from 2026-09-14 successfully locked:
-- Unit* `0x22B47F2C`
-- A5 parent `0x235ABEE0`
-- path `Unit+0x1E4->+0x008`
-- vtable `0x00C138EC`
-- config `0x1D1FA664`
-- config ID `0xA5`
-- nominal duration `15000`
+Important correction after V24:
+- V23 strongest raw hit `0x13DA9C` is NOT cleanup proof.
+- Never call it merely because it writes `+0x194`.
 
-Relevant vtable methods:
-- VT[4]  `0x14053A`
-- VT[5]  `0x1405A2`
-- VT[20] `0x142450`
-- VT[23] `0x142C28`
-- VT[24] `0x142C6E`
-
-Strongest cleanup/teardown lead from V23:
-- RVA `0x13DA9C`
-- writes displacement `+0x194`
-- local window also touches `+0x058`, `+0x17C`, `+0x194`, `+0x1F4`
-- score `44`, highest V23 result.
-
-Secondary leads: `0x13A8B3`, `0x13A8BF`, `0x16B76A`, `0x2151DE`, `0x24A7B8`.
-
-IMPORTANT: V23 proves only an instruction reference, NOT a callable cleanup function. Do not call `0x13DA9C` and do not write `+0x194`.
-
-## V24 Deep Scan — BUILT / CI-PROVEN READ ONLY
+## V24 Deep Scan — RUNTIME-PROVEN READ-ONLY, STRUCTURE NARROWED
 State: `HeroEffectResetDeepScanV24/STATE.md`
 
+Runtime report:
+- Unit* `0x22B47F2C`
+- A5 parent `0x235ACCC4`
+- path `Unit+0x1E4->+0x008`
+- vtable `0x00C138EC`
+- parent+0x194 `275200`
+- config `0x1D1FA664`
+- config ID `A5`
+- duration `15000`
+
+V24 conclusions:
+- `0x13DA9C` = short contiguous field-copy tail; REJECT as cleanup entry.
+- `0x2151DE` and `0x24A7B8` = massive contiguous field-copy/init style writers; REJECT as cleanup.
+- `0x16B76A` = repetitive registration/assignment style code; REJECT as cleanup.
+- validated function boundary `0x13A5EB` is the strongest structural lead.
+
+Inside `0x13A5EB`:
+- target is read from record `+0x17C`;
+- config is read from record `+0x1F4`;
+- at `0x13A8B3`, record `+0x194` is checked for zero;
+- at `0x13A8BC..0x13A8BF`, function arg `[EBP+8]` is copied into record `+0x194` when zero.
+
+Interpretation: `+0x194` behaves like lifecycle/start/current timestamp, NOT duration and NOT a cleanup function pointer.
+
+V24 output ended before the full tail of `0x13A5EB`, so the actual duration comparison / expiry branch is still missing.
+
+## V25 Expiry Tail — BUILT / CI-PROVEN READ ONLY
+State: `HeroEffectExpiryTailV25/STATE.md`
+
 Purpose:
-- resolve probable function boundary containing the strongest V23 marker;
-- decode full containing function with operand kinds, memory displacement and near call/branch targets;
-- inspect top secondary candidate functions;
-- decode the five relevant A5 vtable methods from exact runtime pointers;
-- remain strictly read-only.
+- decode the full tail of `0x13A5EB` after the +0x194 marker;
+- track register flow from record `+0x1F4` into nested config `+0xE0/+0xE4`;
+- tag `[EBP+8]`, record `+0x194`, record `+0x17C`, record `+0x1F4`;
+- print focus windows around config duration accesses;
+- list direct CALL targets around the expiry decision;
+- dump RVA `0x13A349` and all direct xrefs to it.
 
-V24 primary candidates:
-- `0x13DA9C`
-- `0x13A8B3`
-- `0x16B76A`
-- `0x2151DE`
-- `0x24A7B8`
+V25 is strict read-only: no writes, hooks, native calls, destructor calls, or CreateRemoteThread.
 
-V24 CI pin:
-- workflow `Hero Effect Reset Deep Scan V24 Read Only`
-- run `34826622129` — SUCCESS
-- job `103920156334` — SUCCESS
-- head `2a8e5acac7402f66a08d7a826b2bc77b7ccad91e`
-- artifact `10339563933`
-- digest `sha256:ab1103571e04c8de3a92c291bb58b45d0a60fde0f3f251ac9190a7b86d62dbf2`
-- standalone SHA256 `333cd6826f0592e8408a8fa5862410b2e432e038738ebea826ec97952ed98ab2`
-- small SHA256 `fe903cb0630d9ca6be8451a97dfb738efc1d4fa17ad8f532dfd85d76af4ff228`
+### V25 CI pin
+Workflow: `Hero Effect Expiry Tail V25 Read Only`
+- run `34827531830` — SUCCESS
+- job `103923007903` — SUCCESS
+- head `45e0bc3972544908fd1b92877d4bca52cb1effa3`
+- artifact `10341240369`
+- digest `sha256:9d7879a39c9b47085ab99e40cba0fb41d6bfd36f4714649a47bdf0237eeee2aa`
+- standalone SHA256 `4b569a3e0155fce68d74fd344cda4f0c679c08eb7c7bddd01a31db62b42bac57`
+- small SHA256 `07b3ad5af41a3247014d8355005a4581941e5c4e7a271d171363874da8dd2de1`
 
-## EXACT NEXT ACTION — ONE V24 READ-ONLY DEEP SCAN
+## EXACT NEXT ACTION — ONE V25 READ-ONLY SCAN
 1. Give Issyl to exactly ONE unit.
 2. While Issyl is visibly active, select only that unit.
-3. Open `BRZE-Hero-Effect-Reset-DeepScan-V24.exe`.
-4. Click `DEEP SCAN ACTIVE ISSYL` once.
+3. Open `BRZE-Hero-Effect-Expiry-Tail-V25-ReadOnly.exe`.
+4. Click `SCAN EXPIRY TAIL` once.
 5. Click `COPY REPORT` and send the full report.
 
-No natural-expiry wait is needed. V24 performs no game writes/hooks/native calls.
+No natural-expiry wait is required. V25 modifies nothing.
 
-After the report:
-- if a structurally coherent natural-expiry/unlink/destruction boundary is identified, make the smallest guarded proof;
-- otherwise build a narrower trace probe around the exact call boundary rather than guessing.
+After V25:
+- only if the report ties config+0xE0 duration to a specific natural-expiry branch/call do the smallest guarded cleanup proof;
+- otherwise narrow again rather than guessing.
 
 ## New-chat bootstrap
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants true Hero Effect RESET/REPLACE semantics, never repeated stacking. V23 runtime-proven read-only discovery found strongest cleanup lead RVA 0x13DA9C (write +0x194 with nearby +0x58/+0x17C/+0x1F4), but it is NOT yet callable proof. V24 deep function scan is BUILT/CI-PROVEN READ ONLY, run 34826622129 SUCCESS, artifact 10339563933. Next: ONE V24 scan on exactly one selected unit while Issyl is active, then send COPY REPORT.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants true Hero Effect RESET/REPLACE, never repeated stacking. V24 runtime rejected raw +0x194 writers as cleanup and narrowed the real lifecycle logic to function RVA 0x13A5EB: target +0x17C, config +0x1F4, +0x194 initialized from arg [EBP+8]. V25 Expiry Tail is BUILT/CI-PROVEN READ ONLY, run 34827531830 SUCCESS, artifact 10341240369. Next: ONE V25 scan on exactly one selected unit while Issyl is active, then send COPY REPORT.`
