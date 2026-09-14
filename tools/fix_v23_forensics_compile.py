@@ -7,6 +7,7 @@ new='var decoder=Iced.Intel.Decoder.Create(32,new ByteArrayCodeReader(bytes));de
 if old not in s:
     raise SystemExit('Decoder marker missing')
 s=s.replace(old,new,1)
+s=s.replace('while(decoder.CanDecode)', 'while(decoder.IP < ip+(ulong)bytes.Length)', 1)
 s=s.replace('return $"0x{i.IP-moduleBase:X6}  {i.Mnemonic,-9} len={i.Length,2}{flags}";',
             'return $"0x{i.IP-(ulong)moduleBase:X6}  {i.Mnemonic,-9} len={i.Length,2}{flags}";',1)
 p.write_text(s,encoding='utf-8')
