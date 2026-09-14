@@ -1,0 +1,58 @@
+name: Hero Effect Replay Duration Merged
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - 'HeroEffectReplayDurationMerged/**'
+      - 'HeroEffectReplayV2/ReplayCore.cs'
+      - 'HeroEffectReplayDurationV10/ReplayDurationCore.cs'
+      - '.hero-effect-replay-duration-merged-trigger'
+      - '.github/workflows/hero-effect-replay-duration-merged.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify merged architecture
+        shell: pwsh
+        run: |
+          $ui = Get-Content 'HeroEffectReplayDurationMerged/Program.cs' -Raw
+          $v2 = Get-Content 'HeroEffectReplayV2/ReplayCore.cs' -Raw
+          $v10 = Get-Content 'HeroEffectReplayDurationV10/ReplayDurationCore.cs' -Raw
+          if (-not $ui.Contains('ArmReplay2X')) { throw 'Merged UI missing V10 replay arm' }
+          if (-not $ui.Contains('QueueSelected')) { throw 'Merged UI missing V2 queue call' }
+          if (-not $ui.Contains('ISSYL_RUNTIME_ABILITY')) { throw 'Merged UI missing Issyl runtime ID path' }
+          if (-not $v2.Contains('RVA_FRAME_MOUSE_DRAW=0x135C43')) { throw 'Known-good V2 frame hook invariant missing' }
+          if (-not $v2.Contains('ISSYL_RUNTIME_ABILITY=0xA5')) { throw 'Known-good V2 A5 invariant missing' }
+          if (-not $v10.Contains('CONFIG_DURATION_OFF=0x0E0')) { throw 'V10 duration field invariant missing' }
+          if (-not $v10.Contains('ORIGINAL_DURATION=15000')) { throw 'V10 original duration invariant missing' }
+          if (-not $v10.Contains('DOUBLE_DURATION=30000')) { throw 'V10 2X duration invariant missing' }
+          Write-Host 'Merged V2+V10 invariants PASS'
+      - name: Compile smoke
+        run: dotnet build HeroEffectReplayDurationMerged/HeroEffectReplayDurationMerged.csproj -c Release -p:Platform=x86
+      - name: Publish standalone
+        run: dotnet publish HeroEffectReplayDurationMerged/HeroEffectReplayDurationMerged.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o out/standalone
+      - name: Publish small
+        run: dotnet publish HeroEffectReplayDurationMerged/HeroEffectReplayDurationMerged.csproj -c Release -r win-x86 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o out/small
+      - name: Stage outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item 'out/standalone/BRZE-Hero-Effect-Replay-Duration-Merged.exe' 'artifact/BRZE-Hero-Effect-Replay-Duration-Merged.exe'
+          Copy-Item 'out/small/BRZE-Hero-Effect-Replay-Duration-Merged.exe' 'artifact/BRZE-Hero-Effect-Replay-Duration-Merged-Small.exe'
+      - name: Hash outputs
+        shell: pwsh
+        run: Get-FileHash artifact/*.exe -Algorithm SHA256 | Format-Table -AutoSize
+      - name: Upload merged build
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Replay-Duration-Merged
+          path: artifact/*
+          if-no-files-found: error
