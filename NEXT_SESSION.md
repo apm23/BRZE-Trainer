@@ -46,8 +46,6 @@ Runtime established:
 - later code subtracts start timestamp from current time and compares against duration.
 
 ## V26 Clock Reset — RUNTIME-REJECTED
-Runtime:
-- A5 record `0x235ADCA4`
 - old `record+0x194 = 375600`
 - writing only `record+0x194 = 0` did not trigger reinitialization within ~1s
 - fail-safe restore of `375600` succeeded.
@@ -55,59 +53,80 @@ Runtime:
 Never reuse zero-reset.
 
 ## V27 Current-Time Source — RUNTIME-PROVEN READ-ONLY DISCOVERY
-State: `HeroEffectCurrentTimeSourceV27/STATE.md`
-
-Runtime context:
-- PID `6528`, moduleBase `0x00870000`
-- Unit* `0x22B47F2C`, UnitDef* `0x1688993C`, owner `0`
-- active A5 record `0x235AE09C` via `Unit+0x1E4->+0x008`
-- stamp `400600`
-- config `0x1D1FA664`, duration `15000`
-
-V27 found exactly one direct E8 call to tick RVA `0x13A5EB`:
-- call `0x140125`
-- caller start `0x1400F0`
-
-No non-text runtime pointer refs to tick function.
-
-Unique recursive caller chain:
+V27 narrowed the unique caller chain:
 `0x144691 -> 0x144794 -> 0x1C3107 -> 0x1400F0 -> 0x13A5EB`
 
-Limitation:
-V27 printed operand kinds but not exact register names, so the `[EBP+8]` current-time source is not yet concrete. No write is justified yet.
-
-## V28 Register Flow — BUILT / CI-PROVEN READ ONLY
+## V28 Register Flow — RUNTIME-PROVEN CURRENT-TICK SOURCE
 State: `HeroEffectRegisterFlowV28/STATE.md`
 
-Purpose:
-- print exact register operands in each caller window;
-- identify the last PUSH before each call;
-- backward-trace pushed registers through MOV chains;
-- detect `[EBP+8]` propagation between caller levels;
-- identify absolute/global sources;
-- sample absolute sources 350ms apart and mark changing clock-like values;
-- walk the unique caller chain upward up to five levels.
+Runtime:
+- PID `6528`, moduleBase `0x00870000`
+- selected Unit* `0x22B47F2C`
+- active A5 record `0x235B0A48`
+- A5 start timestamp `486200`
+- config `0x1D1FA664`, duration `15000`
+
+Exact lower-level register flow:
+- `0x140106`: `EBX <- [EBP+8]`
+- `0x140120`: `PUSH EBX`
+- `0x140125`: CALL tick `0x13A5EB`
+
+Direct caller flow:
+- `0x1C3243`: `PUSH ESI`
+- V28 backward trace: `0x1C3181`: `ESI <- [0x00CB0A3C]`
+
+Therefore the concrete BRZE current-time source is:
+- runtime absolute `0x00CB0A3C` for moduleBase `0x00870000`
+- equivalent module RVA **`0x440A3C`**
+
+Observed at scan:
+- current tick `489500`
+- A5 start stamp `486200`
+- elapsed delta `3300`
+
+The 350ms sample remained unchanged because BRZE may pause simulation while unfocused; source provenance is still proven by exact instruction/register flow.
 
 V28 CI:
-- run `34833344064` — SUCCESS
-- job `103941510533` — SUCCESS
-- head `7078921824d79139db3784a3a0916cf5a5d80d80`
+- run `34833344064` SUCCESS
+- job `103941510533` SUCCESS
 - artifact `10343645827`
-- digest `sha256:24c0897627c3d972d5e3988722be7ea11873905df1a48e81bc52fe71057daee8`
-- standalone SHA256 `1bfda24034eead2692a94382fe281deb325685ff07b340d2932bba194c721053`
-- small SHA256 `8d7000c5b78f4509923204da274aebeafd1b99b9f5af861b67030d534623b17b`
 
-## EXACT NEXT ACTION — ONE V28 READ-ONLY TRACE
-1. Prefer exactly ONE unit with active Issyl selected for runtime context.
-2. Open `BRZE-Hero-Effect-Register-Flow-V28-ReadOnly.exe`.
-3. Click `TRACE TICK ARG FLOW` once.
-4. Click `COPY REPORT` and send the full report.
+## V29 Current-Tick Reset — BUILT / CI-PROVEN, RUNTIME PROOF NEXT
+State: `HeroEffectCurrentTickResetV29/STATE.md`
 
-No writes happen in V28.
+Purpose:
+Perform the smallest guarded reset proof on exactly ONE active stock Issyl A5 instance:
+1. signature-lock A5 + selected Unit*;
+2. require stock A5 config ID/duration 15000;
+3. read old `record+0x194`;
+4. read current BRZE tick from module RVA `0x440A3C`;
+5. require current tick > old stamp and plausible elapsed delta 100..60000;
+6. write exactly `record+0x194 = current BRZE tick`;
+7. verify exact readback and same A5+target signature;
+8. no native replay, no second effect instance, no hooks.
 
-After V28:
-- if a concrete current-BRZE-time source is identified, build the smallest guarded proof writing that exact current value into the existing same-effect record `+0x194`;
-- otherwise narrow one more static caller/source step rather than guessing.
+V29 CI:
+- workflow `Hero Effect Current-Tick Reset V29 Guarded`
+- run `34834013421` SUCCESS
+- job `103943588874` SUCCESS
+- head `ab6f4f7a2a5b55d09c1281749b6b6e8bf249f238`
+- artifact `10343193391`
+- digest `sha256:aaf1e8ef8e815d6366c7e7cff01acaa87a9c5287457e73a191d833698c9566cf`
+- standalone SHA256 `77571e840f9cfc5a07f23cd7b6367d6c2320e9c5edfafd99903d471e12696a1b`
+- small SHA256 `671088f9018547bdc35c269ecfecf7d2e24e0af668ff9d4a5fcf797bd023be14`
+
+## EXACT NEXT ACTION — ONE V29 GUARDED RESET
+1. Give stock Issyl to exactly ONE unit.
+2. Wait several seconds while Issyl is still visibly active.
+3. Select only that unit.
+4. Open `BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded.exe`.
+5. Click `RESET ACTIVE ISSYL TO CURRENT BRZE TICK` once.
+6. Return to BRZE and verify Issyl lasts approximately one fresh stock lifetime from reset moment.
+7. Copy/send the full report.
+
+PASS requires exact current-tick write/readback, same A5 signature, no crash/corruption, and visual lifetime restart.
+
+If V29 passes, integrate reset semantics into the trainer: existing same buff -> reset its start timestamp to current BRZE tick; no existing same buff -> one-shot native apply. Keep duration config full-lifetime hold semantics.
 
 ## New-chat bootstrap
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants same-buff APPLY to restart/reset without stacking. V26 zero-reset is permanently rejected. V25 timestamp/duration flow remains valid. V27 runtime found a unique caller chain 0x144691 -> 0x144794 -> 0x1C3107 -> 0x1400F0 -> 0x13A5EB but exact register source of tick arg [EBP+8] is still unresolved. V28 exact register-flow probe is BUILT/CI-PROVEN READ ONLY, run 34833344064 SUCCESS, artifact 10343645827. Next: one V28 TRACE TICK ARG FLOW report, then only if current game-time source is concrete do a guarded timestamp write.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants same-buff APPLY to restart/reset without stacking. V26 zero-reset is rejected forever. V28 runtime PROVED current tick source module RVA 0x440A3C via exact register flow: 0x1C3181 ESI<-[0x00CB0A3C] -> PUSH ESI -> caller [EBP+8] -> EBX -> tick RVA 0x13A5EB. Runtime currentTick 489500 vs A5 start 486200. V29 guarded direct-current-tick reset is BUILT/CI-PROVEN, run 34834013421 SUCCESS, artifact 10343193391. Next: one V29 guarded reset on one active stock Issyl and send report + visual lifetime result.`
