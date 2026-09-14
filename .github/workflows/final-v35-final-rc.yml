@@ -82,20 +82,20 @@ jobs:
           Same reveal.before RevealMapCore.cs RevealMapCore
 
           $ui=Get-Content FinalV18MainForm.cs -Raw
-          foreach($x in @('Text="BRZE Trainer — V35 Clean"','Text="BRZE Trainer — V35 Diagnostics"','V35  ·  FINAL RC + 0.1 OFFSET + MOVABLE OVERLAY  ·  INTEGRATED','OverlayHotkeyControllerV35.Attach(this);','HeroEffectDirectCoreV30.Shutdown();','IntegratedFrameDispatcherCore.StopAll();','GameGate.Probe(true)','ClientSize=new Size(1640,900);')){if($ui -notmatch [regex]::Escape($x)){throw "V35 UI/refresh missing: $x"}}
+          foreach($x in @('Text="BRZE Trainer — V35 Clean"','Text="BRZE Trainer — V35 Diagnostics"','V35  ·  FINAL RC + 0.1 OFFSET + MOVABLE OVERLAY + UC MEMORY  ·  INTEGRATED','OverlayHotkeyControllerV35.Attach(this);','HeroEffectDirectCoreV30.Shutdown();','IntegratedFrameDispatcherCore.StopAll();','GameGate.Probe(true)','UnitChangerMemoryPath','unit-changer-v1.json','SaveUnitChangerMemory()','LoadUnitChangerMemory()','System.Text.Json.JsonSerializer','ClientSize=new Size(1640,900);')){if($ui -notmatch [regex]::Escape($x)){throw "V35 UI/refresh/memory missing: $x"}}
 
           $panel=Get-Content IntegratedFeaturePanelsV35.cs -Raw
-          foreach($x in @('Minimum=0.1m','Maximum=64m','Increment=0.1m','PasteCopied((float)offset.Value)')){if($panel -notmatch [regex]::Escape($x)){throw "V35 main COPY panel missing: $x"}}
+          foreach($x in @('Minimum=0.1m','Maximum=64m','Increment=0.1m','Value=0.1m','PasteCopied((float)offset.Value)')){if($panel -notmatch [regex]::Escape($x)){throw "V35 main COPY panel missing: $x"}}
 
           $overlay=Get-Content OverlayHotkeyControllerV35.cs -Raw
-          foreach($x in @('Opacity=0.91','91% GLASS','−0.1','+0.1','UserMoved','EnableHeaderDrag','dragCursorStart=Cursor.Position','Location=new Point(x,y);UserMoved=true','overlay.UserMoved?new Rectangle(overlay.Location,overlay.Size)','DEATH TARGET  //  ENEMY ONLY','UNIT CHANGER  //  FULL MINI CONTROL')){if($overlay -notmatch [regex]::Escape($x)){throw "V35 overlay missing: $x"}}
+          foreach($x in @('Opacity=0.91','91% GLASS','−0.1','+0.1','float copyOffset=0.1f','copyOffset=0.1f;UpdateOffset();','UserMoved','EnableHeaderDrag','dragCursorStart=Cursor.Position','Location=new Point(x,y);UserMoved=true','overlay.UserMoved?new Rectangle(overlay.Location,overlay.Size)','DEATH TARGET  //  ENEMY ONLY','UNIT CHANGER  //  FULL MINI CONTROL')){if($overlay -notmatch [regex]::Escape($x)){throw "V35 overlay missing: $x"}}
           if($overlay -match 'CreateRemoteThread'){throw 'V35 overlay must not use remote thread creation'}
 
           $proj=Get-Content MergedTrainerV35.csproj -Raw
           foreach($x in @('HeroEffectDirectCoreV30.cs','IntegratedFrameDispatcherCore.cs','IntegratedFeaturePanelsV35.cs','OverlayHotkeyControllerV35.cs','BRZE-Trainer-FINAL-V35')){if($proj -notmatch [regex]::Escape($x)){throw "V35 project missing: $x"}}
           if($proj -match '<Compile Include="IntegratedFeaturePanelsV30.cs"'){throw 'V35 must compile UI-only V35 panel copy, not V30 panel directly'}
           if($proj -match 'OverlayHotkeyControllerV34.cs'){throw 'V35 must not compile V34 controller'}
-          Write-Host 'V35 PASS — gameplay cores locked; main 0.1 COPY offset; movable 91% overlay; collision audit clean; hard refresh preserved'
+          Write-Host 'V35 PASS — gameplay cores locked; COPY default 0.1; movable 91% overlay; Unit Changer persistent UI memory; collision audit clean; hard refresh preserved'
 
       - name: Compile CLEAN smoke
         run: dotnet build MergedTrainerV35.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
