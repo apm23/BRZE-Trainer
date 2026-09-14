@@ -20,7 +20,7 @@ Branch: `instant-death-v4-hover-telemetry`
 `HeroEffectReplayV2/STATE.md`
 - **RUNTIME-PROVEN one-shot replay.** Keep untouched as known-good fallback.
 - Uses game-thread frame hook RVA `0x135C43`, max 4 native calls/frame, max 120 selected.
-- Proven binary standalone SHA-256 `2b5671e9a4d13768a2e3adccd12a82b0137419cbd926d2a3cbb6870fe930a702`.
+- Proven standalone SHA-256 `2b5671e9a4d13768a2e3adccd12a82b0137419cbd926d2a3cbb6870fe930a702`.
 
 `HeroEffectReplayV3/STATE.md`
 - **RUNTIME-REJECTED.** Repeated native replay stacks/compounds effects. NEVER REUSE.
@@ -55,52 +55,61 @@ Branch: `instant-death-v4-hover-telemetry`
   - observed ratio `1.976390x`
   - automatic restore `30000 -> 15000` succeeded
 - Locked conclusion: `parent+0x1F4 -> config+0x0E0` is the hero-effect nominal duration parameter.
-- Restoring config after effect creation does NOT shorten the already-created effect; duration is copied/consumed at effect creation.
+- Restoring config after the original cast has consumed the duration does NOT shorten the already-created effect.
 
-`HeroEffectReplayDurationV10/STATE.md`
-- CI-proven companion architecture; preserved as intermediate proof tool.
-- Known-good Replay V2 performs replay; V10 performs guarded duration patch/restore + lifecycle measurement.
-
+## Merged V2 + V10 status
 `HeroEffectReplayDurationMerged/STATE.md`
-- **BUILT / CI-PROVEN — RUNTIME MERGED TEST NEXT.**
-- Single EXE/window that links the proven V2 ReplayCore and V10 ReplayDurationCore directly into one assembly.
-- User no longer needs two programs.
-- Normal V2 buttons preserved: Grayback, Issyl, Both.
-- Merged `REPLAY ISSYL 2X` button automatically:
-  1. arms V10 duration controller;
-  2. patches A5 duration 15000 -> 30000 under V10 guards;
-  3. queues the proven V2 native Issyl replay in the same click;
-  4. V10 restores A5 config to 15000 when replay lifecycle appears;
-  5. measures replay effect to natural expiry.
-- Workflow `Hero Effect Replay Duration Merged`.
-- Run `34796236065` SUCCESS; job `103829774919` SUCCESS.
-- Head `c873a613801fb681485ad0f50fdd1bd9a0d08f04`.
-- Artifact `10330070782`, digest `sha256:640421a5825bacfe735d626a24c16a9eaac4395989c4404e0b31aaca82e2ff7d`.
-- Standalone SHA-256 `bc57c6689b6526230aad79f78e32725752bd4e8e69f80d8ddf7f8ceef84ae9d7`.
-- Small SHA-256 `ea97594995ba047b7f8fcf12e0743a2f3e5974be8e3f9b975d0625a26e5ff8cd`.
 
-## Exact next action — MERGED runtime proof
-Use ONLY `BRZE-Hero-Effect-Replay-Duration-Merged.exe`.
+### First merged runtime attempt — timing rejected
+Report:
+- baseline original Issyl: `10749.7 ms`
+- Replay V2 2X attempt: `10623.7 ms`
+- ratio `0.988283x`
+- same A5 config verified
+- restore succeeded
+
+Conclusion:
+- restoring when lifecycle first appears is TOO EARLY;
+- lifecycle visibility happens before Replay V2's native apply helper has finished consuming/copying duration;
+- this does NOT invalidate the proven duration field from V9;
+- NEVER restore on lifecycle-first timing again.
+
+### V10.1 fix — BUILT / CI-PROVEN, RUNTIME RETEST NEXT
+Merged UI now holds A5 duration at 30000 while V2 reports `native calls:0`.
+Replay V2 increments CALLS only after the native helper returns.
+Only after `native calls > 0` does V10 resume ticking and restore 30000 -> 15000.
+
+This fixes timing without modifying the proven V2 replay core/stub.
+
+Build pin:
+- workflow `Hero Effect Replay Duration Merged`
+- run `34796740941` SUCCESS
+- job `103831200764` SUCCESS
+- head `71f7c1f048be4db14a30a70141e09856e4116e63`
+- artifact `10330240927`
+- digest `sha256:f1235fd559129d18201faca31ae84beb37933128f4f67cf93a9a6338ee618503`
+- standalone V10.1 SHA-256 `30423192bcf813d9f7d0a285755291e15a2b4ae01e54078a84e31e7d9d22f64f`
+- small V10.1 SHA-256 `0a908dc8ce91991168b064bc0109eac2748ea2ea9276d1191ceec8e5d387ac82`
+
+## Exact next action — V10.1 runtime retest
+Use ONLY `BRZE-Hero-Effect-Replay-Duration-Merged-V10.1.exe`.
 
 1. Fresh/reload BRZE.
-2. Open the merged EXE only.
+2. Open V10.1 merged EXE only.
 3. Select exactly ONE clean target.
 4. Click `1) CAPTURE ISSYL BASELINE`.
-5. Select Issyl in BRZE and cast ORIGINAL Haste ONCE on that target.
-6. Wait until baseline is complete / ready for replay (~10.7 s).
-7. Select the same target again after Haste is fully gone.
+5. Select Issyl and cast ORIGINAL Haste ONCE on that target.
+6. Wait until baseline completes (~10.7 s).
+7. Select the same target again after Haste fully expires.
 8. Click `2) REPLAY ISSYL 2X` ONCE.
-9. Do not manually cast Issyl the second time; the same merged EXE queues V2 replay automatically.
-10. Do nothing until COMPLETE (~21 s expected).
-11. Click COPY REPORT and return the report.
-
-Expected proof:
-- baseline ~10.7 s;
-- merged V2 replay ~21 s;
-- ratio near 2.0x;
-- replay parent resolves to same A5 config;
-- current A5 config is restored to 15000 while replay effect remains active;
-- no stacking/compounded behavior.
+9. Do NOT manually cast Issyl the second time.
+10. Wait until COMPLETE (~21 s expected).
+11. COPY REPORT and inspect:
+   - replay lifetime ~21 s
+   - ratio near 2.0x
+   - same A5 config verified
+   - current config 15000
+   - restore OK
 
 ## Locked rejects / safety
 - no repeated native reapplication;
@@ -109,8 +118,9 @@ Expected proof:
 - no hard-coded transient parent path;
 - no V7 cleanup-only child writes;
 - no low-address/vtable `10272` assumption;
-- keep original HeroEffectReplayV2 source/binary untouched as fallback;
+- no lifecycle-first restore timing;
+- keep original HeroEffectReplayV2 source/binary behavior untouched as fallback;
 - no main V18.3 integration until merged runtime proof passes.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V9 causally proved config+0x0E0 duration: Issyl 15000->30000 changed natural lifetime 10738.0ms->21222.5ms (1.976390x) and restored safely. Replay V2 one-shot remains runtime-proven. A single merged V2+V10 EXE is now built CI-successfully (run 34796236065, artifact 10330070782). Runtime-test the merged EXE next: capture one original Issyl baseline, then click REPLAY ISSYL 2X once; no second app/window.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V9 proved Issyl config+0x0E0 duration causally: 15000->30000 changed 10738.0ms->21222.5ms (1.976390x). First merged replay failed timing: baseline 10749.7ms, replay 10623.7ms (0.988283x) because V10 restored on lifecycle visibility before V2 native helper finished. V10.1 now holds 30000 until Replay V2 native calls > 0 (helper returned), then restores. CI run 34796740941 success; runtime-test V10.1 next.`
