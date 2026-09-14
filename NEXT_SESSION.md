@@ -7,26 +7,26 @@ GitHub is authoritative.
 ## Authoritative fallbacks
 - Locked main stable fallback: V18.3 (`FINAL_CURRENT.md`).
 - V19 remains the latest pre-integration main-trainer fallback.
-- V20 integrated remains a built fallback, but its Hero Effect UI is superseded by V21.
+- V20 integrated remains a built fallback.
+- V21 Direct Hero is built/CI-proven but runtime-rejected for two integration defects described below.
 - Unit Clone Lab standalone remains runtime-proven.
 - Replay V2 / V11 duration research remain runtime-proven references.
 
 Do not mutate the locked V18.3 baseline directly.
 
 ## Duration research — CLOSED / LOCKED
-Authoritative V11 runtime proof:
-- original Issyl baseline `10742.1 ms`;
+Authoritative V11 proof:
+- Issyl baseline `10742.1 ms`;
 - Issyl 3X nominal `45000` -> `31612.4 ms`, ratio `2.942838x`;
 - custom duration runtime-proven longer;
-- restore `45000 -> 15000` OK after natural expiry;
+- restore `45000 -> 15000` after natural expiry;
 - no repeated native refresh/reapplication.
 
-Locked duration path:
-- `parent+0x1F4 -> config+0x0E0`;
+Locked duration rule:
 - Issyl A5 base nominal `15000`;
 - Grayback C0 base nominal `60000`;
-- modified config must stay resident through the effect lifetime;
-- restore after natural expiry.
+- modified ability config must stay resident through the active effect lifetime;
+- restore only after the tracked effect naturally expires.
 
 Rejected forever:
 - repeated native replay refresh;
@@ -34,97 +34,92 @@ Rejected forever:
 - parent+0x194 duration writes;
 - lifecycle-first / immediate restore;
 - native-helper-return restore;
-- claim that duration latches completely at creation.
+- claim that duration fully latches at creation.
 
-## V20 finding from user runtime visual check
-V20 compiled/integrated successfully, but user screenshot showed:
-1. Hero Effect controls clipped on the right (`ISSYL CUSTOM` visibly cut);
-2. Hero Effect still looked like a research/test tool because it required `CAPTURE ISSYL BASELINE` before configurable replay.
+## V21 runtime rejection
+User runtime screenshots proved two V21 defects:
+1. multi-select could be rejected by `selected unit ... has an active transient effect` because V21 required generic transient roots to be clean;
+2. Hero Effect could remain `HELD until natural expiry` after the requested visible effect had ended, and that blocked applying the same ability to another selected group.
 
-User wants final trainer semantics: select unit -> choose duration -> directly apply Issyl/Grayback effect. No image mockups; edit/build source directly.
+Root cause: V21 tracked generic lifecycle/transient roots, not the actual requested A5/C0 effect record.
 
-## V21 Direct Hero Effect — BUILT / CI-PROVEN, RUNTIME PENDING
-State: `V21_DIRECT_HERO_STATE.md`
+Do NOT return to V21 generic root gating/tracking.
 
-V21 keeps V20 geometry/shared dispatcher/Copy Unit/Instant Death but replaces the Hero Effect panel and compiled duration UI completely.
+## V22 Group-Safe Hero Effect — BUILT / CI-PROVEN, RUNTIME PENDING
+State: `V22_GROUP_SAFE_HERO_STATE.md`
 
-Final Hero Effect UI:
-- `HERO EFFECT // DIRECT APPLY`
-- `APPLY ISSYL`
-- `APPLY GRAYBACK`
-- `APPLY BOTH`
-- `DURATION (SEC)` numeric input, `1–420` seconds
-- no `CAPTURE ISSYL BASELINE`
-- no original hero cast requirement
-- no `ISSYL CUSTOM` research row
-- no manual `RESTORE 15000` step
-- bounded TableLayout, not the old overflowing one-line FlowLayout.
+V22 preserves V20 layout + Copy Unit + Instant Death + one shared frame dispatcher, but replaces the Hero Effect runtime tracker.
 
-Direct runtime architecture:
-1. capture selected clean unit(s), max 120;
-2. resolve guarded ability config:
-   - A5 known candidate `0x227F4664`, require ID A5 + base duration 15000;
-   - C0 known candidate `0x227F9470`, require ID C0 + base duration 60000;
-   - fallback guarded readable-memory scan for exact ID/base-duration signature if known address does not validate;
-3. convert requested seconds from runtime-proven natural baselines:
-   - Issyl 15000 ~= 10.7271 s;
-   - Grayback 60000 ~= 42.2221 s;
-4. patch config once;
-5. queue one-shot native Replay through the existing shared dispatcher;
-6. automatically track selected targets' lifecycle roots;
-7. KEEP duration config held while effects are active;
-8. restore original config only after natural expiry.
+### Exact effect identity
+V22 uses the runtime-proven V6 content signature:
+- record `+0x058 = ability ID`;
+- record `+0x17C = target Unit*`;
+- search through Unit transient roots `+0x1E4`, `+0x1E8`, `+0x20C`, `+0x210` and one-level pointer children.
 
-Shared dispatcher stays locked from V20:
-- exactly one compiled owner of frame hook RVA `0x135C43`;
-- replay helper `0x1F0C32`;
-- copy spawn wrapper `0x0C4A1C`;
+Therefore:
+- unrelated buffs/debuffs no longer block a selected unit;
+- if a selected unit already has the requested Issyl/Grayback effect, that unit is skipped instead of failing the whole group;
+- generic `RootsClean` gating is forbidden.
+
+### Concurrent selected groups
+V22 maintains independent global holds for Issyl and Grayback.
+
+While Issyl 30s is still active on group A:
+- group B may immediately receive Issyl 30s too;
+- Grayback may be applied independently to another group at its own duration;
+- Issyl with a DIFFERENT duration is blocked until all currently tracked Issyl instances naturally expire, because the A5 config is global.
+
+The same rule applies symmetrically to Grayback.
+
+### Explicit filtered replay queue
+The V22 build finalizer adds `QueueReplayUnits(...)` to the existing V20 shared dispatcher so Hero Effect can queue only safe filtered targets.
+
+Locked dispatcher rules remain:
+- exactly one owner of frame hook RVA `0x135C43`;
+- replay target helper `0x1F0C32`;
+- Copy Unit spawn wrapper `0x0C4A1C`;
 - cursor query `0x135EFB`;
 - no CreateRemoteThread;
 - FXSAVE/FXRSTOR + pushfd/pushad;
-- serialized Hero Replay / Copy Unit native queue;
-- no raw Unit struct clone.
+- max 120 targets;
+- no raw Unit clone.
 
-## V21 CI pin
-Workflow: `Final V21 Direct Hero Effect`
-Run: `34821655613` — SUCCESS
-Job: `103904381017` — SUCCESS
-Head: `15c8213ba19d3af567584139e99545cdc89f1019`
-Artifact: `10338672153`
-Artifact digest: `sha256:8490e294fcf3ac9333f11c77518b36de0f99c6f7ffb2fe98cf68de9cce877d42`
+## V22 CI pin
+Workflow: `Final V22 Group Safe Hero Effect`
+Run: `34823248974` — SUCCESS
+Job: `103909409512` — SUCCESS
+Head: `a8e55e21d5b20e468fd08db14b00d3d6cba5dc73`
+Artifact: `10339202775`
+Artifact digest: `sha256:17e4c238f421d60aff4525c0953e75285b040be873b4b16f903d67adacf6c5fa`
 
 Build hashes:
-- CLEAN standalone `a933409004138e606358b27ccc697ee702447f9faca64f91d5c7cdef6d56b0b9`
-- DIAGNOSTICS standalone `f074cec5c0aa75efb56d9df4f2644dc7dbde17fe5cc3994bfc8cbe622a52198a`
-- CLEAN small `21893d232bc70ef1d031cc1fa42ed3ce3a092291f82bc6a36eb4785f24669604`
-- DIAGNOSTICS small `d97468c525a6864895636f35619981483aefdce378c16f0b868b0df796a11ffc`
+- CLEAN standalone `845f860a250eafd23eebb009c306da08ddd14246b62731b37cc32ca665eac310`
+- DIAGNOSTICS standalone `a7cf73690102e84ad363ab24a6134da939df384dff3a15de5f1b3b003ce97a67`
+- CLEAN small `7d58f0080c79b050af3ccfe1f859ff5a94c271a6b10f16420b7afa4ef23f0eb5`
+- DIAGNOSTICS small `11fc5f494976d77fc196302a50a853b4a0d7c74576b732142a1efcad8ade8341`
 
 CI passed:
 - V20 base generation;
-- V21 direct Hero finalizer;
-- full-width V20 layout retained;
-- V20 shared dispatcher unchanged;
-- no research Hero Effect core/panel compiled into V21;
-- natural-expiry hold invariants;
+- explicit filtered target queue patch;
+- signature A5/C0 tracking invariants;
+- generic transient-root blocking forbidden;
+- independent Issyl/Grayback hold policy;
+- same-duration concurrent group policy;
 - CLEAN + DIAGNOSTICS compile;
-- all four publish outputs;
+- four publish outputs;
 - hash + artifact upload.
 
-## Exact next action — V21 runtime smoke
-Do NOT reopen duration research.
+## Exact next action — ONE V22 runtime smoke
+Use V22 Diagnostics.
 
-Use V21 Diagnostics:
-1. launch BRZE and V21 Diagnostics;
-2. select one clean unit;
-3. set `30.0` seconds;
-4. click `APPLY ISSYL` — effect must appear directly, without casting original Issyl first;
-5. let it naturally expire; status must report config restored;
-6. repeat with `APPLY GRAYBACK` on a clean unit;
-7. optionally test `APPLY BOTH` once;
-8. verify Hero Effect panel has no clipped text/control;
-9. one Copy Unit + one Instant Death smoke afterward to confirm shared dispatcher remains intact.
+1. Select MANY units, including units that may have unrelated buffs/effects -> set 30s -> APPLY ISSYL. It must not reject the entire group because of unrelated transient effects.
+2. While group A still has Issyl 30s, select group B -> APPLY ISSYL 30s again. It must apply immediately without waiting for group A to expire.
+3. While Issyl remains active, select another group -> APPLY GRAYBACK. Grayback must be independent.
+4. Optional guard check: while Issyl 30s is still active, change to e.g. 40s and APPLY ISSYL. It should BLOCK only because the same global A5 config is currently held at 30s.
+5. After the last tracked A5/C0 record disappears, that ability must automatically restore and become ready for a different duration.
+6. One Copy Unit + one Instant Death smoke afterward.
 
-If V21 passes, promote V21 as integrated main-trainer candidate.
+If V22 passes, promote V22 as the integrated main trainer candidate. Do not reopen duration research.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. V11 duration research is CLOSED: duration config must remain held until natural expiry. V20 screenshot exposed clipped/research-style Hero Effect UI. V21 is BUILT/CI-PROVEN and replaces it with direct selected-unit APPLY ISSYL / APPLY GRAYBACK / APPLY BOTH + DURATION SEC, no baseline capture. V21 CI run 34821655613 SUCCESS, artifact 10338672153. Next: one V21 Diagnostics runtime smoke.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. V21 runtime-rejected because generic transient roots blocked multi-select and kept Hero Effect HELD after the requested effect ended. V22 is BUILT/CI-PROVEN: V6 signature tracking (record+0x058 ability ID + record+0x17C target Unit*), skip-not-block multi-select, explicit filtered replay targets, independent Issyl/Grayback holds, and same-duration concurrent groups. CI run 34823248974 SUCCESS, artifact 10339202775. Next: one V22 Diagnostics runtime smoke.`
