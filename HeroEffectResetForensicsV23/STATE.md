@@ -1,6 +1,6 @@
 # BRZE Hero Effect Reset Forensics V23 — STATE
 
-Status: **BUILT / CI-PROVEN READ-ONLY — RUNTIME SCAN PENDING**
+Status: **RUNTIME-PROVEN READ-ONLY DISCOVERY — V24 DEEP FUNCTION ANALYSIS NEXT**
 Date: 2026-09-14 JST
 
 ## Goal
@@ -24,18 +24,10 @@ Therefore V23 does NOT modify or remove anything. It performs strict read-only f
 2. content-signature lock using proven V6 identity:
    - `record+0x058 == 0xA5`
    - `record+0x17C == selected Unit*`;
-3. capture:
-   - parent record address;
-   - `parent+0x000` vtable/type pointer;
-   - `parent+0x194` teardown-related field;
-   - `parent+0x1F4` ability config pointer;
-4. parse the live BRZE PE `.text` section;
-5. use Iced x86 decoder to inspect:
-   - first 48 vtable slots that resolve into `.text`;
-   - decoded module instructions referencing displacement `+0x194`;
-   - local co-occurrence with known record offsets `+0x058`, `+0x17C`, `+0x1F4`;
-   - likely writes to `+0x194` and nearby calls;
-6. rank candidate RVAs for follow-up native cleanup identification.
+3. capture parent record/vtable/teardown/config;
+4. parse live BRZE PE `.text`;
+5. decode with Iced x86;
+6. inspect vtable slots and rank `.text` references to `+0x194` with nearby known effect fields.
 
 ## Safety
 - PROCESS_VM_READ + PROCESS_QUERY_INFORMATION only;
@@ -64,23 +56,46 @@ Authoritative build workflow: `Hero Effect Reset Forensics V23B Read Only`
 - standalone SHA256 `db5005e355f6be87b6330a033ed100ddf4b906079b2f5a593874178e8d6273d7`
 - small SHA256 `cef5f68a820b95512b22939d2ed18e19ef584cc83823fa6461a1fd2bff73630c`
 
-CI passed:
-- strict read-only architecture verifier;
-- Iced x86 decoder compile compatibility patch;
-- compile smoke;
-- standalone publish;
-- small publish;
-- output hashes;
-- artifact upload.
+## Runtime result — 2026-09-14
+V23B successfully locked an active Issyl instance:
+- module base `0x00870000`
+- selected Unit* `0x22B47F2C`
+- UnitDef* `0x1688993C`
+- owner `0`
+- A5 parent `0x235ABEE0`
+- discovered via `Unit+0x1E4->+0x008`
+- parent vtable/type `0x00C138EC`
+- parent+0x194 `247400`
+- parent+0x1F4 config `0x1D1FA664`
+- config ID `0xA5`
+- nominal duration `15000`
 
-The first V23 workflow attempt failed only on C# Iced API compatibility (`Decoder` ambiguity / missing `CanDecode`), before any runtime probe existed. V23B fixes those compile-only issues without changing the read-only research design.
+Observed relevant vtable methods:
+- VT[4]  -> RVA `0x14053A`
+- VT[5]  -> RVA `0x1405A2`
+- VT[20] -> RVA `0x142450`
+- VT[23] -> RVA `0x142C28`
+- VT[24] -> RVA `0x142C6E`
 
-## Exact runtime test
-Use a clean throwaway save/runtime:
-1. apply Issyl to one unit using original game or V22;
-2. while Issyl is visibly active, select exactly that ONE unit;
-3. open V23B read-only probe;
-4. click `SCAN ACTIVE ISSYL`;
-5. click `COPY REPORT` and send the report back.
+Top `.text` cleanup lead:
+- RVA `0x13DA9C`
+- write to displacement `+0x194`
+- local decoded window also contains references to all known effect fields `+0x058`, `+0x17C`, `+0x194`, `+0x1F4`
+- score `44`, highest result in V23
 
-Only one scan is expected. The next step will be chosen from the ranked native candidates; do not test random writes or native calls before the report is analyzed.
+Secondary leads include `0x13A8B3`, `0x13A8BF`, `0x16B76A`, `0x2151DE`, `0x24A7B8`, but they have weaker local field co-occurrence than `0x13DA9C`.
+
+## Interpretation
+`0x13DA9C` is now the strongest structural cleanup/teardown lead, but V23 does NOT establish a callable function boundary, calling convention, arguments, or whether the containing routine is create/tick/expire/cleanup.
+
+Therefore DO NOT call `0x13DA9C` and DO NOT write `parent+0x194`.
+
+## Exact next action
+Build/run V24 strict read-only deep function analysis:
+- resolve probable function boundary containing `0x13DA9C`;
+- decode full local function with operands/branch/call targets;
+- inspect the five effect-record vtable methods above;
+- compare secondary candidates only as needed;
+- no game writes/hooks/native calls.
+
+Only after V24 identifies a structurally justified native cleanup boundary should a guarded runtime proof be considered.
