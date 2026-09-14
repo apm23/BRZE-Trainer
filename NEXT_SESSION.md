@@ -38,28 +38,46 @@ Branch: `instant-death-v4-hover-telemetry`
 - Recursive graph observation identified likely effect/visual lifecycle objects under `Unit+0x1E4` and interesting structures beneath `Unit+0x094`.
 
 `HeroEffectDurationProbeV3/STATE.md`
-- **RUNTIME-PROVEN OBSERVER — `Unit+0x460` HIGH-CONFIDENCE CANDIDATE, MOVEMENT CONTROL REQUIRED.**
-- Idle no-buff 15s control: `+0x460` stayed exactly `345400`, `CTRL chg 0`, `flip 0`.
-- Grayback-active watch: `FX chg 164`, `flip 0`, first observed active value `354400`, natural-expiry value `413000`.
-- PRE -> EXP increase = `+67600`, strictly one-directional.
-- This is strong effect correlation, but target position fields also changed continuously during the effect and `+0x460` sits next to the noisy movement/transform region `0x45C..0x4A4`.
-- Therefore `+0x460` is NOT yet approved for writing; it may be a movement/animation accumulator.
-- `Unit+0x1E4/+0x1E8` and `+0x20C/+0x210` populated during the effect and returned to zero at visible expiry; `+0x214` returned to its pre-effect pointer. Treat these as lifecycle markers until deeper proof.
+- **RUNTIME-PROVEN OBSERVER — `Unit+0x460` REJECTED AS DURATION-SPECIFIC.**
+- Earlier idle control + Grayback pass looked promising: idle `CTRL chg 0`, Grayback `FX chg 164`, `flip 0`, PRE `345400` -> EXP `413000`.
+- Decisive movement-only no-buff control: `Unit+0x460 CTRL chg 55`, `flip 0`, `413000 -> 432800`.
+- Therefore `+0x460` is ordinary movement/activity-correlated state, not a Grayback-specific duration timer. DO NOT PATCH/FREEZE/WRITE IT.
+- Direct movement/transform cluster is no longer the duration target.
+
+`HeroEffectContainerProbeV4/STATE.md`
+- **BUILD/STATIC PROVEN — RUNTIME PENDING.**
+- Strict read-only movement-subtracted recursive container observer.
+- Target roots: `Unit+0x094/+0x098/+0x1E4/+0x1E8/+0x1F4/+0x20C/+0x210/+0x214/+0x21C`.
+- Recursive depth <= 4; node scan 0x180; max 260 nodes; 250 ms sample interval.
+- Movement-only changes are penalized; effect-only fields/objects that return to pre-effect state, hit zero, or disappear at natural expiry are boosted.
+- Static fields inside NEW effect objects are retained because duration may be an expiry timestamp/constant rather than a countdown.
+- Run `34791583601` SUCCESS; job `103816698699` SUCCESS.
+- Artifact `10328387975`, digest `sha256:9170fbf96b3b922ab411932dc9d2f6d0f6dafef7bed2e166e9ab13a00af4133a`.
+- Standalone SHA-256 `2294592d2844c05a00a72dd06f306e22b0308d99cc7cfeb9a06b66368925a422`.
+- Small SHA-256 `8b8b98155acce0e8690a9c09c5e56a84bae58d30e2669cb1c3ff0cd0542ea7f4`.
 
 ## Exact next action
-Reuse the existing `HeroEffectDurationProbeV3` binary for a movement-only no-buff control:
-1. restart/reload BRZE clean;
-2. select exactly ONE normal clean unit with no hero buff active;
-3. press `1 START 15s CONTROL`;
-4. during those 15 seconds deliberately keep the selected unit walking/moving; do NOT cast Grayback/Issyl or any other buff;
-5. when the control auto-stops, press `COPY REPORT` immediately and return it;
-6. the only decisive line needed first is pinned `Unit+0x460`.
+Runtime-test `HeroEffectContainerProbeV4`:
+1. fresh/reloaded BRZE;
+2. select exactly ONE clean normal unit;
+3. press `1 START 15s MOVE CONTROL` and keep it walking continuously with NO buff;
+4. after auto-stop, stop the unit;
+5. press `2 CAPTURE PRE-EFFECT`;
+6. cast ORIGINAL Grayback exactly once on that unit;
+7. immediately press `3 START EFFECT WATCH`;
+8. do not recast;
+9. the instant the visible Grayback effect ends naturally, press `4 MARK EXPIRED`;
+10. press `COPY REPORT` and return the full report.
 
-Decision:
-- movement-only `CTRL chg > 0` at `Unit+0x460` => reject it as Grayback-duration-specific and move to effect-instance/container interception;
-- movement-only `CTRL chg 0` => promote `+0x460` to very strong Grayback-specific elapsed/duration candidate, then compare clean Grayback vs Issyl timing/direction before any isolated write.
+Analysis priority for returned V4 report:
+- top-ranked `NEW` fields with `CTRL unseen` or `CTRL chg 0`;
+- low/zero FX flips;
+- fields that become `EXP UNREADABLE`, zero, or return exactly to PRE at natural expiry;
+- inspect root lifecycle block first to see which Unit root owns the effect-created object.
+
+If V4 still fails to isolate a coherent timer, stop recursive guessing and build an effect-creation pointer interceptor from runtime-proven magic-create RVA `0x13FFD1`, capturing the created effect/object pointer or downstream insertion before any write.
 
 Do not integrate duration into the main trainer yet. Never reintroduce repeated native re-application.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5); repeated refresh V3 is permanently rejected. Duration Probe V3 runtime result made Unit+0x460 a high-confidence candidate: idle control chg0, Grayback FX chg164 flip0, PRE345400 -> EXP413000. But movement fields also changed, so the exact next test is movement-only no-buff control using the same V3 binary before any write.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot hero replay is runtime-proven (Grayback=0xC0, Issyl=0xA5); repeated refresh is permanently rejected. Duration Probe V3 decisively rejected Unit+0x460 because movement-only no-buff control changed it 55 times (413000->432800). Continue from HeroEffectContainerProbeV4 movement-subtracted read-only runtime test; if it cannot isolate timer, intercept the proven magic-create path RVA 0x13FFD1 for actual effect-object pointer telemetry.`
