@@ -1,6 +1,6 @@
 # BRZE Hero Effect Current-Time Source V27 — STATE
 
-Status: **BUILT NEXT — READ-ONLY CALLER/CLOCK-SOURCE DISCOVERY**
+Status: **BUILT / CI-PROVEN — READ-ONLY CALLER/CLOCK-SOURCE DISCOVERY, RUNTIME REPORT PENDING**
 Date: 2026-09-14 JST
 
 ## Why V27 exists
@@ -43,9 +43,31 @@ V27:
 - no cleanup/destructor calls;
 - no mutation of BRZE.
 
+## V27 CI pin
+Workflow: `Hero Effect Current-Time Source V27 Read Only`
+- run `34830108923` — SUCCESS
+- job `103931199444` — SUCCESS
+- head `564c2bf48f3d0885cc6fd42e0268d9b54364a398`
+- artifact `10340943840`
+- artifact digest `sha256:6cfd165b07768f89773c68dfc4273727879fd173e997db3ad0cdd9493559b9f3`
+- standalone SHA256 `014a74d59dc05ad170057c9bb04d7e033e6e8a29376630bc3c6f65bf26fce36e`
+- small SHA256 `5deeeb1437acc3a4eab203959b5fd94e8a947f4cef113da0b8d7dd40cdb021ee`
+
+CI PASS:
+- strict read-only architecture verifier;
+- compile smoke;
+- standalone publish;
+- small publish;
+- hash;
+- artifact upload.
+
+## Exact runtime action
+1. Prefer exactly ONE selected unit with active Issyl for context; static scan can still run without it.
+2. Run `BRZE-Hero-Effect-Current-Time-Source-V27-ReadOnly.exe`.
+3. Click `SCAN CURRENT-TIME SOURCE` once.
+4. Click `COPY REPORT` and send the full report.
+
 ## Decision after runtime
 PASS for this discovery stage means the report identifies a plausible real source for the current game-time argument, ideally a readable global or a short caller chain ending in one.
 
 Only after that source is identified should the next guarded write proof set an existing A5 record's `+0x194` directly to the freshly read game-time value.
-
-CI trigger note: this state update intentionally occurred after the V27 workflow file existed so GitHub Actions registers and runs the new read-only workflow.
