@@ -1,6 +1,6 @@
 # BRZE Hero Effect Duration Write Probe V9 — STATE
 
-Status: **SOURCE READY — BUILD PENDING**
+Status: **BUILT / CI-PROVEN GUARDED WRITE — RUNTIME 2X TEST PENDING**
 Date: 2026-09-14 JST
 
 ## Why V9 exists
@@ -23,7 +23,7 @@ Issyl only:
    - `config+0x0E0 == 15000`
 5. After baseline expiry, select one clean test target.
 6. Click `PATCH 30000 + ARM TEST`.
-7. V9 writes ONLY `config+0x0E0: 15000 -> 30000` and verifies the readback.
+7. V9 writes ONLY `config+0x0E0: 15000 -> 30000` and verifies readback.
 8. Cast ORIGINAL Issyl Haste once on the test target.
 9. Measure natural test lifetime.
 10. At natural expiry, automatically restore `config+0x0E0: 30000 -> 15000` and verify.
@@ -46,5 +46,36 @@ Expected proof condition: test natural lifetime is approximately `2x` baseline u
 - restore on normal tool close
 - restore refuses to clobber any unexpected value
 - patch refuses unless config identity is exactly A5 and original duration is exactly 15000
+
+CI explicitly verifies the guarded architecture before compilation.
+
+## Build pin
+Repository: `apm23/BRZE-Trainer`
+Branch: `instant-death-v4-hover-telemetry`
+Workflow: `Hero Effect Duration Write Probe V9 Guarded`
+Run: `34794886552` — SUCCESS
+Job: `103825945080` — SUCCESS
+Head: `47058aa56524fbd6581d9003903ac252b9b4d854`
+Artifact: `10328933404`
+Artifact digest: `sha256:9e755bb48a0383ccdf484479648fd720f5205c83a597b029de7c8088c4fc499a`
+
+Binaries:
+- Standalone: 151,067,880 bytes — SHA-256 `9dae8e6c07c66417c268fc5226e8273109de4187b0915bc24bce8a3121ebdd72`
+- Small: 154,378 bytes — SHA-256 `b11092f3a7d30b205fe3d59279ba76899d5952a4120d678ca74c1649131ef453`
+
+## Runtime test flow
+1. Fresh/reload BRZE.
+2. Select exactly ONE clean normal target.
+3. Click `1) ARM BASELINE`.
+4. Select Issyl and cast ORIGINAL Haste once on that target.
+5. Wait until V9 says baseline is complete / ready for patch.
+6. Select exactly ONE clean target for the test cast.
+7. Click `2) PATCH 30000 + ARM TEST`.
+8. Select Issyl and cast ORIGINAL Haste once on that target.
+9. Do nothing until natural expiry and V9 says TEST COMPLETE.
+10. Confirm UI/report says config auto-restored to 15000.
+11. Click `COPY REPORT` and return it.
+
+If anything unexpected happens after the patch, click `RESTORE NOW`. Closing the tool normally or RESET also attempts restore.
 
 If the 2x result is not clean, do NOT integrate this field into the main trainer.
