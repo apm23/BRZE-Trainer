@@ -31,6 +31,17 @@ Rejected forever:
 - assuming duration fully latches at creation;
 - V26 zero-reset (`record+0x194 = 0`) for an already-active effect.
 
+## Important runtime behavior — BRZE minimize pauses simulation
+User runtime fact: when BRZE is **minimized**, the game effectively pauses; simulation/game-time does not advance until BRZE resumes.
+
+Implications for all future probes/tests:
+- a clock/global sampled while BRZE is minimized may legitimately show `delta=0`;
+- never reject a proven clock source merely because it is static while the game is minimized;
+- for tests that need observing clock progression, BRZE must be running/not minimized during the observation window;
+- for direct timestamp reset, reading the paused current BRZE tick and writing it as the new start timestamp is still logically valid: after BRZE resumes, elapsed time begins advancing from that reset tick.
+
+Do not broaden this into an assumption that every loss of focus pauses BRZE; the confirmed user report is specifically **minimized = paused**.
+
 ## User-requested final semantics
 Hero Effect APPLY should feel like replacement/reset:
 - if selected unit already has same Issyl/Grayback buff, restart that same buff from zero;
@@ -84,7 +95,7 @@ Observed at scan:
 - A5 start stamp `486200`
 - elapsed delta `3300`
 
-The 350ms sample remained unchanged because BRZE may pause simulation while unfocused; source provenance is still proven by exact instruction/register flow.
+The 350ms sample remained unchanged because BRZE was minimized/paused during that observation. This is now an explicit runtime fact, not evidence against the clock source. Source provenance is independently proven by exact instruction/register flow.
 
 V28 CI:
 - run `34833344064` SUCCESS
@@ -120,13 +131,15 @@ V29 CI:
 2. Wait several seconds while Issyl is still visibly active.
 3. Select only that unit.
 4. Open `BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded.exe`.
-5. Click `RESET ACTIVE ISSYL TO CURRENT BRZE TICK` once.
-6. Return to BRZE and verify Issyl lasts approximately one fresh stock lifetime from reset moment.
+5. Click `RESET ACTIVE ISSYL TO CURRENT BRZE TICK` once. It is acceptable if BRZE is minimized/paused at the moment of the write; the reset timestamp should equal the paused current BRZE tick.
+6. Return to BRZE and verify Issyl lasts approximately one fresh stock lifetime from reset moment after simulation resumes.
 7. Copy/send the full report.
 
-PASS requires exact current-tick write/readback, same A5 signature, no crash/corruption, and visual lifetime restart.
+PASS requires exact current-tick write/readback, same A5 signature, no crash/corruption, and visual lifetime restart after BRZE resumes.
 
 If V29 passes, integrate reset semantics into the trainer: existing same buff -> reset its start timestamp to current BRZE tick; no existing same buff -> one-shot native apply. Keep duration config full-lifetime hold semantics.
 
+If V29 fails, do NOT resume one-probe-at-a-time research. Build one omnibus/all-in-one reset diagnostic with one button that gathers the remaining lifecycle/clock evidence and guarded candidate outcomes in a single run, then decide the trainer implementation from that report.
+
 ## New-chat bootstrap
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants same-buff APPLY to restart/reset without stacking. V26 zero-reset is rejected forever. V28 runtime PROVED current tick source module RVA 0x440A3C via exact register flow: 0x1C3181 ESI<-[0x00CB0A3C] -> PUSH ESI -> caller [EBP+8] -> EBX -> tick RVA 0x13A5EB. Runtime currentTick 489500 vs A5 start 486200. V29 guarded direct-current-tick reset is BUILT/CI-PROVEN, run 34834013421 SUCCESS, artifact 10343193391. Next: one V29 guarded reset on one active stock Issyl and send report + visual lifetime result.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants same-buff APPLY to restart/reset without stacking. V26 zero-reset is rejected forever. V28 runtime PROVED current tick source module RVA 0x440A3C via exact register flow: 0x1C3181 ESI<-[0x00CB0A3C] -> PUSH ESI -> caller [EBP+8] -> EBX -> tick RVA 0x13A5EB. Runtime currentTick 489500 vs A5 start 486200. Important runtime fact: minimizing BRZE pauses simulation/game-time, so delta=0 while minimized is expected and must not invalidate clock probes. V29 guarded direct-current-tick reset is BUILT/CI-PROVEN, run 34834013421 SUCCESS, artifact 10343193391. Next: one V29 guarded reset on one active stock Issyl and send report + visual lifetime result. If V29 fails, jump directly to one-button omnibus reset diagnostic, not another chain of tiny probes.`
