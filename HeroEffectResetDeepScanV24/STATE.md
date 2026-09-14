@@ -1,51 +1,64 @@
 # BRZE Hero Effect Reset Deep Scan V24 — STATE
 
-Status: **BUILT / CI-PROVEN READ-ONLY — RUNTIME DEEP SCAN PENDING**
+Status: **RUNTIME-PROVEN READ-ONLY — STRUCTURE NARROWED, NOT CLEANUP-PROVEN**
 Date: 2026-09-14 JST
 
-## Input from runtime-proven V23
-V23 successfully signature-locked a live Issyl A5 effect record and ranked `.text` references to teardown-related `parent+0x194`.
+## Runtime input
+V24 successfully re-locked one live Issyl A5 effect:
+- Unit* `0x22B47F2C`
+- UnitDef* `0x1688993C`
+- owner `0`
+- A5 parent `0x235ACCC4`
+- path `Unit+0x1E4->+0x008`
+- parent vtable/type `0x00C138EC`
+- parent+0x194 `275200`
+- config `0x1D1FA664`
+- config ID `0xA5`
+- config+0xE0 duration `15000`
 
-Strongest lead:
-- RVA `0x13DA9C`
-- writes `+0x194`
-- local window also references all known effect fields `+0x058`, `+0x17C`, `+0x194`, `+0x1F4`
-- highest V23 score `44`
+## Main conclusions
+V24 invalidated the naive interpretation that the strongest V23 +0x194 writer is itself cleanup.
 
-Relevant A5 parent vtable methods seen in V23:
-- VT[4]  RVA `0x14053A`
-- VT[5]  RVA `0x1405A2`
-- VT[20] RVA `0x142450`
-- VT[23] RVA `0x142C28`
-- VT[24] RVA `0x142C6E`
+### `0x13DA9C`
+Boundary unresolved, but the local body is a short contiguous field-write tail:
+- writes record `+0x194`, `+0x198`, `+0x19C`, `+0x1A0`, `+0x1F4`, `+0x1F8`;
+- immediately returns.
 
-## Why V24 exists
-V23 did NOT prove that `0x13DA9C` itself is callable or that it is cleanup. It only proved an instruction reference.
+Conclusion: **do not call `0x13DA9C` as cleanup**. It is structurally consistent with copy/init assignment, not natural expiry/unlink proof.
 
-V24 resolves more structure before any write/native call:
-1. signature-lock one active A5 record again;
-2. parse live `.text`;
-3. for top V23 candidates, scan backward for a validated classic x86 function prologue whose decoded instruction stream reaches the exact V23 marker;
-4. dump the containing function from the resolved boundary through the first return after the marker;
-5. include operand kinds, memory base/index/displacement, near call/branch targets, and tags for known effect offsets;
-6. decode the five relevant A5 record vtable methods from their exact runtime pointers.
+### `0x2151DE` and `0x24A7B8`
+Both are long contiguous field writers spanning a very large range of offsets.
 
-Primary candidate set:
-- `0x13DA9C`
-- `0x13A8B3`
-- `0x16B76A`
-- `0x2151DE`
-- `0x24A7B8`
+Conclusion: **copy/init style code, rejected as cleanup candidates**.
 
-## Safety
-STRICT READ-ONLY:
-- PROCESS_VM_READ + PROCESS_QUERY_INFORMATION only;
-- no WriteProcessMemory;
-- no VirtualAllocEx / VirtualProtectEx;
-- no hooks;
-- no native ability calls;
-- no destructor/cleanup calls;
-- no CreateRemoteThread.
+### `0x16B76A`
+Shows repetitive assignment + calls to the same helper across many offsets.
+
+Conclusion: **registration/initialization-style code, not justified cleanup**.
+
+### Function RVA `0x13A5EB`
+This is the strongest structural lead.
+V24 resolved a validated classic x86 function boundary at `0x13A5EB` containing the V23 marker `0x13A8B3`.
+
+Within the function:
+- reads target from record `+0x17C`;
+- repeatedly reads ability config from record `+0x1F4`;
+- at `0x13A8B3` checks record `+0x194` for zero;
+- if zero, `0x13A8BC..0x13A8BF` copies function argument `[EBP+8]` into record `+0x194`.
+
+This strongly supports `+0x194` as a lifecycle/start/current timestamp field. It remains HARD REJECTED as duration and is not itself a cleanup target.
+
+V24 output ended before the full tail of `0x13A5EB`, so the exact natural-expiry duration comparison / unlink branch was not yet visible.
+
+## Relevant vtable observations
+A5 vtable methods were decoded at:
+- VT[4]  `0x14053A`
+- VT[5]  `0x1405A2`
+- VT[20] `0x142450`
+- VT[23] `0x142C28`
+- VT[24] `0x142C6E`
+
+None of these is promoted to cleanup solely from V24. Do not invoke generic/destructor-looking vtable methods without a natural-expiry call-chain proof.
 
 ## V24 CI pin
 Workflow: `Hero Effect Reset Deep Scan V24 Read Only`
@@ -57,24 +70,8 @@ Workflow: `Hero Effect Reset Deep Scan V24 Read Only`
 - standalone SHA256 `333cd6826f0592e8408a8fa5862410b2e432e038738ebea826ec97952ed98ab2`
 - small SHA256 `fe903cb0630d9ca6be8451a97dfb738efc1d4fa17ad8f532dfd85d76af4ff228`
 
-CI passed:
-- strict read-only architecture verifier;
-- compile smoke;
-- standalone publish;
-- small publish;
-- output hash step;
-- artifact upload.
+## Next action
+V25 (`HeroEffectExpiryTailV25`) is the next read-only probe.
+It targets the full tail of function `0x13A5EB`, follows register flow from record `+0x1F4` into config `+0xE0/+0xE4`, and looks for the exact duration comparison plus natural-expiry branch/call.
 
-## Exact runtime test
-1. Give Issyl to exactly ONE unit using the original game or known-good trainer path.
-2. While Issyl is visibly active, select only that unit.
-3. Open V24.
-4. Click `DEEP SCAN ACTIVE ISSYL` once.
-5. Click `COPY REPORT` and send the full report.
-
-No waiting for natural expiry is required for this scan. V24 does not modify the game.
-
-## Decision rule after runtime report
-Do NOT choose a cleanup call merely because it writes `+0x194`.
-
-Advance only if V24 shows a structurally coherent function/call chain tied to the exact effect record and natural expiry/unlink/destruction semantics. Otherwise build a smaller trace probe around the narrowed call boundary instead of guessing.
+Do not call/write any cleanup candidate before V25 evidence.
