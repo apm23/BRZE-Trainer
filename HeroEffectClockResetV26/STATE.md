@@ -1,6 +1,6 @@
 # BRZE Hero Effect Clock Reset V26 — STATE
 
-Status: **BUILT NEXT — GUARDED ONE-FIELD RESET PROOF**
+Status: **BUILT NEXT — GUARDED ONE-FIELD RESET PROOF / CI TRIGGERED**
 Date: 2026-09-14 JST
 
 ## Evidence from V25
@@ -49,3 +49,5 @@ If PASS, next integrate reset semantics as:
 - same active ability on selected unit -> reset existing instance clock, do NOT replay;
 - no existing same ability -> one-shot native apply;
 - duration config continues to use the already-proven guarded full-lifetime hold rules.
+
+CI trigger note: workflow file was created in the preceding commit; this state-only commit intentionally triggers the new V26 workflow without altering runtime code.
