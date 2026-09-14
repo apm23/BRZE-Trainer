@@ -16,8 +16,8 @@ GitHub is authoritative.
 Do not mutate V18.3 directly.
 
 ## Locked duration facts
-- Issyl A5 config base nominal `15000`; natural wall ~`10.7271s`.
-- Grayback C0 config base nominal `60000`; natural wall ~`42.2221s`.
+- Issyl A5 config base nominal `15000`; natural wall ~`10.7s`.
+- Grayback C0 config base nominal `60000`; natural wall ~`42.2s`.
 - `parent+0x1F4 -> config+0x0E0` is the proven duration path.
 - Extended config must remain resident through natural effect lifetime, then restore.
 - V11 final proof: baseline `10742.1ms`; Issyl nominal `45000` -> `31612.4ms`, ratio `2.942838x`; restore `45000 -> 15000` OK.
@@ -31,78 +31,94 @@ Rejected forever:
 - assuming duration fully latches at creation.
 
 ## User-requested final semantics
-User wants Hero Effect APPLY to behave like replacement/reset:
+Hero Effect APPLY should behave like replacement/reset:
 
 `if selected unit already has same Issyl/Grayback buff -> remove/reset OLD same-effect instance safely -> one-shot fresh apply -> requested duration starts again from zero`
 
 Unrelated buffs must remain untouched.
 
-Do NOT implement this by simply calling native apply again on an already-active same effect. Old V3 proved repeated application can compound/stack into extreme speed, invulnerability-like behavior, one-hit buildings, and other corruption.
+Never implement this by blindly applying again on an already-active same effect. V3 proved repeated application can stack/compound into extreme speed, invulnerability-like behavior, one-hit buildings, and other corruption.
 
 ## V22 Group-Safe Hero — current integrated fallback
-V22 fixes V21 generic transient-root problems using content signature:
+V22 fixes V21 generic transient-root problems using exact content signature:
 - effect record `+0x058 = ability ID`;
 - effect record `+0x17C = target Unit*`;
-- transient path itself is NOT stable and must never be hard-coded.
+- transient root path itself is NOT stable and must never be hard-coded.
 
 V22 CI:
-- workflow `Final V22 Group Safe Hero Effect`
 - run `34823248974` SUCCESS
 - job `103909409512` SUCCESS
 - head `a8e55e21d5b20e468fd08db14b00d3d6cba5dc73`
 - artifact `10339202775`
 
-V22 remains fallback only; user prefers true reset/replace behavior instead of skip/hold semantics.
-
-## V23 Reset Forensics — BUILT / CI-PROVEN READ ONLY
+## V23 Reset Forensics — RUNTIME-PROVEN READ-ONLY DISCOVERY
 State: `HeroEffectResetForensicsV23/STATE.md`
 
-Purpose: identify a REAL native/per-instance cleanup/expire path before any reset write/call is attempted.
+Runtime report from 2026-09-14 successfully locked:
+- Unit* `0x22B47F2C`
+- A5 parent `0x235ABEE0`
+- path `Unit+0x1E4->+0x008`
+- vtable `0x00C138EC`
+- config `0x1D1FA664`
+- config ID `0xA5`
+- nominal duration `15000`
 
-V23B is strictly read-only:
-- PROCESS_VM_READ + PROCESS_QUERY_INFORMATION only;
-- no WriteProcessMemory;
-- no VirtualAllocEx;
-- no hooks;
-- no native ability calls;
-- no destructor invocation;
-- no CreateRemoteThread.
+Relevant vtable methods:
+- VT[4]  `0x14053A`
+- VT[5]  `0x1405A2`
+- VT[20] `0x142450`
+- VT[23] `0x142C28`
+- VT[24] `0x142C6E`
 
-Method:
-1. select exactly one unit with active Issyl A5;
-2. signature-lock exact effect record with:
-   - `record+0x058 == 0xA5`
-   - `record+0x17C == selected Unit*`;
-3. capture parent vtable/type pointer, `parent+0x194`, and `parent+0x1F4` config;
-4. parse live BRZE PE `.text`;
-5. disassemble with Iced x86;
-6. inspect first 48 vtable slots and rank `.text` references to `+0x194`, including likely writes/calls and co-occurrence with known effect offsets.
+Strongest cleanup/teardown lead from V23:
+- RVA `0x13DA9C`
+- writes displacement `+0x194`
+- local window also touches `+0x058`, `+0x17C`, `+0x194`, `+0x1F4`
+- score `44`, highest V23 result.
 
-`parent+0x194` remains HARD REJECTED as duration; here it is ONLY a teardown/static-analysis lead.
+Secondary leads: `0x13A8B3`, `0x13A8BF`, `0x16B76A`, `0x2151DE`, `0x24A7B8`.
 
-### V23B CI pin
-Workflow: `Hero Effect Reset Forensics V23B Read Only`
-- run `34825682469` — SUCCESS
-- job `103917157659` — SUCCESS
-- head `5a3c22b563eb879be2212afa20a05c49b9af625a`
-- artifact `10340067680`
-- digest `sha256:60153b70296f7f254eb9785812f2518c9a85f60f9ba8648d9f81cfb9cf704f6b`
-- standalone SHA256 `db5005e355f6be87b6330a033ed100ddf4b906079b2f5a593874178e8d6273d7`
-- small SHA256 `cef5f68a820b95512b22939d2ed18e19ef584cc83823fa6461a1fd2bff73630c`
+IMPORTANT: V23 proves only an instruction reference, NOT a callable cleanup function. Do not call `0x13DA9C` and do not write `+0x194`.
 
-First V23 workflow attempt failed only on Iced C# API compile compatibility before runtime; V23B fixed Decoder qualification / decode loop and passed all CI.
+## V24 Deep Scan — BUILT / CI-PROVEN READ ONLY
+State: `HeroEffectResetDeepScanV24/STATE.md`
 
-## EXACT NEXT ACTION — ONE READ-ONLY RUNTIME SCAN
-Do not start a broad test loop.
+Purpose:
+- resolve probable function boundary containing the strongest V23 marker;
+- decode full containing function with operand kinds, memory displacement and near call/branch targets;
+- inspect top secondary candidate functions;
+- decode the five relevant A5 vtable methods from exact runtime pointers;
+- remain strictly read-only.
 
-1. Launch BRZE.
-2. Give Issyl to exactly one unit using original game or V22.
-3. While Issyl is visibly ACTIVE, select ONLY that unit.
-4. Open `BRZE-Hero-Effect-Reset-Forensics-V23B-ReadOnly.exe`.
-5. Click `SCAN ACTIVE ISSYL` once.
-6. Click `COPY REPORT` and send the report.
+V24 primary candidates:
+- `0x13DA9C`
+- `0x13A8B3`
+- `0x16B76A`
+- `0x2151DE`
+- `0x24A7B8`
 
-The scan does not modify the game. After the report, analyze ranked vtable / +0x194 candidates and choose the smallest structurally justified cleanup proof. Do NOT call or write any cleanup candidate until evidence supports it.
+V24 CI pin:
+- workflow `Hero Effect Reset Deep Scan V24 Read Only`
+- run `34826622129` — SUCCESS
+- job `103920156334` — SUCCESS
+- head `2a8e5acac7402f66a08d7a826b2bc77b7ccad91e`
+- artifact `10339563933`
+- digest `sha256:ab1103571e04c8de3a92c291bb58b45d0a60fde0f3f251ac9190a7b86d62dbf2`
+- standalone SHA256 `333cd6826f0592e8408a8fa5862410b2e432e038738ebea826ec97952ed98ab2`
+- small SHA256 `fe903cb0630d9ca6be8451a97dfb738efc1d4fa17ad8f532dfd85d76af4ff228`
+
+## EXACT NEXT ACTION — ONE V24 READ-ONLY DEEP SCAN
+1. Give Issyl to exactly ONE unit.
+2. While Issyl is visibly active, select only that unit.
+3. Open `BRZE-Hero-Effect-Reset-DeepScan-V24.exe`.
+4. Click `DEEP SCAN ACTIVE ISSYL` once.
+5. Click `COPY REPORT` and send the full report.
+
+No natural-expiry wait is needed. V24 performs no game writes/hooks/native calls.
+
+After the report:
+- if a structurally coherent natural-expiry/unlink/destruction boundary is identified, make the smallest guarded proof;
+- otherwise build a narrower trace probe around the exact call boundary rather than guessing.
 
 ## New-chat bootstrap
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants true Hero Effect RESET/REPLACE semantics, never repeated stacking. V22 remains integrated fallback. V23B read-only cleanup forensics is BUILT/CI-PROVEN: signature-lock active A5 record, inspect vtable + live .text teardown candidates, no writes/hooks/native calls. CI run 34825682469 SUCCESS, artifact 10340067680. Next: ONE runtime scan on exactly one selected unit while Issyl is visibly active, then send COPY REPORT.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants true Hero Effect RESET/REPLACE semantics, never repeated stacking. V23 runtime-proven read-only discovery found strongest cleanup lead RVA 0x13DA9C (write +0x194 with nearby +0x58/+0x17C/+0x1F4), but it is NOT yet callable proof. V24 deep function scan is BUILT/CI-PROVEN READ ONLY, run 34826622129 SUCCESS, artifact 10339563933. Next: ONE V24 scan on exactly one selected unit while Issyl is active, then send COPY REPORT.`
