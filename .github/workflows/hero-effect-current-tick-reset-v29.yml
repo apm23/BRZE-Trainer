@@ -1,0 +1,79 @@
+name: Hero Effect Current-Tick Reset V29 Guarded
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.hero-effect-current-tick-reset-v29-trigger'
+      - 'HeroEffectCurrentTickResetV29/**'
+      - '.github/workflows/hero-effect-current-tick-reset-v29.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify V29 guarded architecture
+        shell: pwsh
+        run: |
+          $src=Get-Content HeroEffectCurrentTickResetV29/CurrentTickResetCore.cs -Raw
+          foreach($need in @(
+            'RVA_CURRENT_TICK=0x440A3C',
+            'ABILITY_OFF=0x58,TARGET_OFF=0x17C,STAMP_OFF=0x194,CONFIG_OFF=0x1F4',
+            'A5=0xA5,BASE_DURATION=15000',
+            'currentTick=R32(moduleBase+RVA_CURRENT_TICK)',
+            'currentTick<=oldStamp',
+            'elapsed<100',
+            'elapsed>60000',
+            'write ONLY record+0x194 = current BRZE tick',
+            'W32((long)record+STAMP_OFF,currentTick)',
+            'post!=currentTick',
+            'Signature(record,unit)'
+          )){if($src -notmatch [regex]::Escape($need)){throw "V29 invariant missing: $need"}}
+          foreach($bad in @('VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','QueueReplay','CallWindowProc','SetThreadContext','STAMP_OFF,0)','W32((long)record+STAMP_OFF,0)')){
+            if($src -match [regex]::Escape($bad)){throw "V29 forbidden primitive/pattern present: $bad"}
+          }
+          $writes=([regex]::Matches($src,'WriteProcessMemory\(')).Count
+          if($writes -ne 2){throw "V29 expected exactly one PInvoke declaration + one call site for WriteProcessMemory; found $writes"}
+          Write-Host 'V29 guarded current-tick reset architecture PASS'
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectCurrentTickResetV29/HeroEffectCurrentTickResetV29.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: dotnet publish HeroEffectCurrentTickResetV29/HeroEffectCurrentTickResetV29.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish
+
+      - name: Publish small
+        run: dotnet publish HeroEffectCurrentTickResetV29/HeroEffectCurrentTickResetV29.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+
+      - name: Rename outputs
+        shell: pwsh
+        run: |
+          Move-Item publish/BRZE-Hero-Effect-Current-Tick-Reset-V29.exe publish/BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded.exe
+          Move-Item publish-small/BRZE-Hero-Effect-Current-Tick-Reset-V29.exe publish-small/BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish/BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded-Small.exe -Algorithm SHA256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded
+          compression-level: 0
+          path: |
+            publish/BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded.exe
+            publish-small/BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded-Small.exe
