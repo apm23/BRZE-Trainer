@@ -1,0 +1,71 @@
+name: Hero Effect Duration Write Probe V9 Guarded
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - 'HeroEffectDurationWriteProbeV9/**'
+      - '.hero-effect-duration-write-probe-v9-trigger'
+      - '.github/workflows/hero-effect-duration-write-probe-v9.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify guarded write architecture
+        shell: pwsh
+        run: |
+          $src = Get-Content 'HeroEffectDurationWriteProbeV9/ProbeCore.cs' -Raw
+          $forbidden = @('VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','FlushInstructionCache','RVA_TARGET_HELPER','RVA_MAGIC_CREATE')
+          foreach ($token in $forbidden) {
+            if ($src.Contains($token)) { throw "Forbidden token in V9 guarded probe: $token" }
+          }
+          $required = @(
+            'WriteProcessMemory',
+            'CONFIG_DURATION_OFF=0x0E0',
+            'ISSYL_ID=0xA5',
+            'ORIGINAL_DURATION=15000',
+            'PATCH_DURATION=30000',
+            'ReadU32(configAddr)!=ISSYL_ID',
+            'cur!=ORIGINAL_DURATION',
+            'cur!=PATCH_DURATION',
+            'RestoreInternal()'
+          )
+          foreach ($token in $required) {
+            if (-not $src.Contains($token)) { throw "Required V9 guard missing: $token" }
+          }
+          Write-Host 'V9 single-field guarded-write invariants PASS'
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectDurationWriteProbeV9/HeroEffectDurationWriteProbeV9.csproj -c Release -p:Platform=x86
+
+      - name: Publish standalone
+        run: dotnet publish HeroEffectDurationWriteProbeV9/HeroEffectDurationWriteProbeV9.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o out/standalone
+
+      - name: Publish small
+        run: dotnet publish HeroEffectDurationWriteProbeV9/HeroEffectDurationWriteProbeV9.csproj -c Release -r win-x86 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o out/small
+
+      - name: Stage outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item 'out/standalone/BRZE-Hero-Effect-Duration-Write-Probe-V9.exe' 'artifact/BRZE-Hero-Effect-Duration-Write-Probe-V9-Guarded.exe'
+          Copy-Item 'out/small/BRZE-Hero-Effect-Duration-Write-Probe-V9.exe' 'artifact/BRZE-Hero-Effect-Duration-Write-Probe-V9-Guarded-Small.exe'
+
+      - name: Hash outputs
+        shell: pwsh
+        run: Get-FileHash artifact/*.exe -Algorithm SHA256 | Format-Table -AutoSize
+
+      - name: Upload probe V9
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Duration-Write-Probe-V9-Guarded
+          path: artifact/*
+          if-no-files-found: error
