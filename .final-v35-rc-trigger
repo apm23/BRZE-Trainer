@@ -1,1 +1,1 @@
-V35 final RC build: main COPY offset 0.1 steps + movable 91% in-game overlay + preserved V34 hard refresh/collision cleanup.
+V35 final RC build: default COPY offset 0.1 in main+overlay, movable 91% overlay, persistent Unit Changer UI memory, preserved V34 hard refresh/collision cleanup.
