@@ -1,0 +1,61 @@
+name: Hero Effect Reset Deep Scan V24 Read Only
+
+on:
+  push:
+    branches: [ instant-death-v4-hover-telemetry ]
+    paths:
+      - 'HeroEffectResetDeepScanV24/**'
+      - '.github/workflows/hero-effect-reset-deepscan-v24.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify strict read-only architecture
+        shell: pwsh
+        run: |
+          $src=Get-Content HeroEffectResetDeepScanV24/DeepScanCore.cs -Raw
+          foreach($required in @('0x13DA9C','0x13A8B3','0x16B76A','0x2151DE','0x24A7B8','ABILITY_OFF=0x58','TARGET_OFF=0x17C','CONFIG_OFF=0x1F4','TEARDOWN_OFF=0x194','FindFunctionStart','DumpVtableMethod','STRICT READ-ONLY')){
+            if($src -notmatch [regex]::Escape($required)){throw "V24 invariant missing: $required"}
+          }
+          foreach($forbidden in @('WriteProcessMemory','VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','CreateRemoteThreadEx')){
+            if($src -match [regex]::Escape($forbidden)){throw "V24 read-only violation: $forbidden"}
+          }
+          Write-Host 'V24 READ-ONLY architecture PASS'
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectResetDeepScanV24/HeroEffectResetDeepScanV24.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: dotnet publish HeroEffectResetDeepScanV24/HeroEffectResetDeepScanV24.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o out/standalone
+
+      - name: Publish small
+        run: dotnet publish HeroEffectResetDeepScanV24/HeroEffectResetDeepScanV24.csproj -c Release -r win-x86 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o out/small
+
+      - name: Rename outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path stage | Out-Null
+          Copy-Item out/standalone/BRZE-Hero-Effect-Reset-DeepScan-V24.exe stage/BRZE-Hero-Effect-Reset-DeepScan-V24.exe
+          Copy-Item out/small/BRZE-Hero-Effect-Reset-DeepScan-V24.exe stage/BRZE-Hero-Effect-Reset-DeepScan-V24-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash stage/*.exe -Algorithm SHA256 | Format-Table -AutoSize
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Reset-DeepScan-V24-ReadOnly
+          path: stage/*
+          if-no-files-found: error
