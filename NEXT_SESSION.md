@@ -5,141 +5,115 @@ Branch: `instant-death-v4-hover-telemetry`
 GitHub is authoritative.
 
 ## Authoritative fallbacks
-- Locked main stable fallback: V18.3 (`FINAL_CURRENT.md`).
-- V19 = latest pre-integration main-trainer fallback.
+- V18.3 = locked main stable fallback (`FINAL_CURRENT.md`).
 - V20 = integrated fallback.
-- V21 Direct Hero = runtime-rejected due generic transient-root gating/hold bugs.
-- V22 Group-Safe Hero = built/CI-proven integrated fallback while true reset/replace semantics are finalized.
-- Unit Clone Lab standalone remains runtime-proven.
-- Replay V2 / V11 duration proof remain runtime-proven references.
+- V22 = group-safe Hero integrated fallback.
+- V29 = runtime-proven standalone reset primitive.
+- V30 = latest integrated candidate, built/CI-proven; runtime integration smoke next.
 
 Do not mutate V18.3 directly.
 
-## Locked duration facts
-- Issyl A5 config base nominal `15000`; natural wall ~`10.7s`.
-- Grayback C0 config base nominal `60000`; natural wall ~`42.2s`.
-- `record+0x1F4 -> config+0x0E0` is the proven duration path.
-- Extended config must remain resident through natural effect lifetime, then restore.
-- V11 final proof: baseline `10742.1ms`; Issyl nominal `45000` -> `31612.4ms`, ratio `2.942838x`; restore `45000 -> 15000` OK.
+## Locked Hero Effect facts
+- Issyl ID `0xA5`; Grayback ID `0xC0`.
+- effect record signature: `record+0x58 == ability ID` and `record+0x17C == target Unit*`.
+- transient root path varies; never hard-code one path.
+- duration: `record+0x1F4 -> config+0xE0`.
+- Issyl nominal baseline `15000`; Grayback nominal baseline `60000`.
+- modified duration must remain resident for the full tracked natural lifetime, then restore.
+- never restore on lifecycle appearance or native-helper return.
 
 Rejected forever:
-- repeated native replay refresh / stacking;
+- repeated native replay/refresh on an already-active same effect;
+- V26 `record+0x194 = 0` zero-reset;
+- treating `record+0x194` as duration;
 - Unit+0x460 duration writes;
-- record+0x194 as duration;
-- lifecycle-first restore;
-- native-helper-return restore;
-- assuming duration fully latches at creation;
-- V26 zero-reset (`record+0x194 = 0`) for an already-active effect.
+- CreateRemoteThread;
+- assuming duration latches at creation.
 
-## Important runtime behavior — BRZE minimize pauses simulation
-User runtime fact: when BRZE is **minimized**, the game effectively pauses; simulation/game-time does not advance until BRZE resumes.
+## BRZE minimize behavior
+User runtime fact: when BRZE is minimized, simulation/game time pauses. A game-clock sample can legitimately remain unchanged while minimized. Do not reject the proven tick source for delta=0 under minimize.
 
-Implications for all future probes/tests:
-- a clock/global sampled while BRZE is minimized may legitimately show `delta=0`;
-- never reject a proven clock source merely because it is static while the game is minimized;
-- for tests that need observing clock progression, BRZE must be running/not minimized during the observation window;
-- for direct timestamp reset, reading the paused current BRZE tick and writing it as the new start timestamp is still logically valid: after BRZE resumes, elapsed time begins advancing from that reset tick.
-
-Do not broaden this into an assumption that every loss of focus pauses BRZE; the confirmed user report is specifically **minimized = paused**.
-
-## User-requested final semantics
-Hero Effect APPLY should feel like replacement/reset:
-- if selected unit already has same Issyl/Grayback buff, restart that same buff from zero;
-- if selected unit does not have it, apply once normally;
-- unrelated buffs remain untouched;
-- never blindly native-reapply on top of an active same effect.
-
-## V25 Expiry Tail — RUNTIME-PROVEN READ-ONLY
-Runtime established:
-- `record+0x194` is a start/lifecycle timestamp;
-- `record+0x1F4 -> config+0xE0` is duration;
-- tick RVA `0x13A5EB` uses `[EBP+8]` as current time/tick input during initialization;
-- later code subtracts start timestamp from current time and compares against duration.
-
-## V26 Clock Reset — RUNTIME-REJECTED
-- old `record+0x194 = 375600`
-- writing only `record+0x194 = 0` did not trigger reinitialization within ~1s
-- fail-safe restore of `375600` succeeded.
-
-Never reuse zero-reset.
-
-## V27 Current-Time Source — RUNTIME-PROVEN READ-ONLY DISCOVERY
-V27 narrowed the unique caller chain:
-`0x144691 -> 0x144794 -> 0x1C3107 -> 0x1400F0 -> 0x13A5EB`
-
-## V28 Register Flow — RUNTIME-PROVEN CURRENT-TICK SOURCE
-State: `HeroEffectRegisterFlowV28/STATE.md`
-
-Runtime:
-- PID `6528`, moduleBase `0x00870000`
-- selected Unit* `0x22B47F2C`
-- active A5 record `0x235B0A48`
-- A5 start timestamp `486200`
-- config `0x1D1FA664`, duration `15000`
-
-Exact lower-level register flow:
+## V28 — current simulation tick source RUNTIME-PROVEN
+Exact register flow:
+- `0x1C3181`: `ESI <- [0x00CB0A3C]`
+- `0x1C3243`: `PUSH ESI`
+- next caller passes it as `[EBP+8]`
 - `0x140106`: `EBX <- [EBP+8]`
 - `0x140120`: `PUSH EBX`
-- `0x140125`: CALL tick `0x13A5EB`
+- `0x140125`: CALL effect tick RVA `0x13A5EB`.
 
-Direct caller flow:
-- `0x1C3243`: `PUSH ESI`
-- V28 backward trace: `0x1C3181`: `ESI <- [0x00CB0A3C]`
+At moduleBase `0x00870000`, absolute `0x00CB0A3C` = module RVA **`0x440A3C`**.
 
-Therefore the concrete BRZE current-time source is:
-- runtime absolute `0x00CB0A3C` for moduleBase `0x00870000`
-- equivalent module RVA **`0x440A3C`**
+## V29 — CURRENT-TICK RESET RUNTIME-PROVEN PASS
+State: `HeroEffectCurrentTickResetV29/STATE.md`.
 
-Observed at scan:
-- current tick `489500`
-- A5 start stamp `486200`
-- elapsed delta `3300`
+User runtime report:
+- active A5 record `0x235B0E40`;
+- old start timestamp `507200`;
+- current BRZE tick `519700` from module RVA `0x440A3C`;
+- V29 wrote only `record+0x194 = 519700`;
+- exact readback passed;
+- same A5+target signature remained valid;
+- no native ability helper / no second effect instance.
 
-The 350ms sample remained unchanged because BRZE was minimized/paused during that observation. This is now an explicit runtime fact, not evidence against the clock source. Source provenance is independently proven by exact instruction/register flow.
+Visual proof: selected/reset unit kept Issyl active longer than the comparison unit that was not reset.
 
-V28 CI:
-- run `34833344064` SUCCESS
-- job `103941510533` SUCCESS
-- artifact `10343645827`
+Locked reset primitive:
+**existing same-effect record -> write current BRZE tick to `record+0x194` -> restart the same instance from now without stacking.**
 
-## V29 Current-Tick Reset — BUILT / CI-PROVEN, RUNTIME PROOF NEXT
-State: `HeroEffectCurrentTickResetV29/STATE.md`
+## V30 — INTEGRATED HERO RESET CANDIDATE
+State: `V30_RESET_HERO_STATE.md`.
 
-Purpose:
-Perform the smallest guarded reset proof on exactly ONE active stock Issyl A5 instance:
-1. signature-lock A5 + selected Unit*;
-2. require stock A5 config ID/duration 15000;
-3. read old `record+0x194`;
-4. read current BRZE tick from module RVA `0x440A3C`;
-5. require current tick > old stamp and plausible elapsed delta 100..60000;
-6. write exactly `record+0x194 = current BRZE tick`;
-7. verify exact readback and same A5+target signature;
-8. no native replay, no second effect instance, no hooks.
+Source:
+- `HeroEffectDirectCoreV30.cs`
+- `IntegratedFeaturePanelsV30.cs`
+- `MergedTrainerV30.csproj`
+- `tools/finalize_v30_reset_hero.py`
+- `.github/workflows/final-v30-reset-hero.yml`
 
-V29 CI:
-- workflow `Hero Effect Current-Tick Reset V29 Guarded`
-- run `34834013421` SUCCESS
-- job `103943588874` SUCCESS
-- head `ab6f4f7a2a5b55d09c1281749b6b6e8bf249f238`
-- artifact `10343193391`
-- digest `sha256:aaf1e8ef8e815d6366c7e7cff01acaa87a9c5287457e73a191d833698c9566cf`
-- standalone SHA256 `77571e840f9cfc5a07f23cd7b6367d6c2320e9c5edfafd99903d471e12696a1b`
-- small SHA256 `671088f9018547bdc35c269ecfecf7d2e24e0af668ff9d4a5fcf797bd023be14`
+Final semantics:
+- selected unit already has requested same effect -> signature-lock and reset existing `+0x194` to current tick;
+- effect pending -> do not duplicate;
+- effect absent -> one-shot Replay V2 native apply only for that missing effect;
+- unrelated buffs untouched;
+- multi-select supported;
+- `APPLY BOTH` partitions mixed selections into missing-both / missing-Grayback-only / missing-Issyl-only batches so no active same effect is replayed on top of itself;
+- mixed native batches serialize through the single shared dispatcher;
+- custom duration keeps proven full-lifetime config hold/restore rules.
 
-## EXACT NEXT ACTION — ONE V29 GUARDED RESET
-1. Give stock Issyl to exactly ONE unit.
-2. Wait several seconds while Issyl is still visibly active.
-3. Select only that unit.
-4. Open `BRZE-Hero-Effect-Current-Tick-Reset-V29-Guarded.exe`.
-5. Click `RESET ACTIVE ISSYL TO CURRENT BRZE TICK` once. It is acceptable if BRZE is minimized/paused at the moment of the write; the reset timestamp should equal the paused current BRZE tick.
-6. Return to BRZE and verify Issyl lasts approximately one fresh stock lifetime from reset moment after simulation resumes.
-7. Copy/send the full report.
+V30 CI:
+- workflow `Final V30 Runtime-Proven Hero Reset`
+- run `34835329285` — SUCCESS
+- job `103947740941` — SUCCESS
+- head `13d0aff27a7a278e9cc8f1937a97285351a4dcff`
+- artifact `10343956283`
+- digest `sha256:632412dbbc6756b0d06023b5a4f1bf056db81493ea2e78ef12acc926dda6ea90`
+- CLEAN standalone SHA256 `603a141f1806f5fadeba01378e51ac97d3ead10b534ee5e1fc65871497ff565c`
+- DIAGNOSTICS standalone SHA256 `f2e4f9f2e6e28dc2e0ab55338a90e36655ae1c010b0ca80f6f7d2a4d18094517`
+- CLEAN small SHA256 `2f7bbafb490702f82c36f03204f6e048f8c9eb0701e23018a9fddd0fa0009ef4`
+- DIAGNOSTICS small SHA256 `2c046f4034ca5686b6fcb63d578e205073cab973b41c0a762d35e4cb408d1237`
 
-PASS requires exact current-tick write/readback, same A5 signature, no crash/corruption, and visual lifetime restart after BRZE resumes.
+CI locked:
+- V20 integrated base generation;
+- V22 explicit-target dispatcher facade;
+- V30 finalizer cannot mutate shared dispatcher;
+- UnitChanger / HookCore / InstantDeath wrapper hashes unchanged;
+- exactly one frame-hook owner at RVA `0x135C43`;
+- CLEAN + DIAGNOSTICS compile and all four publishes PASS.
 
-If V29 passes, integrate reset semantics into the trainer: existing same buff -> reset its start timestamp to current BRZE tick; no existing same buff -> one-shot native apply. Keep duration config full-lifetime hold semantics.
+## EXACT NEXT ACTION — ONE COMPACT V30 RUNTIME SMOKE
+Use `BRZE-Trainer-FINAL-V30-Diagnostics.exe` first.
 
-If V29 fails, do NOT resume one-probe-at-a-time research. Build one omnibus/all-in-one reset diagnostic with one button that gathers the remaining lifecycle/clock evidence and guarded candidate outcomes in a single run, then decide the trainer implementation from that report.
+1. Have one unit with active Issyl and one unit without Issyl; select both and APPLY ISSYL at one duration.
+   - active one must restart;
+   - missing one must get one fresh apply.
+2. Before expiry, select both and APPLY the same Issyl/duration again.
+   - both existing instances must restart;
+   - no stacking/compound behavior.
+3. Quick Grayback or APPLY BOTH mixed-group smoke.
+4. Only re-test Copy Unit / Instant Death if something suspicious appears; their shared base/dispatcher invariants are CI-locked.
+
+If this passes, promote V30 as integrated Hero Effect final candidate. Do NOT resume reset research/probes unless a real regression appears.
 
 ## New-chat bootstrap
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. User wants same-buff APPLY to restart/reset without stacking. V26 zero-reset is rejected forever. V28 runtime PROVED current tick source module RVA 0x440A3C via exact register flow: 0x1C3181 ESI<-[0x00CB0A3C] -> PUSH ESI -> caller [EBP+8] -> EBX -> tick RVA 0x13A5EB. Runtime currentTick 489500 vs A5 start 486200. Important runtime fact: minimizing BRZE pauses simulation/game-time, so delta=0 while minimized is expected and must not invalidate clock probes. V29 guarded direct-current-tick reset is BUILT/CI-PROVEN, run 34834013421 SUCCESS, artifact 10343193391. Next: one V29 guarded reset on one active stock Issyl and send report + visual lifetime result. If V29 fails, jump directly to one-button omnibus reset diagnostic, not another chain of tiny probes.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. V29 current-tick reset is RUNTIME-PROVEN PASS: existing A5 record start 507200 -> current BRZE tick 519700 at module RVA 0x440A3C, exact readback and same signature, visual lifetime restart confirmed. V30 integrates same-effect reset + missing-only native apply + mixed APPLY BOTH partitioning. V30 CI run 34835329285 SUCCESS, artifact 10343956283. Next: one compact runtime smoke using V30 Diagnostics; if pass, promote final candidate. No more reset probes.`
