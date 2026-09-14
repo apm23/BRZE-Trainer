@@ -1,0 +1,67 @@
+name: Hero Effect Current-Time Source V27 Read Only
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.hero-effect-current-time-source-v27-trigger'
+      - 'HeroEffectCurrentTimeSourceV27/**'
+      - '.github/workflows/hero-effect-current-time-source-v27.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify strict read-only architecture
+        shell: pwsh
+        run: |
+          $src=Get-Content HeroEffectCurrentTimeSourceV27/CurrentTimeSourceCore.cs -Raw
+          foreach($need in @('OpenProcess','ReadProcessMemory','TICK_RVA=0x13A5EB','RawDirectCallXrefs','PointerRefs','SampleCandidates','350','RECURSIVE DIRECT-CALLER SUMMARY')){
+            if($src -notmatch [regex]::Escape($need)){throw "V27 invariant missing: $need"}
+          }
+          foreach($bad in @('WriteProcessMemory','VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','QueueReplay','CallWindowProc','SetThreadContext')){
+            if($src -match [regex]::Escape($bad)){throw "V27 forbidden mutation/injection primitive present: $bad"}
+          }
+          Write-Host 'V27 strict read-only caller/source architecture PASS'
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectCurrentTimeSourceV27/HeroEffectCurrentTimeSourceV27.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: dotnet publish HeroEffectCurrentTimeSourceV27/HeroEffectCurrentTimeSourceV27.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish
+
+      - name: Publish small
+        run: dotnet publish HeroEffectCurrentTimeSourceV27/HeroEffectCurrentTimeSourceV27.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+
+      - name: Rename outputs
+        shell: pwsh
+        run: |
+          Move-Item publish/BRZE-Hero-Effect-Current-Time-Source-V27.exe publish/BRZE-Hero-Effect-Current-Time-Source-V27-ReadOnly.exe
+          Move-Item publish-small/BRZE-Hero-Effect-Current-Time-Source-V27.exe publish-small/BRZE-Hero-Effect-Current-Time-Source-V27-ReadOnly-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish/BRZE-Hero-Effect-Current-Time-Source-V27-ReadOnly.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Hero-Effect-Current-Time-Source-V27-ReadOnly-Small.exe -Algorithm SHA256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Current-Time-Source-V27-ReadOnly
+          compression-level: 0
+          path: |
+            publish/BRZE-Hero-Effect-Current-Time-Source-V27-ReadOnly.exe
+            publish-small/BRZE-Hero-Effect-Current-Time-Source-V27-ReadOnly-Small.exe
