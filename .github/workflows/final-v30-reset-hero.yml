@@ -1,0 +1,131 @@
+name: Final V30 Runtime-Proven Hero Reset
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v30-reset-hero-trigger'
+      - 'HeroEffectDirectCoreV30.cs'
+      - 'IntegratedFeaturePanelsV30.cs'
+      - 'MergedTrainerV30.csproj'
+      - 'tools/finalize_v30_reset_hero.py'
+      - '.github/workflows/final-v30-reset-hero.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate locked V20 integrated base
+        shell: pwsh
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v13_integrated.py
+          python tools/finalize_v14_building_profiles.py
+          python tools/v14_generator_repair.py
+          python tools/v14_ui_compile_repair.py
+          python tools/finalize_v15_compact_ui.py
+          python tools/finalize_v16_unit_catalog.py
+          python tools/finalize_v17_wotw_warning.py
+          python tools/finalize_v18_quick_tabs.py
+          python tools/finalize_v18_2_inline_allslots.py
+          python tools/finalize_v18_3_bulk_actions.py
+          python tools/finalize_v19_hold_death_layout_v2.py
+          python tools/finalize_v20_integrated_features.py
+          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content unit.before
+          (Get-FileHash HookCore.cs -Algorithm SHA256).Hash | Set-Content hook.before
+          (Get-FileHash InstantDeathCore.cs -Algorithm SHA256).Hash | Set-Content death.before
+
+      - name: Apply V22 explicit-target dispatcher facade
+        run: python tools/finalize_v22_group_safe_hero.py
+
+      - name: Lock dispatcher before V30 finalizer
+        shell: pwsh
+        run: (Get-FileHash IntegratedFrameDispatcherCore.cs -Algorithm SHA256).Hash | Set-Content dispatcher.before
+
+      - name: Apply V30 reset Hero finalizer
+        run: python tools/finalize_v30_reset_hero.py
+
+      - name: Verify V30 architecture
+        shell: pwsh
+        run: |
+          function Same($before,$file,$name){$a=(Get-Content $before -Raw).Trim();$b=(Get-FileHash $file -Algorithm SHA256).Hash;if($a -ne $b){throw "V30 changed locked $name"}}
+          Same unit.before UnitChangerCore.cs UnitChanger
+          Same hook.before HookCore.cs HookCore
+          Same death.before InstantDeathCore.cs InstantDeathWrapper
+          Same dispatcher.before IntegratedFrameDispatcherCore.cs SharedDispatcher
+
+          $ui=Get-Content FinalV18MainForm.cs -Raw
+          foreach($x in @('Text="BRZE Trainer — V30 Clean"','Text="BRZE Trainer — V30 Diagnostics"','ClientSize=new Size(1640,900);','content.SetColumnSpan(statusPanel,2)')){if($ui -notmatch [regex]::Escape($x)){throw "V30 UI missing: $x"}}
+
+          $panel=Get-Content IntegratedFeaturePanelsV30.cs -Raw
+          foreach($x in @('HERO EFFECT  //  APPLY / RESET','APPLY ISSYL','APPLY GRAYBACK','APPLY BOTH','DURATION (SEC)','existing instance restarts from now','COPY UNIT  //  UNIT CLONE LAB','HeroEffectDirectCoreV30')){if($panel -notmatch [regex]::Escape($x)){throw "V30 panel missing: $x"}}
+          foreach($bad in @('CAPTURE ISSYL BASELINE','RESTORE 15000','HeroEffectDirectCoreV22')){if($panel -match [regex]::Escape($bad)){throw "V30 stale panel leaked: $bad"}}
+
+          $core=Get-Content HeroEffectDirectCoreV30.cs -Raw
+          foreach($x in @('RVA_CURRENT_TICK=0x440A3C','STAMP_OFF=0x194','TryFindRecord','PreflightReset','ApplyResetBatch','W32((long)c.Record+STAMP_OFF,currentTick)','No same-effect stacking','BuildReplayBatches','missing BOTH','PendingBatches','finishing the previous safe mixed-effect replay batch','QueueReplayUnits','RestoreHold','EXPIRY_MISSING_SAMPLES=4')){if($core -notmatch [regex]::Escape($x)){throw "V30 core missing: $x"}}
+          foreach($bad in @('RequestedAlreadyActive','record+0x194 = 0','CreateRemoteThread')){if($core -match [regex]::Escape($bad)){throw "V30 rejected mechanism present: $bad"}}
+
+          $dispatch=Get-Content IntegratedFrameDispatcherCore.cs -Raw
+          foreach($x in @('public static string QueueReplayUnits','QueueReplayUnitsLocked','RVA_FRAME_MOUSE_DRAW=0x135C43')){if($dispatch -notmatch [regex]::Escape($x)){throw "V30 dispatcher missing: $x"}}
+          $owners=($dispatch | Select-String -Pattern 'RVA_FRAME_MOUSE_DRAW=0x135C43' -AllMatches).Matches.Count
+          if($owners -ne 1){throw "Expected one shared frame-hook owner, got $owners"}
+
+          $proj=Get-Content MergedTrainerV30.csproj -Raw
+          foreach($x in @('HeroEffectDirectCoreV30.cs','IntegratedFeaturePanelsV30.cs','IntegratedFrameDispatcherCore.cs')){if($proj -notmatch [regex]::Escape($x)){throw "V30 project missing: $x"}}
+          foreach($bad in @('HeroEffectDirectCoreV22.cs','IntegratedFeaturePanelsV22.cs','ConfigurableDurationCore')){if($proj -match [regex]::Escape($bad)){throw "V30 project compiles stale Hero Effect source: $bad"}}
+          Write-Host 'V30 PASS — proven current-tick reset for existing effects, missing-only replay, mixed BOTH partitioning, full-lifetime duration hold, one shared dispatcher'
+
+      - name: Compile CLEAN smoke
+        run: dotnet build MergedTrainerV30.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+      - name: Compile DIAGNOSTICS smoke
+        run: dotnet build MergedTrainerV30.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish CLEAN standalone
+        run: |
+          dotnet publish MergedTrainerV30.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
+          Move-Item publish-clean/BRZE-Trainer-FINAL-V30.exe publish-clean/BRZE-Trainer-FINAL-V30-Clean.exe
+      - name: Publish DIAGNOSTICS standalone
+        run: |
+          dotnet publish MergedTrainerV30.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag
+          Move-Item publish-diag/BRZE-Trainer-FINAL-V30.exe publish-diag/BRZE-Trainer-FINAL-V30-Diagnostics.exe
+      - name: Publish CLEAN small
+        run: |
+          dotnet publish MergedTrainerV30.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
+          Move-Item publish-clean-small/BRZE-Trainer-FINAL-V30.exe publish-clean-small/BRZE-Trainer-FINAL-V30-Clean-Small.exe
+      - name: Publish DIAGNOSTICS small
+        run: |
+          dotnet publish MergedTrainerV30.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag-small
+          Move-Item publish-diag-small/BRZE-Trainer-FINAL-V30.exe publish-diag-small/BRZE-Trainer-FINAL-V30-Diagnostics-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-clean/BRZE-Trainer-FINAL-V30-Clean.exe -Algorithm SHA256
+          Get-FileHash publish-diag/BRZE-Trainer-FINAL-V30-Diagnostics.exe -Algorithm SHA256
+          Get-FileHash publish-clean-small/BRZE-Trainer-FINAL-V30-Clean-Small.exe -Algorithm SHA256
+          Get-FileHash publish-diag-small/BRZE-Trainer-FINAL-V30-Diagnostics-Small.exe -Algorithm SHA256
+
+      - name: Upload V30 four-pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V30-HeroReset
+          compression-level: 0
+          path: |
+            publish-clean/BRZE-Trainer-FINAL-V30-Clean.exe
+            publish-diag/BRZE-Trainer-FINAL-V30-Diagnostics.exe
+            publish-clean-small/BRZE-Trainer-FINAL-V30-Clean-Small.exe
+            publish-diag-small/BRZE-Trainer-FINAL-V30-Diagnostics-Small.exe
