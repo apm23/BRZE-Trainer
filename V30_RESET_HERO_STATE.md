@@ -1,6 +1,6 @@
 # BRZE Trainer V30 — Runtime-Proven Hero Reset Integration
 
-Status: **BUILT / CI-PROVEN — INTEGRATED RUNTIME SMOKE NEXT**
+Status: **RUNTIME-PROVEN PASS / LOCKED GAMEPLAY BASE FOR V31**
 Date: 2026-09-14 JST
 Branch: `instant-death-v4-hover-telemetry`
 
@@ -16,6 +16,17 @@ V29 proved the reset primitive on active stock Issyl A5:
 Locked conclusion: writing the current BRZE simulation tick into an existing same-effect record's `+0x194` restarts that same instance's lifetime without stacking.
 
 BRZE pauses its simulation/game clock while minimized. Static tick values while minimized are expected.
+
+## V30 integrated runtime result
+User runtime result after V30 integration: **WORK / PASS**.
+
+Promoted behavior:
+- selected unit already has requested same effect -> reset existing instance timestamp to current BRZE tick;
+- selected unit missing requested effect -> one fresh native apply only;
+- repeated APPLY on active same effect restarts the same instance rather than stacking;
+- mixed selected groups work with the integrated reset/missing-only semantics.
+
+No more reset research/probes unless an actual regression is observed.
 
 ## V30 semantics
 For every selected unit × requested ability:
@@ -66,12 +77,4 @@ CI PASS:
 - all four publishes;
 - hashes + artifact upload.
 
-## Exact runtime smoke
-Use DIAGNOSTICS standalone first:
-1. select one unit already carrying Issyl plus one unit without Issyl, then APPLY ISSYL at one duration;
-2. existing unit should restart while missing unit receives one fresh apply;
-3. before expiry, select both again and APPLY same Issyl/duration; both should restart with no stacking;
-4. quick Grayback or APPLY BOTH mixed-group smoke;
-5. only test Copy Unit / Instant Death if something looks suspicious because locked source + shared dispatcher invariants already passed CI.
-
-If this smoke passes, V30 is the integrated Hero Effect final candidate.
+V30 is now the locked runtime-proven gameplay base. V31 may change UI/overlay/packaging only unless a real gameplay regression is demonstrated.
