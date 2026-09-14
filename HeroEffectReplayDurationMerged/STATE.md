@@ -1,6 +1,6 @@
 # BRZE Hero Effect Replay + Duration — MERGED STATE
 
-Status: **V10.2 BUILT / CI-PROVEN — RUNTIME TEST PENDING**
+Status: **V10.2 RUNTIME-PROVEN — REPLAY + EXTENDED DURATION CONFIRMED**
 Date: 2026-09-14 JST
 
 ## Purpose
@@ -17,56 +17,46 @@ V9 causally proved the Issyl duration field:
 - ratio `1.976390x`
 - restore `30000 -> 15000` succeeded
 
-IMPORTANT correction from source review:
-- V9 did **not** restore immediately after effect creation.
-- V9 kept `config+0x0E0=30000` for the **entire patched effect lifetime**.
-- V9 restored to `15000` only after natural expiry.
-- Therefore the previous assumption that duration is copied/latching at creation was not proven and is now rejected.
+IMPORTANT source correction:
+- V9 kept `config+0x0E0=30000` for the entire patched effect lifetime.
+- Restore to `15000` happened only after natural expiry.
+- Therefore duration is NOT proven to latch/copy at creation.
 
-## Merged runtime attempt #1 — REJECTED
-Restore timing: first lifecycle visibility.
-
-Runtime:
+## Merged attempt #1 — REJECTED
+Restore at first lifecycle visibility:
 - baseline `10749.7 ms`
 - replay `10623.7 ms`
 - ratio `0.988283x`
 - same A5 config verified
 - restore succeeded
 
-Conclusion:
-- restoring at first lifecycle visibility is too early / incompatible with the proven V9 timing.
-- never reuse lifecycle-first restore timing.
+Never reuse lifecycle-first restore timing.
 
-## Merged runtime attempt #2 / V10.1 — REJECTED
-Restore timing: after Replay V2 native apply helper returned (`native calls > 0`).
-
-Runtime:
+## Merged attempt #2 / V10.1 — REJECTED
+Restore after Replay V2 native helper returned (`native calls > 0`):
 - baseline `10717.2 ms`
 - replay `10611.9 ms`
 - ratio `0.990176x`
 - same A5 config verified
 - restore succeeded
 
-Conclusion:
-- even waiting until the V2 native helper returns is still too early.
-- duration is not safely latched by the time that helper returns.
-- never reuse native-call-return restore timing.
+Never reuse native-call-return restore timing.
 
-## V10.2 design — mirrors the proven V9 timing exactly
-V10.2 keeps Issyl `config+0x0E0=30000` resident for the **entire replay effect lifetime**.
+## V10.2 — RUNTIME-PROVEN
+V10.2 mirrors V9 timing exactly: keep Issyl `config+0x0E0=30000` resident for the full replay lifetime, then restore after natural expiry.
 
-Sequence:
-1. Capture original Issyl baseline and A5 config.
-2. Select the clean target again.
-3. Guard and patch `15000 -> 30000`.
-4. Queue one known-good V2 Issyl replay.
-5. A separate read-only watcher tracks the pinned Unit transient roots (`+1E4/+1E8/+20C/+210/+214`).
-6. While replay is active, V10.2 intentionally does **not** call the old V10 lifecycle restore path.
-7. Keep `30000` for the whole natural replay lifetime.
-8. After roots return to the clean baseline for 4 consecutive polls, restore `30000 -> 15000`.
-9. Measure replay lifetime and ratio automatically.
+Runtime result:
+- baseline ORIGINAL Issyl: `10755.0 ms`
+- merged Replay V2 2X: `21115.9 ms`
+- replay/baseline ratio: `1.963355x`
+- config restored after natural expiry: `30000 -> 15000`
+- current config after test: `15000`
+- hold active after completion: `False`
+- no repeated native application / no refresh loop
 
-This deliberately duplicates the timing model that V9 already proved at `1.976390x`.
+This is direct runtime proof that known-good Replay V2 and the proven duration config work together when the duration value is held for the full effect lifetime.
+
+The old companion report remains `ReadyForReplay / replay=0.0` because V10.2 intentionally bypasses the old V10 lifecycle state machine during the full-lifetime hold. For V10.2, the authoritative runtime block is `MERGED V10.2 FULL-LIFETIME HOLD`.
 
 ## V10.2 build pin
 Repository: `apm23/BRZE-Trainer`
@@ -82,24 +72,25 @@ Binaries:
 - Standalone V10.2: 151,084,258 bytes — SHA-256 `d522c611f48e84b1a9b0259938e8847f87e9c968ec07bbb2cfb2c10f58f51c29`
 - Small V10.2: 172,292 bytes — SHA-256 `6a22bc4611edc41daa174a024d3334c6b152b7481838887d4edc1c270892c17d`
 
-## Runtime test flow
-1. Fresh/reload BRZE.
-2. Open only V10.2 merged EXE.
-3. Select exactly one clean target.
-4. Click `1) CAPTURE ISSYL BASELINE`.
-5. Cast ORIGINAL Issyl Haste once and wait for baseline expiry.
-6. Select the same clean target again.
-7. Click `2) REPLAY ISSYL 2X` once.
-8. Do not manually cast Issyl the second time.
-9. Wait until V10.2 reports COMPLETE.
-10. COPY REPORT.
+## Locked implementation rule
+For Issyl replay duration extension:
+1. guard A5 config identity;
+2. patch desired duration before queueing Replay V2;
+3. keep the patched value resident for the entire active effect lifetime;
+4. restore original duration only after natural expiry is stable;
+5. no repeated application / refresh.
 
-Expected proof:
-- baseline ~10.7 s;
-- replay ~21 s;
-- ratio near 2.0x;
-- config remains 30000 throughout replay and returns to 15000 only after expiry;
-- no repeated application / no stacking.
+Because the A5 config object is global/shared, while the override is resident any other Issyl effect created in that interval may also observe the modified duration. Final integration must account for this global exposure.
+
+## Next engineering target
+Build a configurable-duration version above V10.2, while preserving:
+- V2 native replay behavior unchanged;
+- full-lifetime hold semantics;
+- automatic restore after expiry;
+- strict config identity/value guards;
+- known-good V2 binary/source as fallback.
+
+Do not integrate into locked V18.3 main trainer until the configurable merged version is runtime-proven.
 
 ## Locked rejects
 - no lifecycle-first restore timing;
