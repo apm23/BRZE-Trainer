@@ -1,48 +1,53 @@
 # BRZE Hero Effect Child Probe V7 — STATE
 
-Status: **BUILT / CI-PROVEN READ-ONLY — RUNTIME PENDING**
+Status: **RUNTIME-PROVEN OBSERVER — CHILD CONFIG CANDIDATE FOUND**
 Date: 2026-09-14 JST
 
-## Why V7 exists
-V6 completed three clean ORIGINAL ISSYL passes with different human reaction speeds and still measured 10725.9 / 10713.8 / 10733.2 ms (19.4 ms total spread). Automatic timing is proven stable.
+## Runtime result
+One clean ORIGINAL ISSYL pass completed successfully:
+- observed natural lifetime: `10749.4 ms`
+- effect polls / child sample cycles: `344`
+- signature parent discovery delay: `32.6 ms`
+- signature parent: `0x28C01ACC`
+- discovery path this pass: `Unit+0x1E4->+0x014`
+- 11 readable/deduplicated child objects pinned
+- zero child read failures in the pointer map
 
-V6 content-identified the actual Issyl effect parent in every pass using BOTH:
-- `parent+0x058 == 0xA5`
-- `parent+0x17C == pinned Unit*`
+Root lifecycle again matched the established effect pattern:
+- `Unit+0x1E4`: zero -> transient -> zero
+- `Unit+0x1E8`: zero -> transient -> zero
+- `Unit+0x20C`: zero -> transient -> zero
+- `Unit+0x210`: zero -> transient -> zero
+- `Unit+0x214`: baseline pointer -> transient pointer -> exact baseline pointer
 
-The parent address/path changed across casts, proving path hard-coding is invalid.
+## Important negative result
+No child field behaved like a clean continuously-changing countdown/elapsed timer. Most apparent high-score fields changed only once at cleanup and are pointer/list/object teardown noise.
 
-No clean continuously-changing duration timer exists in the parent record. Parent `+0x194` is rejected because its terminal value increased `623600 -> 653700 -> 678400` across sequential casts while lifetime stayed ~10.72 s.
+Therefore V7 does NOT justify writing/freezing any dynamic child field.
 
-## V7 objective
-After signature-locking the true A5+target parent, discover its readable pointer-valued fields, deduplicate aliases, pin those child objects by address, and sample them throughout natural Issyl lifetime.
+## Strong new lead: parent+0x1F4 ability/config object
+One child is especially structured:
+- `parent+0x1F4 -> 0x227F4664`
+- child `+0x000 = 0xA5` — exact Issyl runtime ability ID
+- child `+0x0A0 = 100`
+- child `+0x0E0 = 15000`
+- child `+0x0E8 = 482`
+- the object stayed readable/static for all 344 samples
+
+This strongly suggests `parent+0x1F4` is an ability/config descriptor rather than a transient countdown instance.
+
+`config+0x0E0 = 15000` is now the strongest duration-parameter candidate, but it is NOT proven yet. Its scale does not directly equal the measured `10749.4 ms`, so a cross-ability comparison is required before any write.
+
+## Rejected false lead
+`PARENT[+0x000,+0x1FC]` pointed to low address `0x00F738EC` and exposed a static integer `10272` at `+0x158`, numerically close to Issyl lifetime. This child shape is more consistent with vtable/type/static data and must not be promoted merely because the number is close to wall time.
 
 ## Architecture
 Strictly READ-ONLY:
 - `PROCESS_VM_READ | PROCESS_QUERY_INFORMATION`
-- no `WriteProcessMemory`
-- no `VirtualAllocEx`
-- no `VirtualProtectEx`
-- no `CreateRemoteThread`
+- no writes
+- no allocation/injection
 - no hooks
 - no native ability replay
-
-Flow:
-1. arm exactly one clean target;
-2. cast ORIGINAL Issyl once;
-3. auto-detect lifecycle start;
-4. locate parent by `A5 + target Unit*` signature;
-5. scan parent `0x240` bytes for readable pointer fields;
-6. deduplicate aliases pointing to same child;
-7. pin up to 24 child objects;
-8. sample each child `0x200` bytes every 20 ms;
-9. auto-finish after lifecycle roots equal baseline for 4 consecutive samples;
-10. rank child fields by change-rate and direction flips.
-
-## Runtime objective
-Find a child field that changes monotonically (ideally flip 0), with total/rate matching the ~10.72 s natural Issyl lifetime. Static duration-like child constants are reported separately.
-
-No duration writes are allowed from V7 alone.
 
 ## Build pin
 Repository: `apm23/BRZE-Trainer`
@@ -58,17 +63,18 @@ Binaries:
 - Standalone: 151,067,826 bytes — SHA-256 `ee30cc76f54f91aa93d4f7e26f01d7ed6db3070ca1a53d2c785d8d452c5843d2`
 - Small: 155,348 bytes — SHA-256 `46a252b206a8dc78e04ffbf1144aa0a76ff1970f208f66834637e5a6ca582492`
 
-## Exact runtime flow
-1. fresh/reload BRZE;
-2. select exactly ONE clean normal target;
-3. click `ARM TARGET + AUTO WATCH`;
-4. select Issyl;
-5. cast ORIGINAL Haste once on armed target;
-6. do nothing until `COMPLETE`;
-7. click `COPY REPORT` and return full report.
+## Exact next action
+Use V8 ability-config comparison, READ ONLY:
+1. test ORIGINAL ISSYL A5 once and capture `parent+0x1F4` config values;
+2. test ORIGINAL GRAYBACK C0 once and capture the same config offsets;
+3. confirm config `+0x000` follows the ability ID (`A5` vs `C0`);
+4. compare config `+0x0E0` against their very different natural lifetimes;
+5. only if the field behaves ability-specifically and duration-plausibly may an isolated write experiment be considered.
 
 ## Locked rejects
-- repeated native reapplication
+- repeated native reapplication / refresh
 - `Unit+0x460`
 - parent `+0x194` as duration-specific
 - path-based effect identity
+- any V7 dynamic child field as duration without further proof
+- low-address/vtable static `10272` as duration merely by numeric coincidence
