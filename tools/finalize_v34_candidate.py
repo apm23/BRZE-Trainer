@@ -1,7 +1,8 @@
 from pathlib import Path
 
 # V34 is the last pre-final polish layer on top of runtime-proven V30 gameplay.
-# It changes only UI/refresh orchestration. Core gameplay source files remain locked.
+# It changes UI/refresh orchestration and retires unreachable legacy duplicate
+# mutation paths that were superseded by the dedicated runtime cores.
 ui=Path('FinalV18MainForm.cs')
 s=ui.read_text(encoding='utf-8')
 
@@ -77,6 +78,74 @@ refresh=r'''    void RefreshTrainer()
 s=s[:a]+refresh+s[b:]
 ui.write_text(s,encoding='utf-8')
 
+# Retire old Native implementations that are no longer reachable from the integrated
+# MainForm but were still compiled beside their dedicated replacements. Keeping two
+# possible writers for the same BRZE instruction/data address is unnecessary risk.
+mp=Path('MergedProgram.cs')
+m=mp.read_text(encoding='utf-8')
+
+# 1) Native.DetachUnlocked must NOT restore old HP/stamina/training/selection hooks;
+# HookCore owns those sites now. Preserve only the active Native resource state and
+# safely restore the population cap if this Native instance changed it.
+da=m.find('    static void DetachUnlocked()')
+db=m.find('    static bool WriteCode(',da)
+if da<0 or db<0:
+    raise SystemExit('V34 could not locate Native.DetachUnlocked legacy block')
+detach=r'''    static void DetachUnlocked()
+    {
+        if(h!=IntPtr.Zero)
+        {
+            // Population is still owned by Native.Apply. Restore it only if the exact
+            // trainer sentinel is still present, then let the next enabled tick reapply.
+            try
+            {
+                if(maxPopSaved&&originalMaxPopPlayer<10)
+                {
+                    long a=moduleBase+RVA_MAX_UNITS+(long)originalMaxPopPlayer*4;
+                    if(R32(a)==9_999_999u)W32(a,originalMaxPop);
+                }
+            }
+            catch{}
+            if(cave!=IntPtr.Zero)VirtualFreeEx(h,cave,UIntPtr.Zero,MEM_RELEASE);
+            CloseHandle(h);
+        }
+        h=IntPtr.Zero;p=null;cave=IntPtr.Zero;hooksInstalled=false;localUnits=Array.Empty<UnitInfo>();remoteTrainState=-1;hookError="";
+        maxPopSaved=false;originalMaxPop=0;originalMaxPopPlayer=0xFFFFFFFF;
+    }
+'''
+m=m[:da]+detach+m[db:]
+
+# 2) Remove the old hook installer entry point. HookCore is the sole owner of these
+# fixed instruction sites in the integrated build. Keep a compile-compatible no-op
+# facade for the unused LegacyMainForm only.
+ha=m.find('    static bool EnsureHooks()')
+hb=m.find('    static bool RefreshUnits',ha)
+if ha<0 or hb<0:
+    raise SystemExit('V34 could not locate legacy Native hook installer block')
+hook_retired=r'''    // V34: legacy Native hook installer retired. HookCore owns HP/training/selection;
+    // StaminaCore owns stamina. This method remains only for the unused LegacyMainForm.
+    public static void SetHooks(bool stamina,bool hp,bool training)
+    {
+        wantStamina=stamina;wantHp=hp;remoteTrainState=training?1:0;
+        hookError="legacy Native hooks retired — dedicated cores active";
+    }
+
+'''
+m=m[:ha]+hook_retired+m[hb:]
+
+# 3) Old ApplyLegacyRuntime wrote the same peasant-creation global now owned by
+# PausePeasantCore (and old horse/demo paths were superseded too). Retire it entirely.
+la=m.find('    public static void ApplyLegacyRuntime(')
+lb=m.find('    public static void InstantDeathSelected()',la)
+if la<0 or lb<0:
+    raise SystemExit('V34 could not locate legacy ApplyLegacyRuntime block')
+legacy_retired=r'''    // V34: superseded by PausePeasantCore / HorseCore; no fixed BRZE writes remain here.
+    public static void ApplyLegacyRuntime(bool pause,bool demo,bool horse,bool tower) { }
+
+'''
+m=m[:la]+legacy_retired+m[lb:]
+mp.write_text(m,encoding='utf-8')
+
 # Generate the V34 overlay from the already runtime-approved V33 deck.
 ov=Path('OverlayHotkeyControllerV33.cs').read_text(encoding='utf-8')
 ov=ov.replace('V33','V34')
@@ -99,4 +168,4 @@ if 'void UpdateOffset()=>offsetValue.Text=$"+X  {copyOffset:0.0}";' not in ov:
     raise SystemExit('V34 offset readout marker missing')
 
 Path('OverlayHotkeyControllerV34.cs').write_text(ov,encoding='utf-8')
-print('V34 generated: 0.1 COPY offset steps + full trainer/BRZE runtime rebind + V33 premium deck preserved')
+print('V34 generated: 0.1 COPY offset + hard BRZE rebind + dormant duplicate Native writers retired + V33 deck preserved')
