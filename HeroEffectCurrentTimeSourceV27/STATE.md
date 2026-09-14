@@ -47,3 +47,5 @@ V27:
 PASS for this discovery stage means the report identifies a plausible real source for the current game-time argument, ideally a readable global or a short caller chain ending in one.
 
 Only after that source is identified should the next guarded write proof set an existing A5 record's `+0x194` directly to the freshly read game-time value.
+
+CI trigger note: this state update intentionally occurred after the V27 workflow file existed so GitHub Actions registers and runs the new read-only workflow.
