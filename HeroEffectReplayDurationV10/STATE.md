@@ -1,6 +1,6 @@
 # BRZE Hero Effect Replay Duration V10 — STATE
 
-Status: **IMPLEMENTED — CI/RUNTIME PENDING**
+Status: **BUILT / CI-PROVEN COMPANION — RUNTIME PENDING**
 Date: 2026-09-14 JST
 
 ## Why V10 exists
@@ -23,6 +23,14 @@ V10 itself:
 - only reads lifecycle/config state and performs the already-proven guarded `config+0x0E0` write/restore.
 
 Replay V2 remains responsible for the one-shot native A5 call.
+
+CI explicitly forbids V10 source from containing:
+- `VirtualAllocEx`
+- `VirtualProtectEx`
+- `CreateRemoteThread`
+- `FlushInstructionCache`
+- frame-hook RVA `0x135C43`
+- target-helper RVA `0x1F0C32`
 
 ## Runtime flow
 1. Select exactly ONE clean target.
@@ -47,6 +55,24 @@ Replay V2 remains responsible for the one-shot native A5 call.
 - no repeated native application/refresh;
 - no hook/injection/native helper in V10.
 
+## Build pin
+Repository: `apm23/BRZE-Trainer`
+Branch: `instant-death-v4-hover-telemetry`
+Workflow: `Hero Effect Replay Duration V10 Companion`
+Run: `34795909466` — SUCCESS
+Job: `103828838973` — SUCCESS
+Head: `2a140fc395cbb9c76e0c8fca173a24933f00d147`
+Artifact: `10329941650`
+Artifact digest: `sha256:89779875f2dd9f73770c7153aa53ec3132f8a73aa90292ccaae88a95d1e4f733`
+
+Binaries:
+- Standalone: 151,067,856 bytes — SHA-256 `2933018dd7888598f2d9380bc9155a42885f62ba23a03efe150ef3ae4351bc57`
+- Small: 153,330 bytes — SHA-256 `bb0eebcd330674949115f3991ee171e0000b63bbd364c34a411e010511ff5c1e`
+
+Known-good Replay V2 fallback hashes:
+- standalone SHA-256 `2b5671e9a4d13768a2e3adccd12a82b0137419cbd926d2a3cbb6870fe930a702`
+- small SHA-256 `c0e5f4b3ca847612c9fff3094bb5bbc43639a1720aaf341356034277595e0ca1`
+
 ## Proof condition
 Runtime success requires all of:
 - baseline ~10.7 s under current time scale;
@@ -56,4 +82,4 @@ Runtime success requires all of:
 - config is already restored to 15000 while replay effect remains active;
 - no stacking/compounded gameplay behavior.
 
-Known-good `HeroEffectReplayV2` must remain untouched as fallback.
+Known-good `HeroEffectReplayV2` remains untouched as fallback.
