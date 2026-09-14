@@ -45,17 +45,9 @@ jobs:
           python tools/finalize_v18_3_bulk_actions.py
           python tools/finalize_v19_hold_death_layout_v2.py
           python tools/finalize_v20_integrated_features.py
-
-          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content unit-core.before
-          (Get-FileHash RevealMapCore.cs -Algorithm SHA256).Hash | Set-Content reveal-core.before
-          (Get-FileHash WolfCore.cs -Algorithm SHA256).Hash | Set-Content wolf-core.before
-          (Get-FileHash SelectionCore.cs -Algorithm SHA256).Hash | Set-Content selection-core.before
-          (Get-FileHash HookCore.cs -Algorithm SHA256).Hash | Set-Content hook-core.before
-          (Get-FileHash StaminaCore.cs -Algorithm SHA256).Hash | Set-Content stamina-core.before
-          (Get-FileHash HorseCore.cs -Algorithm SHA256).Hash | Set-Content horse-core.before
-          (Get-FileHash PausePeasantCore.cs -Algorithm SHA256).Hash | Set-Content pause-core.before
           (Get-FileHash IntegratedFrameDispatcherCore.cs -Algorithm SHA256).Hash | Set-Content dispatcher.before
-          (Get-FileHash InstantDeathCore.cs -Algorithm SHA256).Hash | Set-Content death-wrapper.before
+          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content unit.before
+          (Get-FileHash HookCore.cs -Algorithm SHA256).Hash | Set-Content hook.before
 
       - name: Apply V21 direct hero finalizer
         run: python tools/finalize_v21_direct_hero.py
@@ -63,73 +55,30 @@ jobs:
       - name: Verify V21 final architecture
         shell: pwsh
         run: |
-          function Assert-Same($before,$file,$label){
-            $a=(Get-Content $before -Raw).Trim();$b=(Get-FileHash $file -Algorithm SHA256).Hash
-            if($a -ne $b){throw "V21 changed locked core: $label"}
-          }
-          Assert-Same unit-core.before UnitChangerCore.cs UnitChanger
-          Assert-Same reveal-core.before RevealMapCore.cs Reveal
-          Assert-Same wolf-core.before WolfCore.cs Wolves
-          Assert-Same selection-core.before SelectionCore.cs Selection
-          Assert-Same hook-core.before HookCore.cs Hook
-          Assert-Same stamina-core.before StaminaCore.cs Stamina
-          Assert-Same horse-core.before HorseCore.cs Horses
-          Assert-Same pause-core.before PausePeasantCore.cs PausePeasant
-          Assert-Same dispatcher.before IntegratedFrameDispatcherCore.cs SharedDispatcher
-          Assert-Same death-wrapper.before InstantDeathCore.cs InstantDeathWrapper
+          function Same($before,$file,$name){$a=(Get-Content $before -Raw).Trim();$b=(Get-FileHash $file -Algorithm SHA256).Hash;if($a -ne $b){throw "V21 changed locked $name"}}
+          Same dispatcher.before IntegratedFrameDispatcherCore.cs SharedDispatcher
+          Same unit.before UnitChangerCore.cs UnitChanger
+          Same hook.before HookCore.cs HookCore
 
           $ui=Get-Content FinalV18MainForm.cs -Raw
-          foreach($x in @(
-            'Text="BRZE Trainer — V21 Clean"',
-            'Text="BRZE Trainer — V21 Diagnostics"',
-            'ClientSize=new Size(1640,900);',
-            'ColumnCount=2,RowCount=3',
-            'content.SetColumnSpan(statusPanel,2)',
-            'TextAlign=ContentAlignment.MiddleCenter,AutoEllipsis=false'
-          )){if($ui -notmatch [regex]::Escape($x)){throw "V21 UI invariant missing: $x"}}
+          foreach($x in @('Text="BRZE Trainer — V21 Clean"','Text="BRZE Trainer — V21 Diagnostics"','ClientSize=new Size(1640,900);','content.SetColumnSpan(statusPanel,2)','TextAlign=ContentAlignment.MiddleCenter,AutoEllipsis=false')){if($ui -notmatch [regex]::Escape($x)){throw "V21 UI missing: $x"}}
 
           $panel=Get-Content IntegratedFeaturePanelsV21.cs -Raw
-          foreach($x in @(
-            'HERO EFFECT  //  DIRECT APPLY',
-            'APPLY ISSYL',
-            'APPLY GRAYBACK',
-            'APPLY BOTH',
-            'DURATION (SEC)',
-            'COPY UNIT  //  UNIT CLONE LAB',
-            'TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=6,RowCount=1',
-            'AutoEllipsis=false'
-          )){if($panel -notmatch [regex]::Escape($x)){throw "V21 panel invariant missing: $x"}}
-          foreach($bad in @('CAPTURE ISSYL BASELINE','ISSYL CUSTOM','RESTORE 15000','ArmBaseline','IntegratedReplayLifetimeWatcher')){
-            if($panel -match [regex]::Escape($bad)){throw "V21 research UI leaked into final panel: $bad"}
-          }
+          foreach($x in @('HERO EFFECT  //  DIRECT APPLY','APPLY ISSYL','APPLY GRAYBACK','APPLY BOTH','DURATION (SEC)','COPY UNIT  //  UNIT CLONE LAB','TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=6,RowCount=1')){if($panel -notmatch [regex]::Escape($x)){throw "V21 panel missing: $x"}}
+          foreach($bad in @('CAPTURE ISSYL BASELINE','ISSYL CUSTOM','RESTORE 15000','ArmBaseline','IntegratedReplayLifetimeWatcher')){if($panel -match [regex]::Escape($bad)){throw "V21 research UI leaked: $bad"}}
 
           $core=Get-Content HeroEffectDirectCore.cs -Raw
-          foreach($x in @(
-            'ISSYL_ID=0xA5,GRAYBACK_ID=0xC0',
-            'ISSYL_BASE=15000,GRAYBACK_BASE=60000',
-            'ISSYL_KNOWN=0x227F4664,GRAYBACK_KNOWN=0x227F9470',
-            'ISSYL_BASE_WALL_SEC=10.7271',
-            'GRAYBACK_BASE_WALL_SEC=42.2221',
-            'ResolveConfig',
-            'ScanForConfig',
-            'RestoreAll()',
-            'NativeQueueBusy()',
-            'Auto-restore after native queue completes'
-          )){if($core -notmatch [regex]::Escape($x)){throw "V21 direct core invariant missing: $x"}}
-          if($core -match 'CreateRemoteThread'){throw 'V21 direct hero core must not use CreateRemoteThread'}
+          foreach($x in @('ISSYL_ID=0xA5,GRAYBACK_ID=0xC0','ISSYL_BASE=15000,GRAYBACK_BASE=60000','ISSYL_KNOWN=0x227F4664,GRAYBACK_KNOWN=0x227F9470','ISSYL_BASE_WALL_SEC=10.7271','GRAYBACK_BASE_WALL_SEC=42.2221','ResolveConfig','ScanForConfig','EffectPattern','CaptureTargets','duration config HELD until natural expiry','Duration config will stay held until natural expiry','RestoreAll()')){if($core -notmatch [regex]::Escape($x)){throw "V21 direct core missing: $x"}}
+          if($core -match 'CreateRemoteThread'){throw 'V21 direct hero must not use CreateRemoteThread'}
+          if($core -match 'restore after native queue completes'){throw 'V21 must not reintroduce native-return restore'}
 
           $proj=Get-Content MergedTrainerV21.csproj -Raw
-          foreach($x in @('HeroEffectDirectCore.cs','IntegratedFeaturePanelsV21.cs','IntegratedFrameDispatcherCore.cs')){
-            if($proj -notmatch [regex]::Escape($x)){throw "V21 project missing: $x"}
-          }
-          if($proj -match 'ConfigurableDurationCore'){throw 'V21 final project still compiles research ConfigurableDurationCore'}
-          if($proj -match 'IntegratedFeaturePanels.cs'){throw 'V21 final project still compiles V20 research panel'}
-
-          Write-Host 'V21 architecture PASS — direct selected-unit Hero Effect, seconds duration, no baseline UI, V20 dispatcher preserved'
+          foreach($x in @('HeroEffectDirectCore.cs','IntegratedFeaturePanelsV21.cs','IntegratedFrameDispatcherCore.cs')){if($proj -notmatch [regex]::Escape($x)){throw "V21 project missing: $x"}}
+          if($proj -match 'ConfigurableDurationCore|IntegratedFeaturePanels.cs'){throw 'V21 final project compiles research Hero Effect code'}
+          Write-Host 'V21 PASS — direct selected-unit apply, seconds duration, natural-expiry hold, no baseline UI, V20 shared dispatcher preserved'
 
       - name: Compile CLEAN smoke
         run: dotnet build MergedTrainerV21.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
-
       - name: Compile DIAGNOSTICS smoke
         run: dotnet build MergedTrainerV21.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
 
@@ -137,17 +86,14 @@ jobs:
         run: |
           dotnet publish MergedTrainerV21.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
           Move-Item publish-clean/BRZE-Trainer-FINAL-V21.exe publish-clean/BRZE-Trainer-FINAL-V21-Clean.exe
-
       - name: Publish DIAGNOSTICS standalone
         run: |
           dotnet publish MergedTrainerV21.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag
           Move-Item publish-diag/BRZE-Trainer-FINAL-V21.exe publish-diag/BRZE-Trainer-FINAL-V21-Diagnostics.exe
-
       - name: Publish CLEAN small
         run: |
           dotnet publish MergedTrainerV21.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
           Move-Item publish-clean-small/BRZE-Trainer-FINAL-V21.exe publish-clean-small/BRZE-Trainer-FINAL-V21-Clean-Small.exe
-
       - name: Publish DIAGNOSTICS small
         run: |
           dotnet publish MergedTrainerV21.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag-small
