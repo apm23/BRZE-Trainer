@@ -34,62 +34,81 @@ Branch: `instant-death-v4-hover-telemetry`
 - Two automatic Issyl passes proved lifecycle timing and showed transient paths swap between casts.
 
 `HeroEffectSignatureProbeV6/STATE.md`
-- **RUNTIME-PROVEN SIGNATURE TRACKER — PARENT TIMER NOT ISOLATED.**
-- Three clean ORIGINAL ISSYL passes with intentionally different human timing:
-  - 10725.9 ms / 343 polls
-  - 10713.8 ms / 342 polls
-  - 10733.2 ms / 343 polls
-  - spread only 19.4 ms, proving human click speed is irrelevant to measured lifecycle.
-- Every pass found actual effect parent by BOTH content fields:
+- Three ORIGINAL ISSYL passes with deliberately different human timing measured `10725.9 / 10713.8 / 10733.2 ms`; total spread only `19.4 ms`.
+- Human click speed is irrelevant to measured lifecycle.
+- Every pass found actual effect parent by content signature:
   - `parent+0x058 == 0xA5`
   - `parent+0x17C == pinned Unit*`
-- Parent addresses/paths differed:
-  - A `0x28BFFD08` via `Unit+0x20C->+0x008`, 34.1 ms discovery
-  - B `0x28C00100` via `Unit+0x1E4->+0x014`, 30.7 ms discovery
-  - C `0x28C004F8` via `Unit+0x20C->+0x008`, 31.6 ms discovery
-- Effect identity MUST remain content-signature-based, never path-based.
-- Parent `+0x194` HARD-REJECTED as duration: terminal values `623600 -> 653700 -> 678400` while lifetime stayed ~10.72 s; likely absolute/global counter/cleanup timestamp.
-- Parent `+0x028/+0x02C/+0x030` are high-flip spatial/visual/activity noise, not clean timer.
+- Effect parent paths/addresses move between casts; NEVER hard-code path.
+- Parent `+0x194` rejected as duration-specific.
 
 `HeroEffectChildProbeV7/STATE.md`
-- **BUILT / CI-PROVEN READ-ONLY — RUNTIME TEST NEXT.**
-- After A5+target parent signature lock, scans parent `0x240` for readable pointer fields.
-- Deduplicates alias offsets pointing to same child.
-- Pins up to 24 child objects; samples `0x200` bytes each at 20 ms.
-- Automatic lifecycle start/end; no human timing.
-- Dynamic child fields ranked high-change + low/zero direction flips; static duration-like child constants separated.
-- No writes/injection/hooks/native replay.
-- Workflow `Hero Effect Child Probe V7 Read Only`.
-- Run `34793489888` SUCCESS; job `103822036340` SUCCESS.
-- Head `18d22cbaa5f1b6da1f0d017f665e978c3486b95d`.
-- Artifact `10329090887`, digest `sha256:83096a67245a1cc1d2163c071f8163cdcda2f0c4fe4706e1fe054021b7d92294`.
-- Standalone SHA-256 `ee30cc76f54f91aa93d4f7e26f01d7ed6db3070ca1a53d2c785d8d452c5843d2`.
-- Small SHA-256 `46a252b206a8dc78e04ffbf1144aa0a76ff1970f208f66834637e5a6ca582492`.
+- **RUNTIME-PROVEN OBSERVER — CHILD CONFIG CANDIDATE FOUND.**
+- One clean ORIGINAL ISSYL pass:
+  - natural lifetime `10749.4 ms`
+  - parent discovery `32.6 ms`
+  - 11 readable/deduplicated child objects
+  - no clean continuously-changing child timer
+- Strong structured child/config lead:
+  - `parent+0x1F4 -> config object`
+  - `config+0x000 = 0xA5` exact Issyl ID
+  - `config+0x0A0 = 100`
+  - `config+0x0E0 = 15000`
+  - `config+0x0E8 = 482`
+  - config stayed readable/static for full lifecycle
+- `config+0x0E0 = 15000` is the strongest duration-parameter candidate but NOT proven yet.
+- Low-address `PARENT[+0x000,+0x1FC]` static `10272` is rejected as a likely vtable/type/static coincidence, not promoted by numeric proximity alone.
+
+`HeroEffectAbilityConfigProbeV8/STATE.md`
+- **BUILT / CI-PROVEN READ-ONLY — RUNTIME COMPARISON NEXT.**
+- Auto-detects either Issyl A5 or Grayback C0 using ability ID + pinned target signature.
+- Reads `parent+0x1F4` as the ability/config pointer.
+- Samples config `0x200` bytes every 20 ms through natural expiry.
+- Main comparison target: `config+0x0E0`.
+- Workflow `Hero Effect Ability Config Probe V8 Read Only`.
+- Run `34794119559` SUCCESS; job `103823808659` SUCCESS.
+- Head `0e319752b3533d933d15ffba332f0859356be4f2`.
+- Artifact `10329446128`, digest `sha256:ce98a0e10b9b975d57b039e31dbf97ec18a0fe849f51636a891057dc1489a3fb`.
+- Standalone SHA-256 `0628d47fd75ab9403c8366822a487ba3210b5fbe5c1121f0115b3acba123aa4b`.
+- Small SHA-256 `44d17a8bf358e3b1823b6dac1e6c57489d8fb9fd64a2c0c3ede560f61c5d3d75`.
 
 ## Exact next action
-Runtime-test V7 with ORIGINAL ISSYL:
+Runtime-test V8 twice and return both reports.
+
+### Test A — ORIGINAL ISSYL
 1. fresh/reload BRZE;
 2. select exactly ONE clean normal target;
-3. click `ARM TARGET + AUTO WATCH`;
+3. click `ARM TARGET + AUTO DETECT`;
 4. select Issyl;
-5. cast ORIGINAL Haste once on armed target;
-6. do nothing until V7 shows `COMPLETE`;
-7. click `COPY REPORT` and return full report.
+5. cast ORIGINAL Haste once on the armed target;
+6. do nothing until `COMPLETE`;
+7. `COPY REPORT`.
 
-Analysis priority for V7:
-- verify A5+target parent found;
-- inspect `CHILD POINTER MAP` first, noting alias clusters;
-- prioritize child dynamic fields with many changes and `flip 0` (or extremely low flips);
-- compare integer/float total change and rate against ~10.72 s lifetime;
-- inspect static child constants secondarily;
-- if one strong child timer appears, repeat V7 on a second clean Issyl cast before any write.
+### Test B — ORIGINAL GRAYBACK
+1. RESET or fresh/reload BRZE;
+2. select exactly ONE clean normal target;
+3. click `ARM TARGET + AUTO DETECT`;
+4. select Grayback;
+5. cast ORIGINAL Grayback effect once on the armed target;
+6. wait for natural expiry; no manual timing needed;
+7. `COPY REPORT`.
+
+## Analysis priority for V8
+- confirm detected ability is A5 for Issyl and C0 for Grayback;
+- confirm `config+0x000` follows ability ID;
+- compare `config+0x0E0` across A5 vs C0;
+- compare wall-time/config ratio;
+- if +0x0E0 changes in a duration-plausible way between the abilities, repeat/confirm before an isolated write experiment;
+- no duration write from V8 alone.
 
 ## Locked rejects / safety
 - no repeated native reapplication;
 - no `Unit+0x460` duration writes;
 - no parent `+0x194` duration writes;
 - no hard-coded transient path;
-- no duration integration into main trainer until real effect-instance timing field is proven.
+- no V7 cleanup-only child field writes;
+- no low-address/vtable `10272` duration assumption;
+- no integration into main trainer until a real duration parameter is proven.
 
 ## New-chat bootstrap sentence
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot replay is proven; repeated refresh and Unit+0x460 are rejected. V6 completed THREE Issyl passes at 10725.9/10713.8/10733.2 ms despite different human timing, proved A5+target content signature, and rejected parent +0x194 as duration. V7 read-only child-object timer probe built SUCCESS (run 34793489888, artifact 10329090887). Runtime-test V7 next.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub is authoritative. V2 one-shot replay is proven; repeated refresh, Unit+0x460 and parent+0x194 are rejected. V7 runtime found no dynamic child timer but found parent+0x1F4 ability/config object: Issyl config+0=A5 and config+0x0E0=15000. V8 read-only A5-vs-C0 config comparator is built SUCCESS (run 34794119559, artifact 10329446128). Runtime-test V8 once with ORIGINAL Issyl and once with ORIGINAL Grayback next.`
