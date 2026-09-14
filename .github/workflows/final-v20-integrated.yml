@@ -1,0 +1,175 @@
+name: Final V20 Integrated Copy Unit Hero Effect
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v20-integrated-trigger'
+      - 'IntegratedFrameDispatcherCore.cs'
+      - 'IntegratedFeaturePanels.cs'
+      - 'MergedTrainerV20.csproj'
+      - 'tools/finalize_v20_integrated_features.py'
+      - '.github/workflows/final-v20-integrated.yml'
+      - 'HeroEffectReplayDurationV11/ConfigurableDurationCore.cs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate locked V18.3 plus V19 base
+        shell: pwsh
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v13_integrated.py
+          python tools/finalize_v14_building_profiles.py
+          python tools/v14_generator_repair.py
+          python tools/v14_ui_compile_repair.py
+          python tools/finalize_v15_compact_ui.py
+          python tools/finalize_v16_unit_catalog.py
+          python tools/finalize_v17_wotw_warning.py
+          python tools/finalize_v18_quick_tabs.py
+          python tools/finalize_v18_2_inline_allslots.py
+          python tools/finalize_v18_3_bulk_actions.py
+          python tools/finalize_v19_hold_death_layout_v2.py
+
+          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content unit-core.before
+          (Get-FileHash RevealMapCore.cs -Algorithm SHA256).Hash | Set-Content reveal-core.before
+          (Get-FileHash WolfCore.cs -Algorithm SHA256).Hash | Set-Content wolf-core.before
+          (Get-FileHash SelectionCore.cs -Algorithm SHA256).Hash | Set-Content selection-core.before
+          (Get-FileHash HookCore.cs -Algorithm SHA256).Hash | Set-Content hook-core.before
+          (Get-FileHash StaminaCore.cs -Algorithm SHA256).Hash | Set-Content stamina-core.before
+          (Get-FileHash HorseCore.cs -Algorithm SHA256).Hash | Set-Content horse-core.before
+          (Get-FileHash PausePeasantCore.cs -Algorithm SHA256).Hash | Set-Content pause-core.before
+          (Get-FileHash MergedProgram.cs -Algorithm SHA256).Hash | Set-Content merged-program.before
+
+      - name: Apply V20 integration and layout
+        run: python tools/finalize_v20_integrated_features.py
+
+      - name: Verify V20 architecture and no clipping layout
+        shell: pwsh
+        run: |
+          function Assert-Same($before,$file,$label){
+            $a=(Get-Content $before -Raw).Trim();$b=(Get-FileHash $file -Algorithm SHA256).Hash
+            if($a -ne $b){throw "V20 changed locked core: $label"}
+          }
+          Assert-Same unit-core.before UnitChangerCore.cs UnitChanger
+          Assert-Same reveal-core.before RevealMapCore.cs Reveal
+          Assert-Same wolf-core.before WolfCore.cs Wolves
+          Assert-Same selection-core.before SelectionCore.cs Selection
+          Assert-Same hook-core.before HookCore.cs Hook
+          Assert-Same stamina-core.before StaminaCore.cs Stamina
+          Assert-Same horse-core.before HorseCore.cs Horses
+          Assert-Same pause-core.before PausePeasantCore.cs PausePeasant
+          Assert-Same merged-program.before MergedProgram.cs MergedProgram
+
+          $ui=Get-Content FinalV18MainForm.cs -Raw
+          foreach($x in @(
+            'Text="BRZE Trainer — V20 Clean"',
+            'Text="BRZE Trainer — V20 Diagnostics"',
+            'ClientSize=new Size(1640,900);',
+            'ColumnCount=2,RowCount=3',
+            'new RowStyle(SizeType.Absolute,194)',
+            'new HeroEffectIntegratedPanel',
+            'new CopyUnitIntegratedPanel',
+            'content.Controls.Add(statusPanel,0,2)',
+            'content.SetColumnSpan(statusPanel,2)',
+            'TextAlign=ContentAlignment.MiddleCenter,AutoEllipsis=false'
+          )){if($ui -notmatch [regex]::Escape($x)){throw "V20 UI invariant missing: $x"}}
+
+          $panels=Get-Content IntegratedFeaturePanels.cs -Raw
+          foreach($x in @(
+            'COPY UNIT  //  UNIT CLONE LAB',
+            'HERO EFFECT  //  ISSYL DURATION',
+            'COPY SELECTED UNITS',
+            'PASTE BESIDE',
+            'CAPTURE ISSYL BASELINE',
+            'ISSYL CUSTOM',
+            'AutoEllipsis=false'
+          )){if($panels -notmatch [regex]::Escape($x)){throw "V20 panel invariant missing: $x"}}
+          if($panels -match 'COPY HERO'){throw 'V20 must say COPY UNIT, not COPY HERO'}
+
+          $dispatcher=Get-Content IntegratedFrameDispatcherCore.cs -Raw
+          foreach($x in @(
+            'RVA_FRAME_MOUSE_DRAW=0x135C43',
+            'RVA_APPLY_TARGET_ABILITY=0x1F0C32',
+            'RVA_SPAWN_AT_XY=0x0C4A1C',
+            'RVA_CURSOR_UNIT_QUERY=0x135EFB',
+            'QUEUE_REPLAY=1,QUEUE_SPAWN=2',
+            '0x0F,0xAE,0x05',
+            '0x0F,0xAE,0x0D',
+            'MAX_SELECTED=120,MAX_COPY=120'
+          )){if($dispatcher -notmatch [regex]::Escape($x)){throw "V20 dispatcher invariant missing: $x"}}
+          if($dispatcher -match 'CreateRemoteThread'){throw 'V20 dispatcher must not use CreateRemoteThread'}
+
+          $death=Get-Content InstantDeathCore.cs -Raw
+          if($death -notmatch 'IntegratedFrameDispatcherCore.DeathTriggerSingle'){throw 'InstantDeathCore is not delegated to shared dispatcher'}
+          if($death -match 'VirtualAllocEx|RVA_FRAME_MOUSE_DRAW'){throw 'InstantDeathCore still owns a frame hook'}
+
+          $duration=Get-Content HeroEffectReplayDurationV11/ConfigurableDurationCore.cs -Raw
+          foreach($x in @('CONFIG_DURATION_OFF=0x0E0','ORIGINAL_DURATION=15000','MIN_DURATION=1000','MAX_DURATION=600000')){
+            if($duration -notmatch [regex]::Escape($x)){throw "V11 duration invariant missing: $x"}
+          }
+
+          $compiledHookOwners=@('InstantDeathCore.cs','IntegratedFrameDispatcherCore.cs','HookCore.cs') | ForEach-Object { Get-Content $_ -Raw } | Select-String -Pattern 'RVA_FRAME_MOUSE_DRAW=0x135C43' -AllMatches
+          $count=($compiledHookOwners.Matches | Measure-Object).Count
+          if($count -ne 1){throw "Expected exactly ONE compiled frame-hook owner, found $count"}
+          Write-Host 'V20 architecture PASS — single shared hook owner, Copy Unit naming PASS, full-width status layout PASS'
+
+      - name: Compile CLEAN smoke
+        run: dotnet build MergedTrainerV20.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Compile DIAGNOSTICS smoke
+        run: dotnet build MergedTrainerV20.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish CLEAN standalone
+        run: |
+          dotnet publish MergedTrainerV20.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
+          Move-Item publish-clean/BRZE-Trainer-FINAL-V20.exe publish-clean/BRZE-Trainer-FINAL-V20-Clean.exe
+
+      - name: Publish DIAGNOSTICS standalone
+        run: |
+          dotnet publish MergedTrainerV20.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag
+          Move-Item publish-diag/BRZE-Trainer-FINAL-V20.exe publish-diag/BRZE-Trainer-FINAL-V20-Diagnostics.exe
+
+      - name: Publish CLEAN small
+        run: |
+          dotnet publish MergedTrainerV20.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
+          Move-Item publish-clean-small/BRZE-Trainer-FINAL-V20.exe publish-clean-small/BRZE-Trainer-FINAL-V20-Clean-Small.exe
+
+      - name: Publish DIAGNOSTICS small
+        run: |
+          dotnet publish MergedTrainerV20.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag-small
+          Move-Item publish-diag-small/BRZE-Trainer-FINAL-V20.exe publish-diag-small/BRZE-Trainer-FINAL-V20-Diagnostics-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-clean/BRZE-Trainer-FINAL-V20-Clean.exe -Algorithm SHA256
+          Get-FileHash publish-diag/BRZE-Trainer-FINAL-V20-Diagnostics.exe -Algorithm SHA256
+          Get-FileHash publish-clean-small/BRZE-Trainer-FINAL-V20-Clean-Small.exe -Algorithm SHA256
+          Get-FileHash publish-diag-small/BRZE-Trainer-FINAL-V20-Diagnostics-Small.exe -Algorithm SHA256
+
+      - name: Upload V20 four-pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V20-Integrated
+          compression-level: 0
+          path: |
+            publish-clean/BRZE-Trainer-FINAL-V20-Clean.exe
+            publish-diag/BRZE-Trainer-FINAL-V20-Diagnostics.exe
+            publish-clean-small/BRZE-Trainer-FINAL-V20-Clean-Small.exe
+            publish-diag-small/BRZE-Trainer-FINAL-V20-Diagnostics-Small.exe
