@@ -1,0 +1,56 @@
+name: Hero Effect Ability Config Probe V8 Read Only
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - 'HeroEffectAbilityConfigProbeV8/**'
+      - '.hero-effect-ability-config-probe-v8-trigger'
+      - '.github/workflows/hero-effect-ability-config-probe-v8.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify strict read-only architecture
+        shell: pwsh
+        run: |
+          $src = Get-Content 'HeroEffectAbilityConfigProbeV8/ProbeCore.cs' -Raw
+          $forbidden = @('WriteProcessMemory','VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','FlushInstructionCache','RVA_TARGET_HELPER','RVA_MAGIC_CREATE')
+          foreach ($token in $forbidden) {
+            if ($src.Contains($token)) { throw "Forbidden token in V8 read-only probe: $token" }
+          }
+          if (-not $src.Contains('PROCESS_VM_READ')) { throw 'PROCESS_VM_READ invariant missing' }
+          if (-not $src.Contains('PROCESS_QUERY_INFORMATION')) { throw 'PROCESS_QUERY_INFORMATION invariant missing' }
+          if (-not $src.Contains('ABILITY_OFF=0x058')) { throw 'ability signature offset missing' }
+          if (-not $src.Contains('TARGET_OFF=0x17C')) { throw 'target signature offset missing' }
+          if (-not $src.Contains('CONFIG_PTR_OFF=0x1F4')) { throw 'config pointer offset missing' }
+          if (-not $src.Contains('ISSYL_ID=0xA5,GRAYBACK_ID=0xC0')) { throw 'A5/C0 comparison invariant missing' }
+          Write-Host 'V8 read-only + A5/C0 config comparison invariants PASS'
+      - name: Compile smoke
+        run: dotnet build HeroEffectAbilityConfigProbeV8/HeroEffectAbilityConfigProbeV8.csproj -c Release -p:Platform=x86
+      - name: Publish standalone
+        run: dotnet publish HeroEffectAbilityConfigProbeV8/HeroEffectAbilityConfigProbeV8.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o out/standalone
+      - name: Publish small
+        run: dotnet publish HeroEffectAbilityConfigProbeV8/HeroEffectAbilityConfigProbeV8.csproj -c Release -r win-x86 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o out/small
+      - name: Stage outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item 'out/standalone/BRZE-Hero-Effect-Ability-Config-Probe-V8.exe' 'artifact/BRZE-Hero-Effect-Ability-Config-Probe-V8-ReadOnly.exe'
+          Copy-Item 'out/small/BRZE-Hero-Effect-Ability-Config-Probe-V8.exe' 'artifact/BRZE-Hero-Effect-Ability-Config-Probe-V8-ReadOnly-Small.exe'
+      - name: Hash outputs
+        shell: pwsh
+        run: Get-FileHash artifact/*.exe -Algorithm SHA256 | Format-Table -AutoSize
+      - name: Upload probe V8
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Ability-Config-Probe-V8-ReadOnly
+          path: artifact/*
+          if-no-files-found: error
