@@ -1,0 +1,75 @@
+name: Hero Effect Clock Reset V26 Guarded
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - 'HeroEffectClockResetV26/**'
+      - '.github/workflows/hero-effect-clock-reset-v26.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify V26 guarded architecture
+        shell: pwsh
+        run: |
+          $c=Get-Content HeroEffectClockResetV26/ClockResetCore.cs -Raw
+          foreach($x in @(
+            'ABILITY_OFF=0x58,TARGET_OFF=0x17C,STAMP_OFF=0x194,CONFIG_OFF=0x1F4',
+            'const uint A5=0xA5,BASE_DURATION=15000',
+            'count!=1',
+            'Signature(record,unit)',
+            'duration!=BASE_DURATION',
+            'W32((long)record+STAMP_OFF,0)',
+            'Thread.Sleep(10)',
+            'W32((long)record+STAMP_OFF,oldStamp)'
+          )){if($c -notmatch [regex]::Escape($x)){throw "V26 invariant missing: $x"}}
+          foreach($bad in @('VirtualAllocEx','VirtualProtectEx','CreateRemoteThread','0x1F0C32','QueueReplaySelected','WriteProcessMemory(h,A((long)record+CONFIG_OFF')){
+            if($c -match [regex]::Escape($bad)){throw "V26 forbidden mechanism present: $bad"}
+          }
+          $writes=[regex]::Matches($c,'W32\(').Count
+          if($writes -gt 3){throw "V26 has unexpected number of W32 call sites: $writes"}
+          Write-Host 'V26 architecture PASS — one selected A5 record, one-field clock reset, no native replay.'
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectClockResetV26/HeroEffectClockResetV26.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish standalone
+        run: dotnet publish HeroEffectClockResetV26/HeroEffectClockResetV26.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish
+
+      - name: Publish small
+        run: dotnet publish HeroEffectClockResetV26/HeroEffectClockResetV26.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-small
+
+      - name: Rename outputs
+        shell: pwsh
+        run: |
+          Move-Item publish/BRZE-Hero-Effect-Clock-Reset-V26.exe publish/BRZE-Hero-Effect-Clock-Reset-V26-Guarded.exe
+          Move-Item publish-small/BRZE-Hero-Effect-Clock-Reset-V26.exe publish-small/BRZE-Hero-Effect-Clock-Reset-V26-Guarded-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish/BRZE-Hero-Effect-Clock-Reset-V26-Guarded.exe -Algorithm SHA256
+          Get-FileHash publish-small/BRZE-Hero-Effect-Clock-Reset-V26-Guarded-Small.exe -Algorithm SHA256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Clock-Reset-V26-Guarded
+          compression-level: 0
+          path: |
+            publish/BRZE-Hero-Effect-Clock-Reset-V26-Guarded.exe
+            publish-small/BRZE-Hero-Effect-Clock-Reset-V26-Guarded-Small.exe
