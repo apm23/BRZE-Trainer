@@ -1,0 +1,74 @@
+name: Hero Effect Replay Duration V11 Configurable
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - 'HeroEffectReplayDurationV11/**'
+      - 'HeroEffectReplayV2/ReplayCore.cs'
+      - '.hero-effect-replay-duration-v11-trigger'
+      - '.github/workflows/hero-effect-replay-duration-v11.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify V11 architecture
+        shell: pwsh
+        run: |
+          $ui = Get-Content 'HeroEffectReplayDurationV11/Program.cs' -Raw
+          $core = Get-Content 'HeroEffectReplayDurationV11/ConfigurableDurationCore.cs' -Raw
+          $v2 = Get-Content 'HeroEffectReplayV2/ReplayCore.cs' -Raw
+
+          if (-not $ui.Contains('REPLAY 1X')) { throw 'V11 missing 1X preset' }
+          if (-not $ui.Contains('REPLAY 2X')) { throw 'V11 missing 2X preset' }
+          if (-not $ui.Contains('REPLAY 3X')) { throw 'V11 missing 3X preset' }
+          if (-not $ui.Contains('REPLAY CUSTOM')) { throw 'V11 missing custom preset' }
+          if (-not $ui.Contains('QueueSelected')) { throw 'V11 missing V2 queue call' }
+          if (-not $ui.Contains('ReplayLifetimeWatcher')) { throw 'V11 missing full-lifetime watcher' }
+
+          if (-not $core.Contains('CONFIG_DURATION_OFF=0x0E0')) { throw 'V11 duration field invariant missing' }
+          if (-not $core.Contains('ORIGINAL_DURATION=15000')) { throw 'V11 original duration invariant missing' }
+          if (-not $core.Contains('CompleteReplay')) { throw 'V11 expiry restore path missing' }
+          if (-not $core.Contains('desiredDuration')) { throw 'V11 configurable duration state missing' }
+
+          if (-not $v2.Contains('RVA_FRAME_MOUSE_DRAW=0x135C43')) { throw 'Known-good V2 frame hook invariant missing' }
+          if (-not $v2.Contains('RVA_APPLY_TARGET_ABILITY=0x1F0C32')) { throw 'Known-good V2 native apply invariant missing' }
+          if (-not $v2.Contains('ISSYL_RUNTIME_ABILITY=0xA5')) { throw 'Known-good V2 A5 invariant missing' }
+          if (-not $v2.Contains('MAX_SELECTED=120')) { throw 'Known-good V2 selection cap invariant missing' }
+
+          Write-Host 'V11 configurable-duration invariants PASS'
+
+      - name: Compile smoke
+        run: dotnet build HeroEffectReplayDurationV11/HeroEffectReplayDurationV11.csproj -c Release -p:Platform=x86
+
+      - name: Publish standalone
+        run: dotnet publish HeroEffectReplayDurationV11/HeroEffectReplayDurationV11.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o out/standalone
+
+      - name: Publish small
+        run: dotnet publish HeroEffectReplayDurationV11/HeroEffectReplayDurationV11.csproj -c Release -r win-x86 --self-contained false -p:PublishSingleFile=true -p:DebugType=None -p:DebugSymbols=false -o out/small
+
+      - name: Stage outputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item 'out/standalone/BRZE-Hero-Effect-Replay-Duration-V11.exe' 'artifact/BRZE-Hero-Effect-Replay-Duration-V11.exe'
+          Copy-Item 'out/small/BRZE-Hero-Effect-Replay-Duration-V11.exe' 'artifact/BRZE-Hero-Effect-Replay-Duration-V11-Small.exe'
+
+      - name: Hash outputs
+        shell: pwsh
+        run: Get-FileHash artifact/*.exe -Algorithm SHA256 | Format-Table -AutoSize
+
+      - name: Upload V11 build
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Hero-Effect-Replay-Duration-V11-Configurable
+          path: artifact/*
+          if-no-files-found: error
