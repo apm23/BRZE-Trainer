@@ -51,8 +51,12 @@ User also requested a premium trainer icon visually distinct from BRZE.
 - hidden ComboBoxes remain only as the state bridge/model; they are not added as visible overlay controls.
 - overlay remains no-activate and draggable.
 
-### Premium icon
+### Premium icon / taskbar fix
 - V36 project embeds `BRZE-Trainer-V36.ico` generated from the checked-in validated 64×64 trainer icon payload.
+- User runtime screenshot showed the Windows taskbar still used the generic WinForms overlapping-windows icon.
+- Root cause: EXE `ApplicationIcon` existed, but the WinForms `MainForm.Icon` was never explicitly bound to it.
+- Current build adds `this.Icon=System.Drawing.Icon.ExtractAssociatedIcon(System.Windows.Forms.Application.ExecutablePath)` and `ShowIcon=true` at runtime.
+- This icon-only repair does **not** change gameplay cores.
 
 ## V36 architecture / lifecycle audit — PASS
 - 15 compiled sources scanned.
@@ -65,36 +69,36 @@ User also requested a premium trainer icon visually distinct from BRZE.
 - Reveal guard adoption/retry present.
 - Hero Effect supports 500 targets while Copy Unit stays 120.
 - overlay Unit Changer uses non-popup previous/next controls.
-- distinct V36 application icon present.
+- distinct V36 application icon embedded and runtime MainForm icon binding verified in CI.
 - locked UnitChangerCore / HookCore / InstantDeath wrapper / StaminaCore / HorseCore / WolfCore / original V30 feature panel hashes remained unchanged through V36 layer.
 
-## V36 CI proof
+## V36 current CI proof — icon-fixed build
 Workflow `Final V36 Stress Hardened Four-Pack`
-- run `35126740562` — **SUCCESS**
-- job `104897529983` — **SUCCESS**
-- head `19314539f4bb7e7d35806c199d3a951e76621d6b`
-- artifact `10460000116`
-- artifact digest `sha256:8ae2358c39bb55aae668a194efced783d4bf9bbd96aedc48b2092dcf921a14d8`
+- run `35160650206` — **SUCCESS**
+- job `105010378257` — **SUCCESS**
+- head `7748625e24ce4c080901d649c0a0b23a426d90f5`
+- artifact `10472971410`
+- artifact digest `sha256:b1b382e5df5d05079b31704ced5b69bff16d067f16edded4e0eda1def8abd054`
 
 Hashes:
-- CLEAN standalone `ec32fd352e836209ec2b8db839d5b77c6569319f260452a16a773d03458b487a`
-- DIAGNOSTICS standalone `cca64f9c2469e79c75c6b74a67026efdc3d8e87e8ac5d9b633c48456c6655645`
-- CLEAN small `1a95c4bde0a9e88c35fb8f5083b34a91b92355fab0b40d2359a8399773def5a7`
-- DIAGNOSTICS small `187797d38b78a233d6f03b4e020b9176e2a38b72c966e0cf3e92f165962bf1a7`
+- CLEAN standalone `4c5da5d6755a5c5209d73a67f42cc83807022cb4418bbffa62048ca43992b9b7`
+- DIAGNOSTICS standalone `8afc8b66263ed42fdf3a141d4a9d16082b5710cb0ad9ec7c5fb5c98cb42af512`
+- CLEAN small `a88382e97d137e6f89659e265de5cac4cc9530c6dff335c03bb1d0278ad859d5`
+- DIAGNOSTICS small `8bed9ce0c60c7c7945d086c04a5b3efa4be7ceaaf1cad030870516d8896b9399`
 
-Both CLEAN and DIAGNOSTICS smoke builds passed with 0 compile errors; all four publishes and artifact upload passed. Ignore unrelated legacy `fix-large-selection-freeze.yml` failures.
+Both CLEAN and DIAGNOSTICS smoke builds passed; runtime Form.Icon verification passed; all four publishes and artifact upload passed. Ignore unrelated legacy `fix-large-selection-freeze.yml` failures.
 
 ## EXACT NEXT ACTION — V36 USER RUNTIME STRESS GATE
-Prefer `BRZE-Trainer-FINAL-V36-Diagnostics.exe` for the first pass.
+Prefer `BRZE-Trainer-FINAL-V36-Diagnostics.exe` from the **icon-fixed artifact/run 35160650206** for the first pass.
 
-1. **Pre-launch regression:** open trainer first, arm the same cheats from the V35 failure scenario, then launch BRZE and play Journey stage 1 -> 2 -> 3. Peasant 3s must stay functional and Reveal must recover after transitions.
-2. **Pause Peasant stage crossing:** turn Pause Peasant ON in one stage, enter the next stage, turn it OFF. Peasants must resume normally; then Peasant 3s must still produce the fixed timing.
-3. **HOME recovery:** during/after a stage transition press HOME / REFRESH TRAINER. Enabled features must rebuild and remain functional; this must repair runtime bindings rather than only blink resource values.
-4. **Hero stress:** select roughly 150–300 units and test Issyl / Grayback / Both at 120 s and 200 s (420 s optional). It must apply deterministically, without stacking/freeze/crash.
-5. **Fullscreen overlay Unit Changer:** Alt+W -> Unit Changer -> use filters + `‹ / ›` to change building/output heroes. BRZE must not minimize and control must stay responsive.
-6. Confirm the V36 trainer icon is visibly different from the original BRZE icon.
+1. Confirm taskbar/window icon is now the custom premium trainer icon, not the generic overlapping-windows WinForms icon.
+2. **Pre-launch regression:** open trainer first, arm the same cheats from the V35 failure scenario, then launch BRZE and play Journey stage 1 -> 2 -> 3. Peasant 3s must stay functional and Reveal must recover after transitions.
+3. **Pause Peasant stage crossing:** turn Pause Peasant ON in one stage, enter the next stage, turn it OFF. Peasants must resume normally; then Peasant 3s must still produce the fixed timing.
+4. **HOME recovery:** during/after a stage transition press HOME / REFRESH TRAINER. Enabled features must rebuild and remain functional; this must repair runtime bindings rather than only blink resource values.
+5. **Hero stress:** select roughly 150–300 units and test Issyl / Grayback / Both at 120 s and 200 s (420 s optional). It must apply deterministically, without stacking/freeze/crash.
+6. **Fullscreen overlay Unit Changer:** Alt+W -> Unit Changer -> use filters + `‹ / ›` to change building/output heroes. BRZE must not minimize and control must stay responsive.
 
-If all pass: mark `V36_STRESS_HARDENED_STATE.md` RUNTIME-PROVEN and then promote final current. If any fail: capture the Diagnostics status around the exact failure and patch only that concrete regression.
+If all pass: mark V36 RUNTIME-PROVEN and promote final current. If any fail: capture the Diagnostics status around the exact failure and patch only that concrete regression.
 
 ## New-chat bootstrap
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. V36 is CI-PROVEN / RUNTIME-PENDING stress-hardened candidate. CI run 35126740562 SUCCESS, artifact 10460000116. It fixes pre-launch/stage lifecycle, true SelectionCore teardown/rearm, Pause/Reveal transition recovery, Hero up to 500 targets, fullscreen-safe overlay Unit Changer, and premium icon. Next action is the exact V36 runtime stress gate; do not call FINAL before it passes.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. V36 icon-fixed stress candidate is CI-PROVEN / RUNTIME-PENDING. Current CI run 35160650206 SUCCESS, artifact 10472971410. Runtime MainForm icon is explicitly bound to the embedded premium EXE icon after user observed the generic WinForms taskbar icon. Gameplay fixes remain pre-launch/stage lifecycle, Selection teardown/rearm, Pause/Reveal recovery, Hero up to 500 targets, fullscreen-safe overlay Unit Changer. Next: confirm custom icon and run exact V36 stress gate; do not call FINAL before it passes.`
