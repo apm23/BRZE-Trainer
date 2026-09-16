@@ -1,1 +1,1 @@
-V36 stress hardening retrigger 7: v5 keeps the 1.5s safe-start gate but removes stale V13 unitRuntime/ucCount references. Re-run audits, both smoke builds, four publishes, hashes, artifact.
+V36 stress hardening retrigger 8: runtime MainForm icon is now explicitly bound to the embedded premium EXE icon so Windows taskbar no longer falls back to the generic WinForms icon. Re-run full audits, both smoke builds, four publishes, hashes, artifact.
