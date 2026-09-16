@@ -68,7 +68,7 @@ jobs:
         run: python tools/audit_v35_runtime_conflicts.py
 
       - name: Apply V36 stress hardening
-        run: python tools/finalize_v36_stress_hardening_v4.py
+        run: python tools/finalize_v36_stress_hardening_v5.py
 
       - name: V36 lifecycle/collision/fullscreen audit
         run: python tools/audit_v36_stress_hardening_v2.py
