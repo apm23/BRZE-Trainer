@@ -1,106 +1,100 @@
 # BRZE Trainer — NEXT SESSION HANDOFF
 
-Date: 2026-09-15 JST
+Date: 2026-09-17 JST
 Branch: `instant-death-v4-hover-telemetry`
 GitHub is authoritative.
 
 ## Authoritative current / fallbacks
 - V18.3 = locked historical stable fallback (`FINAL_CURRENT.md`).
 - V29 = runtime-proven standalone Hero reset primitive.
-- V30 = **runtime-proven integrated gameplay base** and remains locked.
-- V31 overlay = runtime-rejected (Alt+W failed).
-- V32 = runtime-proven Alt+W baseline.
-- V33 = runtime-proven premium overlay baseline; user approved appearance/behavior.
-- V34 = runtime-proven final-candidate base: user reported all gameplay functions safe; hard trainer↔BRZE refresh and collision cleanup retained.
-- V35 = **latest FINAL RC**: CI PASS, gameplay cores locked; runtime smoke pending only for the last UI/session polish.
+- V30 = runtime-proven integrated gameplay base; locked.
+- V33 = runtime-proven premium overlay baseline.
+- V34 = runtime-proven gameplay/collision/hard-refresh base.
+- V35 = previous FINAL RC.
+- V36 = **latest STRESS-HARDENED candidate: CI-PROVEN / RUNTIME-PENDING**.
 
-Do not reopen Hero reset research unless a concrete gameplay regression appears.
+Do not promote V36 to FINAL solely from CI. Exact user runtime stress gate below is mandatory.
 
-## Locked V30 gameplay
-Hero reset primitive:
+## Locked Hero architecture retained
 - exact same-effect signature: `record+0x58` ability + `record+0x17C` target Unit*;
 - current BRZE tick = module RVA `0x440A3C`;
-- active same effect -> `record+0x194 = current tick` -> restart same instance without stacking;
+- active same effect -> write only `record+0x194 = current tick`;
 - missing effect -> one-shot native Replay V2 apply;
 - APPLY BOTH partitions mixed selections;
-- custom duration keeps proven full-lifetime config hold/restore.
+- custom duration uses proven full-lifetime config hold/restore;
+- repeated native same-effect reapply remains forbidden.
 
-V30 integrated runtime result from user: **WORK / PASS**.
-Never reintroduce repeated same-effect native replay, `record+0x194=0`, Unit+0x460 duration writes, CreateRemoteThread, or hard-coded transient effect paths.
+## Why V36 exists
+User stress-tested V35 and found three concrete runtime regressions:
+1. If cheats were armed before BRZE launched, later Journey stages could break Peasant 3s / Pause Peasant / Reveal Map; HOME refresh often did not recover them.
+2. Hero Effect was unreliable around selections above 100 and sometimes with long requested durations.
+3. Overlay Unit Changer ComboBoxes were hard to use and could minimize fullscreen BRZE.
+User also requested a premium trainer icon visually distinct from BRZE.
 
-## V34 locked safety/base retained by V35
-- Premium overlay opacity 91%.
-- Alt+W global hotkey.
-- full mini Unit Changer page sharing normal trainer state.
-- HOME / REFRESH TRAINER hard rebind: tears down trainer-owned hooks/handles/caves/Hero holds, force re-probes BRZE, then enabled cheats rebuild on the next timer tick.
-- COPY buffer intentionally clears on hard refresh.
-- prior collision cleanup retired duplicate legacy writers at `0x1A70C6`, `0x1CCD4D`, `0x467AF4`.
+## V36 stress hardening
+### Pre-launch / Journey stage safety
+- Armed cheats wait for **1.5 seconds of continuously battle-ready state** before runtime writes/hooks start.
+- `SelectionCore` detects stage/root/local-player changes and re-arms live lists/headroom.
+- `SelectionCore.Stop()` now restores only trainer-owned instruction patches and frees the code cave only after proving no patched instruction still points to it.
+- Pause Peasant no longer preserves a transition-time zero as the normal creation state; it waits for the new-stage creation state and restores creation enabled.
+- Reveal Map can recognize/adopt its own resident transition guard after refresh/reopen and transient reapply failures become retryable instead of permanent-error state.
 
-## V35 FINAL RC — latest requested polish
-### COPY UNIT
-Both normal trainer and in-game overlay:
-- minimum `0.1`;
-- maximum `64.0`;
-- increment `0.1`;
-- **default = 0.1**;
-- overlay reset button also returns to `0.1`.
+### Hero Effect stress capacity
+- Hero selected/replay cap raised from 120 to **500**.
+- `COPY UNIT` remains capped at **120**.
+- effect maintenance polling throttled to 200 ms for large/long-lived groups.
+- V30 no-stacking semantics remain unchanged.
 
-### Movable in-game overlay
-- 91% opacity retained.
-- Drag using the header/title area.
-- nav/hide/action buttons remain clickable normally.
-- position is preserved across Alt+W hide/show for that trainer session.
-- drag completion returns focus to BRZE.
+### Fullscreen-safe Unit Changer overlay
+- visible Unit Changer dropdown popup controls removed from the overlay.
+- building/output selection is now filter + `‹ / ›` controls with label readouts.
+- hidden ComboBoxes remain only as the state bridge/model; they are not added as visible overlay controls.
+- overlay remains no-activate and draggable.
 
-### Persistent Unit Changer memory
-UI state is saved to:
-`%LOCALAPPDATA%\BRZE-Trainer\unit-changer-v1.json`
+### Premium icon
+- V36 project embeds `BRZE-Trainer-V36.ico` generated from the checked-in validated 64×64 trainer icon payload.
 
-Saved:
-- selected building/profile;
-- 9 output units for every building profile;
-- slot 1–9 ON/OFF state for every building profile.
+## V36 architecture / lifecycle audit — PASS
+- 15 compiled sources scanned.
+- 15 fixed module mutation sites resolved.
+- no fixed-address mutation site has multiple compiled owners.
+- shared render hook `0x135C43` remains owned only by `IntegratedFrameDispatcherCore`.
+- pre-launch stable-ready gate present.
+- SelectionCore teardown/rearm invariant present.
+- Selection + Pause Peasant stage rebind safety present.
+- Reveal guard adoption/retry present.
+- Hero Effect supports 500 targets while Copy Unit stays 120.
+- overlay Unit Changer uses non-popup previous/next controls.
+- distinct V36 application icon present.
+- locked UnitChangerCore / HookCore / InstantDeath wrapper / StaminaCore / HorseCore / WolfCore / original V30 feature panel hashes remained unchanged through V36 layer.
 
-Persistence is updated immediately after relevant UI changes and again on normal trainer close. It stores **UI configuration only** — never PID/module base, Unit pointers, hooks, caves, effect records, or any transient BRZE runtime address. Corrupt/old settings safely fall back without blocking trainer startup.
-
-## V35 collision / architecture audit
-PASS:
-- 15 compiled sources scanned;
-- 14 fixed module mutation sites resolved;
-- no fixed-address mutation site has multiple compiled owners;
-- render hook `0x135C43` owner = `IntegratedFrameDispatcherCore` only;
-- Hero + Instant Death native work remains serialized through shared dispatcher;
-- Stamina ownership remains dedicated/non-duplicated;
-- hard refresh teardown + force BRZE re-probe preserved;
-- COPY offset verified 0.1..64.0 / step 0.1 / default-reset 0.1 in both UIs;
-- Unit Changer LOCALAPPDATA persistence markers verified;
-- movable 91% overlay markers verified.
-
-## V35 CI proof
-Workflow `Final V35 RC Four-Pack`
-- run `34863185931` — SUCCESS
-- job `104040341580` — SUCCESS
-- head `8dbad8e8221c37ce1553acdad63f14df38dd37ec`
-- artifact `10356247507`
-- artifact digest `sha256:b57567b72910c58b272e64a493984f76654ba2cb7c5f0dbc8d9d53497a14b6e5`
+## V36 CI proof
+Workflow `Final V36 Stress Hardened Four-Pack`
+- run `35126740562` — **SUCCESS**
+- job `104897529983` — **SUCCESS**
+- head `19314539f4bb7e7d35806c199d3a951e76621d6b`
+- artifact `10460000116`
+- artifact digest `sha256:8ae2358c39bb55aae668a194efced783d4bf9bbd96aedc48b2092dcf921a14d8`
 
 Hashes:
-- CLEAN standalone `1973fb1b947df36a1170a4cebeecce3c7b50e1fcab7db59e223a3cd8948be387`
-- DIAGNOSTICS standalone `9103373809b69d93c7de65fcbcb719c9e73e4a3005a68e564a16970fdbf8a83c`
-- CLEAN small `9fc2155286b589848cc228bafbeac4877de0b64b650a1b9dd51a42c970cdba98`
-- DIAGNOSTICS small `2e60a0db5bfc6abc9d5e87e5e08982d6547d170405d4338989e24fa9786bceee`
+- CLEAN standalone `ec32fd352e836209ec2b8db839d5b77c6569319f260452a16a773d03458b487a`
+- DIAGNOSTICS standalone `cca64f9c2469e79c75c6b74a67026efdc3d8e87e8ac5d9b633c48456c6655645`
+- CLEAN small `1a95c4bde0a9e88c35fb8f5083b34a91b92355fab0b40d2359a8399773def5a7`
+- DIAGNOSTICS small `187797d38b78a233d6f03b4e020b9176e2a38b72c966e0cf3e92f165962bf1a7`
 
-All V35 audit/architecture checks, Clean+Diagnostics compile, four publishes, hashes and artifact upload passed. Ignore unrelated legacy `fix-large-selection-freeze.yml` failure.
+Both CLEAN and DIAGNOSTICS smoke builds passed with 0 compile errors; all four publishes and artifact upload passed. Ignore unrelated legacy `fix-large-selection-freeze.yml` failures.
 
-## EXACT NEXT ACTION — FINAL USER SMOKE
-Use `BRZE-Trainer-FINAL-V35-Diagnostics.exe`.
+## EXACT NEXT ACTION — V36 USER RUNTIME STRESS GATE
+Prefer `BRZE-Trainer-FINAL-V36-Diagnostics.exe` for the first pass.
 
-1. Confirm normal trainer COPY offset starts at `0.1` and can step 0.1.
-2. Alt+W: confirm overlay COPY offset also starts at `0.1`; drag overlay from header, hide/show it and confirm moved position remains.
-3. Unit Changer: change building/profile + several outputs + ON/OFF slots, close trainer with X, reopen V35 and confirm the configuration is restored.
-4. Quick regression only: one Hero Effect action, one COPY/PASTE, and HOME hard refresh while BRZE runs.
+1. **Pre-launch regression:** open trainer first, arm the same cheats from the V35 failure scenario, then launch BRZE and play Journey stage 1 -> 2 -> 3. Peasant 3s must stay functional and Reveal must recover after transitions.
+2. **Pause Peasant stage crossing:** turn Pause Peasant ON in one stage, enter the next stage, turn it OFF. Peasants must resume normally; then Peasant 3s must still produce the fixed timing.
+3. **HOME recovery:** during/after a stage transition press HOME / REFRESH TRAINER. Enabled features must rebuild and remain functional; this must repair runtime bindings rather than only blink resource values.
+4. **Hero stress:** select roughly 150–300 units and test Issyl / Grayback / Both at 120 s and 200 s (420 s optional). It must apply deterministically, without stacking/freeze/crash.
+5. **Fullscreen overlay Unit Changer:** Alt+W -> Unit Changer -> use filters + `‹ / ›` to change building/output heroes. BRZE must not minimize and control must stay responsive.
+6. Confirm the V36 trainer icon is visibly different from the original BRZE icon.
 
-If user reports PASS: **promote V35 to FINAL 100% immediately**. No new experimental version unless a concrete regression exists.
+If all pass: mark `V36_STRESS_HARDENED_STATE.md` RUNTIME-PROVEN and then promote final current. If any fail: capture the Diagnostics status around the exact failure and patch only that concrete regression.
 
 ## New-chat bootstrap
-`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. V30 gameplay is runtime-proven/locked; V34 gameplay/collision/hard-refresh base is runtime safe. V35 FINAL RC adds default COPY offset 0.1 in normal+overlay, draggable 91% overlay, and persistent Unit Changer UI memory in %LOCALAPPDATA%\\BRZE-Trainer\\unit-changer-v1.json. V35 CI run 34863185931 SUCCESS, artifact 10356247507. Next: one final V35 Diagnostics smoke; if PASS, promote FINAL 100%.`
+`CONTINUE BRZE TRAINER — READ NEXT_SESSION.md FIRST — GitHub authoritative. V36 is CI-PROVEN / RUNTIME-PENDING stress-hardened candidate. CI run 35126740562 SUCCESS, artifact 10460000116. It fixes pre-launch/stage lifecycle, true SelectionCore teardown/rearm, Pause/Reveal transition recovery, Hero up to 500 targets, fullscreen-safe overlay Unit Changer, and premium icon. Next action is the exact V36 runtime stress gate; do not call FINAL before it passes.`
