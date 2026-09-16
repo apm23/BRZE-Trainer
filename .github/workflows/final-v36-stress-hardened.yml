@@ -71,7 +71,7 @@ jobs:
         run: python tools/finalize_v36_stress_hardening_v4.py
 
       - name: V36 lifecycle/collision/fullscreen audit
-        run: python tools/audit_v36_stress_hardening.py
+        run: python tools/audit_v36_stress_hardening_v2.py
 
       - name: Verify untouched gameplay cores stayed byte-identical
         shell: pwsh
