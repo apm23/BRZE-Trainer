@@ -7,7 +7,7 @@ s=p.read_text(encoding='utf-8')
 # Form.Icon. Bind the main window explicitly to the executable's embedded icon.
 marker='Text="BRZE Trainer — V36 Clean";'
 marker_diag='Text="BRZE Trainer — V36 Diagnostics";'
-needle='try{Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);ShowIcon=true;}catch{}'
+needle='try{this.Icon=System.Drawing.Icon.ExtractAssociatedIcon(System.Windows.Forms.Application.ExecutablePath);this.ShowIcon=true;}catch{}'
 
 if needle not in s:
     if marker_diag in s:
