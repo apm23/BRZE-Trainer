@@ -1,6 +1,9 @@
 from pathlib import Path
 
 src=Path('tools/finalize_v36_stress_hardening.py').read_text(encoding='utf-8')
+# SelectionCore source keeps spaces around '=' in its Attach() process lookup.
+# Normalize the generator's anchor strings before execution.
+src=src.replace('var ps=Process.GetProcessesByName','var ps = Process.GetProcessesByName')
 old="""marker='''        runtimeWasReady=true;\\n        string hookStatus=HookCore.Tick(false,hp.Checked,training.Checked);'''"""
 new="""marker='''        runtimeWasReady=true;'''"""
 if old not in src:
