@@ -1,1 +1,1 @@
-V36 stress hardening retrigger 5: v4 reads the exact checked-in validated 64x64 icon payload; continue full lifecycle/fullscreen audits, smoke compile, and four-pack publish.
+V36 stress hardening retrigger 6: generator v4 passed; audit v2 fixes the ucProfileValue prefix false-positive. Continue untouched-core checks, CLEAN/DIAGNOSTICS compile, four publishes, hashes, artifact.
