@@ -1,1 +1,1 @@
-V36 stress hardening retrigger 3: SelectionCore attach anchor repaired; include reveal retry latch fix; run full audits and four-pack build.
+V36 stress hardening retrigger 4: generator v3 repairs runtime/Selection anchors and restores the exact valid 64x64 trainer icon payload; run full audits, compile smoke, and four-pack publish.
