@@ -70,6 +70,14 @@ jobs:
       - name: Apply V36 stress hardening
         run: python tools/finalize_v36_stress_hardening_v5.py
 
+      - name: Bind V36 runtime taskbar icon
+        run: python tools/fix_v36_runtime_form_icon.py
+
+      - name: Verify V36 runtime taskbar icon binding
+        shell: pwsh
+        run: |
+          if(-not (Select-String -Path FinalV18MainForm.cs -SimpleMatch 'this.Icon=System.Drawing.Icon.ExtractAssociatedIcon(System.Windows.Forms.Application.ExecutablePath)')) { throw 'V36 runtime Form.Icon binding missing' }
+
       - name: V36 lifecycle/collision/fullscreen audit
         run: python tools/audit_v36_stress_hardening_v2.py
 
