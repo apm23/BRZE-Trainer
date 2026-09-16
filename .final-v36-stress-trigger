@@ -1,1 +1,1 @@
-V36 stress hardening retrigger 4: generator v3 repairs runtime/Selection anchors and restores the exact valid 64x64 trainer icon payload; run full audits, compile smoke, and four-pack publish.
+V36 stress hardening retrigger 5: v4 reads the exact checked-in validated 64x64 icon payload; continue full lifecycle/fullscreen audits, smoke compile, and four-pack publish.
