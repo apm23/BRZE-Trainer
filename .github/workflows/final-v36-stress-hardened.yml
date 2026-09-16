@@ -1,0 +1,132 @@
+name: Final V36 Stress Hardened Four-Pack
+
+on:
+  push:
+    branches:
+      - instant-death-v4-hover-telemetry
+    paths:
+      - '.final-v36-stress-trigger'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: instant-death-v4-hover-telemetry
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Generate locked V20 integrated base
+        shell: pwsh
+        run: |
+          python tools/prepare_merged_v3_wolfstock.py
+          python tools/finalize_v10_ui_safe.py
+          python tools/finalize_v11_transition_safe.py
+          python tools/finalize_v13_integrated.py
+          python tools/finalize_v14_building_profiles.py
+          python tools/v14_generator_repair.py
+          python tools/v14_ui_compile_repair.py
+          python tools/finalize_v15_compact_ui.py
+          python tools/finalize_v16_unit_catalog.py
+          python tools/finalize_v17_wotw_warning.py
+          python tools/finalize_v18_quick_tabs.py
+          python tools/finalize_v18_2_inline_allslots.py
+          python tools/finalize_v18_3_bulk_actions.py
+          python tools/finalize_v19_hold_death_layout_v2.py
+          python tools/finalize_v20_integrated_features.py
+
+      - name: Apply V22 explicit-target dispatcher facade
+        run: python tools/finalize_v22_group_safe_hero.py
+
+      - name: Apply proven V30 Hero reset layer
+        run: python tools/finalize_v30_reset_hero.py
+
+      - name: Lock V30/V35 base before stress layer
+        shell: pwsh
+        run: |
+          (Get-FileHash UnitChangerCore.cs -Algorithm SHA256).Hash | Set-Content unit.before
+          (Get-FileHash HookCore.cs -Algorithm SHA256).Hash | Set-Content hook.before
+          (Get-FileHash InstantDeathCore.cs -Algorithm SHA256).Hash | Set-Content death.before
+          (Get-FileHash StaminaCore.cs -Algorithm SHA256).Hash | Set-Content stamina.before
+          (Get-FileHash HorseCore.cs -Algorithm SHA256).Hash | Set-Content horse.before
+          (Get-FileHash WolfCore.cs -Algorithm SHA256).Hash | Set-Content wolf.before
+          (Get-FileHash IntegratedFeaturePanelsV30.cs -Algorithm SHA256).Hash | Set-Content panel.before
+
+      - name: Apply V34 hard-rebind/collision-clean base
+        run: python tools/finalize_v34_candidate.py
+
+      - name: Apply V35 final polish
+        run: python tools/finalize_v35_final_polish.py
+
+      - name: Verify V35 base before V36 mutations
+        run: python tools/audit_v35_runtime_conflicts.py
+
+      - name: Apply V36 stress hardening
+        run: python tools/finalize_v36_stress_hardening.py
+
+      - name: V36 lifecycle/collision/fullscreen audit
+        run: python tools/audit_v36_stress_hardening.py
+
+      - name: Verify untouched gameplay cores stayed byte-identical
+        shell: pwsh
+        run: |
+          function Same($before,$file,$name){$a=(Get-Content $before -Raw).Trim();$b=(Get-FileHash $file -Algorithm SHA256).Hash;if($a -ne $b){throw "V36 unexpectedly changed locked $name"}}
+          Same unit.before UnitChangerCore.cs UnitChanger
+          Same hook.before HookCore.cs HookCore
+          Same death.before InstantDeathCore.cs InstantDeathWrapper
+          Same stamina.before StaminaCore.cs StaminaCore
+          Same horse.before HorseCore.cs HorseCore
+          Same wolf.before WolfCore.cs WolfCore
+          Same panel.before IntegratedFeaturePanelsV30.cs OriginalV30Panels
+          Write-Host 'V36 intentional runtime changes are limited to Selection/Pause/Reveal/Hero replay capacity + UI orchestration/overlay/icon.'
+
+      - name: Compile CLEAN smoke
+        run: dotnet build MergedTrainerV36.csproj -c Release -r win-x86 -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Compile DIAGNOSTICS smoke
+        run: dotnet build MergedTrainerV36.csproj -c Release -r win-x86 -p:DefineConstants=RAW_STATUS -p:DebugType=None -p:DebugSymbols=false
+
+      - name: Publish CLEAN standalone
+        run: |
+          dotnet publish MergedTrainerV36.csproj -c Release -r win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean
+          Move-Item publish-clean/BRZE-Trainer-FINAL-V36.exe publish-clean/BRZE-Trainer-FINAL-V36-Clean.exe
+
+      - name: Publish DIAGNOSTICS standalone
+        run: |
+          dotnet publish MergedTrainerV36.csproj -c Release -r win-x86 --self-contained true -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag
+          Move-Item publish-diag/BRZE-Trainer-FINAL-V36.exe publish-diag/BRZE-Trainer-FINAL-V36-Diagnostics.exe
+
+      - name: Publish CLEAN small
+        run: |
+          dotnet publish MergedTrainerV36.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-clean-small
+          Move-Item publish-clean-small/BRZE-Trainer-FINAL-V36.exe publish-clean-small/BRZE-Trainer-FINAL-V36-Clean-Small.exe
+
+      - name: Publish DIAGNOSTICS small
+        run: |
+          dotnet publish MergedTrainerV36.csproj -c Release -r win-x86 --self-contained false -p:SelfContained=false -p:DefineConstants=RAW_STATUS -p:PublishSingleFile=true -p:PublishReadyToRun=false -p:DebugType=None -p:DebugSymbols=false -o publish-diag-small
+          Move-Item publish-diag-small/BRZE-Trainer-FINAL-V36.exe publish-diag-small/BRZE-Trainer-FINAL-V36-Diagnostics-Small.exe
+
+      - name: Hash outputs
+        shell: pwsh
+        run: |
+          Get-FileHash publish-clean/BRZE-Trainer-FINAL-V36-Clean.exe -Algorithm SHA256
+          Get-FileHash publish-diag/BRZE-Trainer-FINAL-V36-Diagnostics.exe -Algorithm SHA256
+          Get-FileHash publish-clean-small/BRZE-Trainer-FINAL-V36-Clean-Small.exe -Algorithm SHA256
+          Get-FileHash publish-diag-small/BRZE-Trainer-FINAL-V36-Diagnostics-Small.exe -Algorithm SHA256
+
+      - name: Upload V36 four-pack
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRZE-Trainer-FINAL-V36-STRESS-HARDENED
+          compression-level: 0
+          path: |
+            publish-clean/BRZE-Trainer-FINAL-V36-Clean.exe
+            publish-diag/BRZE-Trainer-FINAL-V36-Diagnostics.exe
+            publish-clean-small/BRZE-Trainer-FINAL-V36-Clean-Small.exe
+            publish-diag-small/BRZE-Trainer-FINAL-V36-Diagnostics-Small.exe
