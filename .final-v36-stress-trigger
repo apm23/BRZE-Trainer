@@ -1,1 +1,1 @@
-V36 stress hardening retrigger 6: generator v4 passed; audit v2 fixes the ucProfileValue prefix false-positive. Continue untouched-core checks, CLEAN/DIAGNOSTICS compile, four publishes, hashes, artifact.
+V36 stress hardening retrigger 7: v5 keeps the 1.5s safe-start gate but removes stale V13 unitRuntime/ucCount references. Re-run audits, both smoke builds, four publishes, hashes, artifact.
